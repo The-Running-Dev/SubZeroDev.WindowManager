@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Whitespace and line endings
+        run: |
+          base=$(git hash-object -t tree /dev/null)
+          git diff --check "$base" HEAD
+          if git ls-files --eol | grep -E '^i/(crlf|mixed)'; then
+            echo "Files above have CRLF line endings in the index." >&2
+            exit 1
+          fi
