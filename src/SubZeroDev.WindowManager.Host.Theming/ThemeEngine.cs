@@ -29,8 +29,9 @@ public interface IThemeEngine
 /// <summary>
 /// Loads a theme in two halves: <see cref="ThemePackageReader"/> reads and checks the files off the UI
 /// thread, then the dictionaries are built with <c>XamlReader.Load</c> on the UI thread, checked, and
-/// swapped into <c>Application.Resources</c> in one step (I13). S1 takes token colours from
-/// <c>theme.json</c> only; palettes, asset packs and icons arrive with later slices.
+/// swapped into <c>Application.Resources</c> in one step (I13). Token colours come from <c>theme.json</c>,
+/// overridden by the selected palette; with a light and a dark palette the app mode picks one. Asset
+/// packs and icons arrive with later slices.
 /// </summary>
 public sealed class ThemeEngine : IThemeEngine
 {
@@ -50,13 +51,15 @@ public sealed class ThemeEngine : IThemeEngine
     private readonly Locations _locations;
     private readonly IHostLog _log;
     private readonly DispatcherQueue _dispatcher;
+    private readonly Func<bool> _isDark;
     private readonly List<ResourceDictionary> _applied = [];
 
-    public ThemeEngine(Locations locations, IHostLog log, DispatcherQueue dispatcher)
+    public ThemeEngine(Locations locations, IHostLog log, DispatcherQueue dispatcher, Func<bool>? isDark = null)
     {
         _locations = locations;
         _log = log;
         _dispatcher = dispatcher;
+        _isDark = isDark ?? (() => true);
     }
 
     public AppearanceSelection Current { get; private set; } = new(string.Empty, new PaletteSelection(null, null, null), []);
@@ -66,10 +69,23 @@ public sealed class ThemeEngine : IThemeEngine
     /// <summary>Where the active theme came from; <see cref="ThemeSource.HostDefault"/> until a theme applies.</summary>
     public ThemeSource CurrentSource { get; private set; } = ThemeSource.HostDefault;
 
+    /// <summary>The palette whose colours are applied now, or null when only the theme's defaults are.</summary>
+    public string? CurrentPaletteId { get; private set; }
+
+    /// <summary>The outcome of the last apply, including a failed one that left the appearance unchanged.</summary>
+    public ApplyResult? LastApply { get; private set; }
+
+    /// <summary>When the last successful swap happened, in Unix milliseconds; 0 before the first.</summary>
+    public long AppliedAtUtcMs { get; private set; }
+
     public event EventHandler? AppearanceChanged;
 
-    public Task<ApplyResult> ApplyAsync(AppearanceSelection selection, CancellationToken ct) =>
-        LoadAsync(selection, builtInOnly: false, swap: true, ct);
+    public async Task<ApplyResult> ApplyAsync(AppearanceSelection selection, CancellationToken ct)
+    {
+        var result = await LoadAsync(selection, builtInOnly: false, swap: true, ct).ConfigureAwait(false);
+        LastApply = result;
+        return result;
+    }
 
     public Task<ApplyResult> ValidateAsync(string themeId, CancellationToken ct) =>
         LoadAsync(new AppearanceSelection(themeId, Current.Palette, []), builtInOnly: false, swap: false, ct);
@@ -89,7 +105,7 @@ public sealed class ThemeEngine : IThemeEngine
 
         await RunOnUiAsync(() =>
         {
-            Swap([], selection with { ThemeId = string.Empty }, PanelBackdrop.None, ThemeSource.HostDefault);
+            Swap([], selection with { ThemeId = string.Empty }, PanelBackdrop.None, ThemeSource.HostDefault, null);
             return true;
         }).ConfigureAwait(false);
         return result;
@@ -97,8 +113,25 @@ public sealed class ThemeEngine : IThemeEngine
 
     private async Task<ApplyResult> LoadAsync(AppearanceSelection selection, bool builtInOnly, bool swap, CancellationToken ct)
     {
-        var (package, readErrors) = await Task.Run(() => ThemePackageReader.Read(_locations, selection.ThemeId, builtInOnly), ct)
-            .ConfigureAwait(false);
+        // The fallback runs without a palette: a palette that broke the apply must not break recovery too.
+        var paletteId = builtInOnly ? null : PaletteReader.Resolve(selection.Palette, _isDark());
+        var (package, readErrors, palette) = await Task.Run(() =>
+        {
+            Palette? palette = null;
+            if (paletteId is not null)
+            {
+                var (read, paletteErrors) = PaletteReader.Read(_locations, paletteId);
+                if (read is null)
+                {
+                    return ((ThemePackage?)null, paletteErrors, (Palette?)null);
+                }
+
+                palette = read;
+            }
+
+            var (package, errors) = ThemePackageReader.Read(_locations, selection.ThemeId, builtInOnly, palette?.Colors);
+            return (package, errors, palette);
+        }, ct).ConfigureAwait(false);
         if (package is null)
         {
             return new ApplyResult(false, readErrors);
@@ -134,8 +167,9 @@ public sealed class ThemeEngine : IThemeEngine
             if (swap)
             {
                 dictionaries.Insert(0, BuildTokenDictionary(package.Tokens));
-                Swap(dictionaries, selection with { ThemeId = package.Id }, package.Backdrop, package.Source);
-                _log.Write(LogLevel.Info, "theme", $"Applied {package.Id} from {package.Source}.");
+                Swap(dictionaries, selection with { ThemeId = package.Id }, package.Backdrop, package.Source, palette?.Id);
+                _log.Write(LogLevel.Info, "theme",
+                    palette is null ? $"Applied {package.Id} from {package.Source}." : $"Applied {package.Id} from {package.Source} with palette {palette.Id}.");
             }
 
             return new ApplyResult(true, errors);
@@ -192,7 +226,8 @@ public sealed class ThemeEngine : IThemeEngine
     }
 
     /// <summary>Replaces the previous appearance dictionaries in one pass on the UI thread.</summary>
-    private void Swap(List<ResourceDictionary> dictionaries, AppearanceSelection selection, PanelBackdrop backdrop, ThemeSource source)
+    private void Swap(List<ResourceDictionary> dictionaries, AppearanceSelection selection, PanelBackdrop backdrop, ThemeSource source,
+        string? paletteId)
     {
         var merged = Application.Current.Resources.MergedDictionaries;
         foreach (var old in _applied)
@@ -210,6 +245,8 @@ public sealed class ThemeEngine : IThemeEngine
         Current = selection;
         CurrentBackdrop = backdrop;
         CurrentSource = source;
+        CurrentPaletteId = paletteId;
+        AppliedAtUtcMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
 

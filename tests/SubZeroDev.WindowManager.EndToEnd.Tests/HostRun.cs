@@ -115,6 +115,9 @@ internal sealed class HostRun : IDisposable
         return [.. ids];
     }
 
+    /// <summary>An HKCU key the host reads the app mode from instead of the Windows one, when set.</summary>
+    public string? AppModeKey { get; set; }
+
     public Process Start(string exe, params string[] args)
     {
         var start = new ProcessStartInfo(exe) { UseShellExecute = false };
@@ -127,6 +130,11 @@ internal sealed class HostRun : IDisposable
         start.Environment["SUBZERODEV_WM_TEST_HOOK"] = HookDirectory;
         start.Environment["SUBZERODEV_WM_INSTANCE"] = Instance;
         start.Environment["SUBZERODEV_WM_HOST_EXE"] = HostExe;
+        if (AppModeKey is not null)
+        {
+            start.Environment["SUBZERODEV_WM_APPMODE_KEY"] = AppModeKey;
+        }
+
         Process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException($"{exe} did not start.");
         return Process;
     }

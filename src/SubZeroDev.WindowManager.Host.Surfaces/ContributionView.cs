@@ -23,6 +23,7 @@ public sealed class ContributionView
     private readonly Orientation _panelAxis;
     private readonly List<Binding> _bindings = [];
     private readonly List<WmText> _texts = [];
+    private readonly Dictionary<FrameworkElement, string?> _styleKeys = [];
     private long _revision = -1;
 
     public ContributionView(ContributionInstance instance, Orientation panelAxis, Func<string, object?> lookup,
@@ -48,6 +49,10 @@ public sealed class ContributionView
     /// <summary>The text of every Text element shown now, in tree order.</summary>
     public IReadOnlyList<string> Texts() => _texts.Select(text => text.Text).ToList();
 
+    /// <summary>Every Text element shown now, in tree order, with the theme style key it resolved to (null for the built-in style).</summary>
+    public IReadOnlyList<(WmText Element, string? StyleKey)> TextElements() =>
+        _texts.Select(text => (text, _styleKeys.GetValueOrDefault(text))).ToList();
+
     /// <summary>Shows <paramref name="snapshot"/>; <paramref name="restyle"/> rebuilds even at the same revision.</summary>
     public void Render(InstanceSnapshot? snapshot, bool restyle = false)
     {
@@ -62,6 +67,7 @@ public sealed class ContributionView
         {
             _bindings.Clear();
             _texts.Clear();
+            _styleKeys.Clear();
             Reason = null;
             _revision = snapshot.ViewRevision;
             Root.Content = Build(snapshot.View, snapshot.State);
@@ -84,6 +90,7 @@ public sealed class ContributionView
     {
         _bindings.Clear();
         _texts.Clear();
+        _styleKeys.Clear();
         _revision = -1;
         Reason = reason.ToString();
         var placeholder = new WmPlaceholder
@@ -167,22 +174,25 @@ public sealed class ContributionView
         Bind(props["automationName"], state, value => AutomationProperties.SetName(built, AsString(value)));
         Bind(props["visible"], state, value => built.Visibility = value is null || AsBool(value) ? Visibility.Visible : Visibility.Collapsed);
         built.Name = element["id"]?.GetValue<string>() ?? string.Empty;
-        built.Style = ResolveStyle(kind, element["classes"] as JsonArray);
+        var (styleKey, style) = ResolveStyle(kind, element["classes"] as JsonArray);
+        built.Style = style;
+        _styleKeys[built] = styleKey;
         return built;
     }
 
-    private Style? ResolveStyle(string kind, JsonArray? classes)
+    private (string? Key, Style? Style) ResolveStyle(string kind, JsonArray? classes)
     {
         var key = "Wm.Element." + char.ToUpperInvariant(kind[0]) + kind[1..];
         foreach (var item in classes ?? [])
         {
-            if (_lookup(key + "." + item?.GetValue<string>()) is Style classStyle)
+            var classKey = key + "." + item?.GetValue<string>();
+            if (_lookup(classKey) is Style classStyle)
             {
-                return classStyle;
+                return (classKey, classStyle);
             }
         }
 
-        return _lookup(key) as Style;
+        return _lookup(key) is Style style ? (key, style) : (null, null);
     }
 
     /// <summary>Applies a literal once, or applies a <c>{"$state":"key"}</c> binding now and on every later change.</summary>

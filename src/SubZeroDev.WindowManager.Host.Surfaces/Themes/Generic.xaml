@@ -88,10 +88,13 @@
     </Style>
 
     <Style TargetType="wm:WmText">
+        <Setter Property="Foreground" Value="#FFE6E6E6" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="wm:WmText">
-                    <TextBlock x:Name="Text" Foreground="#FFE6E6E6" FontSize="13" VerticalAlignment="Center" Text="{TemplateBinding Text}" />
+                    <TextBlock x:Name="Text" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" VerticalAlignment="Center"
+                               Text="{TemplateBinding Text}" />
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

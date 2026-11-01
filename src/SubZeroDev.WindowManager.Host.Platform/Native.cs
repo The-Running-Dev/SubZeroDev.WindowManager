@@ -61,4 +61,9 @@ internal static unsafe partial class Native
     [LibraryImport("user32.dll", EntryPoint = "SystemParametersInfoW")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SystemParametersInfo(uint action, uint param, Rect* data, uint winIni);
+
+    public const uint RegNotifyChangeLastSet = 0x4;
+
+    [LibraryImport("advapi32.dll")]
+    public static partial int RegNotifyChangeKeyValue(nint key, int watchSubtree, uint filter, nint changed, int asynchronous);
 }

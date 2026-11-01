@@ -24,6 +24,19 @@
         </Setter>
     </Style>
 
+    <Style x:Key="Wm.Element.Text" TargetType="wm:WmText">
+        <Setter Property="Foreground" Value="{ThemeResource Wm.Brush.text}" />
+    </Style>
+
+    <Style x:Key="Wm.Element.Text.primary" TargetType="wm:WmText">
+        <Setter Property="Foreground" Value="{ThemeResource Wm.Brush.accent}" />
+    </Style>
+
+    <Style x:Key="Wm.Element.Text.compact" TargetType="wm:WmText">
+        <Setter Property="Foreground" Value="{ThemeResource Wm.Brush.textMuted}" />
+        <Setter Property="FontSize" Value="11" />
+    </Style>
+
     <Style x:Key="Wm.Placeholder" TargetType="wm:WmPlaceholder">
         <Setter Property="Template">
             <Setter.Value>

@@ -21,6 +21,25 @@ public sealed class ThemePackageReaderTests
     }
 
     [Fact]
+    public void S5_2_and_S5_3_palette_colours_replace_their_tokens_and_the_rest_keep_the_theme_default()
+    {
+        using var scratch = new Scratch();
+        var builtIn = ThemePackageReader.Read(scratch.Locations, ThemeId, builtInOnly: false).Package!;
+
+        var (package, errors) = ThemePackageReader.Read(scratch.Locations, ThemeId, builtInOnly: false,
+            new Dictionary<string, uint> { ["accent"] = 0xFF00FF00 });
+
+        Assert.Empty(errors);
+        Assert.Equal(0xFF00FF00u, package!.Tokens["accent"]);
+        foreach (var (token, value) in builtIn.Tokens.Where(pair => pair.Key != "accent"))
+        {
+            Assert.Equal(value, package.Tokens[token]);
+        }
+
+        Assert.Contains("#FF00FF00", package.Resources[0].Xaml, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void A_user_copy_wins_unless_built_in_only()
     {
         using var scratch = new Scratch();

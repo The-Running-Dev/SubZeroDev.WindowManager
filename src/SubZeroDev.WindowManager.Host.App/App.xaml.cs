@@ -89,11 +89,14 @@ public sealed partial class App : Application
         _log = new HostLog(_locations.LogsDirectory);
         _log.Write(LogLevel.Info, "host", $"Starting pid {Environment.ProcessId}, guardian {_options.GuardianPid?.ToString() ?? "none"}.");
 
-        Directory.CreateDirectory(Path.Combine(_locations.DataRoot, "layouts"));
-        Directory.CreateDirectory(Path.Combine(_locations.DataRoot, "plugins"));
+        foreach (var folder in new[] { "layouts", "plugins", "themes", "palettes" })
+        {
+            Directory.CreateDirectory(Path.Combine(_locations.DataRoot, folder));
+        }
+
         var config = _config = new ConfigStore(_locations);
-        var settings = await LoadSettingsAsync(config, _log);
-        var preset = LoadPreset(config, settings.ActivePreset, _log);
+        var settings = _settings = await LoadSettingsAsync(config, _log);
+        var preset = _preset = LoadPreset(config, settings.ActivePreset, _log);
 
         var dispatcher = DispatcherQueue.GetForCurrentThread();
         _guardian = GuardianLink.Start(_options, dispatcher, _log, settings.RestartPolicy);
@@ -110,10 +113,9 @@ public sealed partial class App : Application
         }
 
         var hookDirectory = Environment.GetEnvironmentVariable(TestHook.Variable);
-        _theme = new ThemeEngine(_locations, _log, dispatcher);
-        var appearance = new AppearanceSelection(preset.Theme,
-            new PaletteSelection(preset.Palette, preset.PaletteLight, preset.PaletteDark), preset.AssetPacks);
-        var applied = await _theme.ApplyAsync(appearance, CancellationToken.None);
+        var appMode = _appMode = CreateAppModeWatcher(hookDirectory);
+        _theme = new ThemeEngine(_locations, _log, dispatcher, () => appMode.IsDark);
+        var applied = await _theme.ApplyAsync(AppearanceOf(preset), CancellationToken.None);
         if (!applied.Applied)
         {
             InitialThemeErrors = applied.Errors;
@@ -139,15 +141,10 @@ public sealed partial class App : Application
         _layoutId = preset.Layout;
         await ApplyLayoutAsync();
 
-        // A hand edit to the active layout is applied as soon as the file settles.
-        config.Changed += (_, e) =>
-        {
-            if (e.Origin == ChangeOrigin.External && e.Id == new DocumentId(DocumentKind.Layout, _layoutId))
-            {
-                dispatcher.TryEnqueue(() => _ = ReapplyLayoutAsync());
-            }
-        };
+        // Settings, the active preset and the active layout apply as soon as an edit settles.
+        config.Changed += (_, e) => dispatcher.TryEnqueue(() => OnConfigChanged(e));
         config.StartWatching();
+        StartAppearanceWatching(dispatcher);
 
         var debug = false;
 #if DEBUG
@@ -226,6 +223,7 @@ public sealed partial class App : Application
     /// <summary>Stops the workers first so none outlives the surfaces it drew on, then closes the panels.</summary>
     private async Task StopAsync()
     {
+        StopAppearanceWatching();
         _config?.Dispose();
         _catalog?.Dispose();
         if (_contributions is not null)
@@ -280,10 +278,14 @@ public sealed partial class App : Application
         Exit();
     }
 
-    /// <summary>A missing file is created with defaults; an invalid one is used as defaults and left alone (I14).</summary>
-    private static async Task<HostSettingsDocument> LoadSettingsAsync(ConfigStore config, IHostLog log)
+    /// <summary>
+    /// A missing file is created with defaults. An invalid one is left alone (I14): the host runs on its
+    /// last good copy, or on defaults when there is none.
+    /// </summary>
+    private async Task<HostSettingsDocument> LoadSettingsAsync(ConfigStore config, IHostLog log)
     {
         var state = config.Get(DocumentId.HostSettings);
+        _settingsHealth = state.Health;
         switch (state.Health)
         {
             case DocumentHealth.Missing:
@@ -306,7 +308,12 @@ public sealed partial class App : Application
                 return HostSettingsDocument.Default;
             default:
                 log.Write(LogLevel.Error, "config", $"settings.json is {state.Health}: {state.LastError?.Detail}");
-                return HostSettingsDocument.Default;
+                var lastGood = config.GetLastGood(DocumentId.HostSettings);
+                var recovered = lastGood is { Health: DocumentHealth.Valid, Content: not null }
+                    ? Documents.ParseHostSettings(lastGood.Content, [])
+                    : null;
+                log.Write(LogLevel.Warning, "config", recovered is null ? "No last good settings; using defaults." : "Using the last good settings.");
+                return recovered ?? HostSettingsDocument.Default;
         }
     }
 
@@ -314,19 +321,27 @@ public sealed partial class App : Application
     {
         foreach (var id in presetId == HostSettingsDocument.DefaultPreset ? [presetId] : new[] { presetId, HostSettingsDocument.DefaultPreset })
         {
-            var state = config.Get(new DocumentId(DocumentKind.Preset, id));
-            var problems = new List<string>();
-            var preset = state is { Health: DocumentHealth.Valid, Content: not null } ? Documents.ParsePreset(state.Content, id, problems) : null;
-            if (preset is not null)
+            if (TryLoadPreset(config, id, log) is { } preset)
             {
                 return preset;
             }
-
-            log.Write(LogLevel.Error, "config", $"Preset '{id}' is {state.Health}: {state.LastError?.Detail} {string.Join("; ", problems)}");
         }
 
         return new PresetDocument(HostSettingsDocument.DefaultPreset, "SubZeroDev default", HostSettingsDocument.DefaultPreset,
             ThemePackageReader.DefaultThemeId, null, null, null, []);
+    }
+
+    private static PresetDocument? TryLoadPreset(ConfigStore config, string id, IHostLog log)
+    {
+        var state = config.Get(new DocumentId(DocumentKind.Preset, id));
+        var problems = new List<string>();
+        var preset = state is { Health: DocumentHealth.Valid, Content: not null } ? Documents.ParsePreset(state.Content, id, problems) : null;
+        if (preset is null)
+        {
+            log.Write(LogLevel.Error, "config", $"Preset '{id}' is {state.Health}: {state.LastError?.Detail} {string.Join("; ", problems)}");
+        }
+
+        return preset;
     }
 
     private static LayoutDocument LoadLayout(ConfigStore config, string layoutId, IHostLog log)

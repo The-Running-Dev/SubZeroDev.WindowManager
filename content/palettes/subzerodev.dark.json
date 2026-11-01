@@ -1,0 +1,18 @@
+{
+  "id": "subzerodev.dark",
+  "displayName": "SubZeroDev dark",
+  "version": "0.1.0",
+  "themeApi": 1,
+  "colors": {
+    "surface": "#F01C1C1C",
+    "surfaceAlt": "#FF2B2B2B",
+    "text": "#FFF2F2F2",
+    "textMuted": "#FFA8A8A8",
+    "accent": "#FF4CC2FF",
+    "accentText": "#FF000000",
+    "border": "#FF3A3A3A",
+    "attention": "#FFFFB900",
+    "warning": "#FFFF8C00",
+    "danger": "#FFE81123"
+  }
+}

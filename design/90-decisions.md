@@ -13,6 +13,49 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-01 — S5: A broken live edit keeps the running preset
+- **Context:** startup falls back to the default preset when the active one is missing or invalid. A live edit that breaks the active preset file would then switch the look and layout to the default while the user is still typing.
+- **Chosen:** only startup falls back. A reload whose preset is invalid logs the problem and keeps the running preset. A preset whose theme fails to apply keeps the previous appearance, and later palette or app-mode changes build on that appearance, not on the refused one.
+- **Rejected:**
+  - Falling back to the default on every reload, because a half-saved file would flash the desktop to another look.
+  - Reading the preset's last good mirror, because the running preset already is the last good one in memory.
+
+## 2026-11-01 — S5: A preset change goes through settings.json
+- **Context:** `host.preset.apply`, a hand edit of `activePreset` and an edit of the active preset file must all end in the same restyle.
+- **Chosen:** `host.preset.apply` only writes `activePreset` with the hash it read. The store's change event then applies the preset, as it does after a hand edit. A preset with another layout switches the layout first; the appearance is applied under one gate so overlapping changes queue.
+- **Rejected:**
+  - Applying the preset directly and writing settings afterwards, because a failed or conflicting write would leave the screen and the file disagreeing.
+
+## 2026-11-01 — S5: Theme and palette folders have their own watchers
+- **Context:** Themes and palettes are not config documents, so the store's watcher does not see them, yet an edited palette must restyle at once.
+- **Chosen:** The host watches `<data>\themes` and `<data>\palettes` (subfolders included) and re-applies the appearance 300 ms after the last change. A failed apply keeps the previous look and logs the errors.
+- **Rejected:**
+  - Polling, because it costs idle CPU and still lags.
+
+## 2026-11-01 — S5: The built-in default preset names no palette
+- **Context:** The built-in theme's token defaults already are the dark look; `subzerodev.dark` repeats them.
+- **Chosen:** `subzerodev.light` and `subzerodev.dark` ship in `content\palettes`. The default preset names neither, so the first run is unchanged and a preset opts into `{ light, dark }` to follow the app mode.
+- **Rejected:**
+  - Making the default preset follow the app mode, because it would change the S1 first-run look without being asked.
+
+## 2026-11-01 — S5: Tests switch the app mode on their own registry key
+- **Context:** S5.6 needs a light-to-dark switch, and flipping the user's real `AppsUseLightTheme` would change their desktop.
+- **Chosen:** With the test hook on, `SUBZERODEV_WM_APPMODE_KEY` names an HKCU key the host reads `AppsUseLightTheme` from instead of `Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`. `AppModeWatcher` uses `RegNotifyChangeKeyValue` on whichever key it reads. The test deletes its key afterwards.
+- **Rejected:**
+  - Changing the real setting in tests, because it restyles every app the user has open.
+
+## 2026-11-01 — S5: Restyles are shown to reach no worker by a message counter
+- **Context:** S5.1 requires a restyle with no worker message, which a screenshot cannot show.
+- **Chosen:** `WorkerChannel.MessagesSent` counts every request and notification sent to any worker, liveness pings aside. The test hook reports it as `workerMessages`, with the theme's `appliedAtUtcMs`, `palette`, `lastApply` and each text item's style key, colour and size.
+- **Rejected:**
+  - Asking the test plugin to log what it receives, because the clock and other workers would go unchecked.
+
+## 2026-11-01 — S5: Invalid settings run on the last good copy
+- **Context:** I14 forbids overwriting a broken `settings.json`, but the host still needs settings.
+- **Chosen:** Every valid write, and every valid file the store loads, is mirrored to `.lastgood\<path>`. A broken `settings.json` is left untouched and read-only (`DocumentReadOnly`); the host runs on the mirror, or on defaults when there is none, and reports `Invalid` health.
+- **Rejected:**
+  - Running on defaults only, because the user's preset would vanish on a typo.
+
 ## 2026-11-01 — S4: The journal lives in its own Recovery project
 - **Context:** The guardian must revert a journal without loading the host, and the host must write the same document.
 - **Chosen:** `SubZeroDev.WindowManager.Recovery` holds `JournalDocument`, `Journal`, `Reverter` and `Recoverer`, with its own `Outcome` and `RecoveryErrorCode` (`JournalUnreadable`, `JournalWriteFailed`, `RevertFailed`). Host.Core's `RecoveryJournal` wraps it and maps a failed write to `CoreErrorCode.JournalWriteFailed`. The contract names only `JournalUnreadable`; `JournalWriteFailed` and `RevertFailed` are added.

@@ -10,6 +10,8 @@ namespace SubZeroDev.WindowManager.Host.Core;
 /// read-only fallback. Writes go to the data root only, through a temp file in the same directory (I14).
 /// After <see cref="StartWatching"/>, a hand edit under the data root raises <see cref="Changed"/> with
 /// <see cref="ChangeOrigin.External"/> once the file has been quiet for 300 ms; the host's own writes do not.
+/// Each user document that loads valid is mirrored to <c>.lastgood\&lt;relative path&gt;</c>, which
+/// <see cref="GetLastGood"/> reads when the document itself has gone bad.
 /// </summary>
 public sealed class ConfigStore : IConfigStore, IDisposable
 {
@@ -24,8 +26,12 @@ public sealed class ConfigStore : IConfigStore, IDisposable
     private readonly Locations _locations;
     private readonly SemaphoreSlim _writer = new(1, 1);
     private readonly Lock _watchGate = new();
+    private readonly Lock _mirrorGate = new();
     private readonly Dictionary<DocumentId, string?> _knownHashes = [];
+    private const int MaxIoRetries = 10;
+
     private readonly HashSet<DocumentId> _dirty = [];
+    private readonly Dictionary<DocumentId, int> _ioRetries = [];
     private FileSystemWatcher? _watcher;
     private Timer? _settle;
 
@@ -37,6 +43,26 @@ public sealed class ConfigStore : IConfigStore, IDisposable
     {
         var path = EffectivePath(id);
         return path is null ? new DocumentState(id, null, null, DocumentHealth.Missing, null) : Load(id, path);
+    }
+
+    /// <summary>The last copy of a user document that loaded valid, or a Missing state when there is none.</summary>
+    public DocumentState GetLastGood(DocumentId id)
+    {
+        var path = LastGoodPath(UserPath(id));
+        if (!File.Exists(path))
+        {
+            return new DocumentState(id, null, null, DocumentHealth.Missing, null);
+        }
+
+        try
+        {
+            return Parse(id, path, File.ReadAllBytes(path));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new DocumentState(id, null, null, DocumentHealth.Invalid,
+                new CoreError(CoreErrorCode.IoFailure, $"{path}: {e.Message}", true));
+        }
     }
 
     public IReadOnlyList<DocumentId> List(DocumentKind kind)
@@ -172,6 +198,7 @@ public sealed class ConfigStore : IConfigStore, IDisposable
                 return Outcome<DocumentState>.Fail(CoreErrorCode.IoFailure, $"{path}: {e.Message}", retryable: true);
             }
 
+            Mirror(path, bytes);
             var state = new DocumentState(id, (JsonObject)content.DeepClone(), Hash(bytes), DocumentHealth.Valid, null);
             return Outcome<DocumentState>.Success(state);
         }
@@ -205,6 +232,18 @@ public sealed class ConfigStore : IConfigStore, IDisposable
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 return Outcome.Fail(CoreErrorCode.IoFailure, $"{path}: {e.Message}", retryable: true);
+            }
+
+            // A deleted document must not come back from its mirror when a broken copy appears later.
+            lock (_mirrorGate)
+            {
+                try
+                {
+                    File.Delete(LastGoodPath(path));
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                }
             }
 
             return Outcome.Success;
@@ -264,9 +303,20 @@ public sealed class ConfigStore : IConfigStore, IDisposable
         List<DocumentChangedEventArgs> changes = [];
         lock (_watchGate)
         {
+            List<DocumentId> locked = [];
             foreach (var id in _dirty)
             {
                 var state = Get(id);
+                if (state.LastError is { Code: CoreErrorCode.IoFailure, Retryable: true }
+                    && _ioRetries.GetValueOrDefault(id) < MaxIoRetries)
+                {
+                    // The editor still holds the file; look again once it lets go.
+                    _ioRetries[id] = _ioRetries.GetValueOrDefault(id) + 1;
+                    locked.Add(id);
+                    continue;
+                }
+
+                _ioRetries.Remove(id);
                 if (_knownHashes.TryGetValue(id, out var known) && known == state.ContentHash)
                 {
                     continue;
@@ -277,6 +327,11 @@ public sealed class ConfigStore : IConfigStore, IDisposable
             }
 
             _dirty.Clear();
+            if (locked.Count > 0)
+            {
+                _dirty.UnionWith(locked);
+                _settle?.Change(Debounce, Timeout.InfiniteTimeSpan);
+            }
         }
 
         foreach (var change in changes)
@@ -319,7 +374,7 @@ public sealed class ConfigStore : IConfigStore, IDisposable
         _ => null,
     };
 
-    private static DocumentState Load(DocumentId id, string path)
+    private DocumentState Load(DocumentId id, string path)
     {
         byte[] bytes;
         try
@@ -332,6 +387,17 @@ public sealed class ConfigStore : IConfigStore, IDisposable
                 new CoreError(CoreErrorCode.IoFailure, $"{path}: {e.Message}", true));
         }
 
+        var state = Parse(id, path, bytes);
+        if (state.Health == DocumentHealth.Valid && string.Equals(path, UserPath(id), StringComparison.OrdinalIgnoreCase))
+        {
+            Mirror(path, bytes);
+        }
+
+        return state;
+    }
+
+    private static DocumentState Parse(DocumentId id, string path, byte[] bytes)
+    {
         var hash = Hash(bytes);
         JsonObject? content;
         try
@@ -360,8 +426,61 @@ public sealed class ConfigStore : IConfigStore, IDisposable
             : new DocumentState(id, content, hash, DocumentHealth.Valid, null);
     }
 
+    private string LastGoodPath(string userPath) =>
+        Path.Combine(_locations.DataRoot, ".lastgood", Path.GetRelativePath(_locations.DataRoot, userPath));
+
+    /// <summary>
+    /// Copies a valid user document to its last good mirror when the mirror differs. The mirror is a
+    /// convenience, so a failure to write it never fails the load or the write that triggered it.
+    /// </summary>
+    private void Mirror(string userPath, byte[] bytes)
+    {
+        var mirror = LastGoodPath(userPath);
+        lock (_mirrorGate)
+        {
+            try
+            {
+                // Two loads can race; only the bytes still on disk may become the last good copy.
+                if (!File.ReadAllBytes(userPath).AsSpan().SequenceEqual(bytes)
+                    || (File.Exists(mirror) && File.ReadAllBytes(mirror).AsSpan().SequenceEqual(bytes)))
+                {
+                    return;
+                }
+
+                WriteAtomically(mirror, bytes);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
     private static DocumentState Invalid(DocumentId id, string hash, string detail) =>
         new(id, null, hash, DocumentHealth.Invalid, new CoreError(CoreErrorCode.DocumentInvalid, detail, false));
+
+    private static void WriteAtomically(string path, byte[] bytes)
+    {
+        var directory = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(directory);
+        var temp = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+            {
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
+        }
+    }
 
     private static async Task WriteAtomicallyAsync(string path, byte[] bytes, CancellationToken ct)
     {

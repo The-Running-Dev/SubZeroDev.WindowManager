@@ -22,6 +22,8 @@ public sealed record ChannelClose(FaultReason Reason, string Detail);
 /// </summary>
 public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
 {
+    private static long s_messagesSent;
+
     public static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>What a worker may send. Requests other than <c>hello</c> are not served until their slices.</summary>
@@ -149,6 +151,12 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
         return (new WorkerChannel(stream, pluginId, processId, timings ?? SupervisorTimings.Default), null);
     }
 
+    /// <summary>
+    /// Requests and notifications queued to any worker since the process started, liveness pings aside.
+    /// Diagnostics read it to show that a restyle reached no worker.
+    /// </summary>
+    public static long MessagesSent => Interlocked.Read(ref s_messagesSent);
+
     /// <summary>Starts reading and writing. Subscribe to <see cref="NotificationReceived"/> first.</summary>
     public void Start()
     {
@@ -218,7 +226,20 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
     private static bool TokenMatches(string presented, string expected) =>
         CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(presented ?? string.Empty), Encoding.UTF8.GetBytes(expected));
 
-    private bool Post(RpcMessage message) => IsOpen && _outgoing.Writer.TryWrite(ProtocolJson.Serialize(message));
+    private bool Post(RpcMessage message)
+    {
+        if (!IsOpen || !_outgoing.Writer.TryWrite(ProtocolJson.Serialize(message)))
+        {
+            return false;
+        }
+
+        if (message.Method is { } method && method != Methods.Ping)
+        {
+            Interlocked.Increment(ref s_messagesSent);
+        }
+
+        return true;
+    }
 
     private void Close(FaultReason reason, string detail)
     {
