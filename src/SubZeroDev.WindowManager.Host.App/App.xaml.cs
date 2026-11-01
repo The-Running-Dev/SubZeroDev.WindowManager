@@ -25,6 +25,7 @@ public sealed partial class App : Application
     private ConfigStore? _config;
     private PackageCatalog? _catalog;
     private PluginLogs? _pluginLogs;
+    private SettingsService? _settingsService;
     private WorkerLauncher? _launcher;
     private PluginSupervisor? _supervisor;
     private ContributionHost? _contributions;
@@ -139,14 +140,20 @@ public sealed partial class App : Application
         var hostVersion = typeof(App).Assembly.GetName().Version is { } version ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.1.0";
         _supervisor = new PluginSupervisor(_catalog, _launcher, _pluginLogs, _log, _locations, HostMode.Coexistence, hostVersion,
             settings.RestartPolicy);
+        var pluginSettings = new PluginSettingsStore(config, _locations, _pluginLogs);
+        _supervisor.PluginSettings = pluginSettings;
+        var settingsService = _settingsService = new SettingsService(_catalog, _supervisor, config, pluginSettings, () => _layoutId);
         _feeds = new FeedBroker(_supervisor, _catalog, _pluginLogs);
         _supervisor.WorkerNotifications = _feeds.OnNotification;
         var foreground = new ForegroundService();
         _contributions = new ContributionHost(_supervisor, _catalog, _pluginLogs, _log, foreground);
         _router = new CommandRouter(_catalog, _supervisor, foreground, config, _log);
-        _supervisor.WorkerRequests = (pluginId, request) => request.Method is Methods.PopupOpen or Methods.PopupClose
-            ? _surfaces!.ServeWorkerAsync(pluginId, request)
-            : _router.ServeWorkerAsync(pluginId, request);
+        _supervisor.WorkerRequests = (pluginId, request) => request.Method switch
+        {
+            Methods.PopupOpen or Methods.PopupClose => _surfaces!.ServeWorkerAsync(pluginId, request),
+            Methods.SettingsSave => settingsService.ServeWorkerAsync(pluginId, request),
+            _ => _router.ServeWorkerAsync(pluginId, request),
+        };
         AddBuiltIns(_router, foreground, dispatcher);
 
         var monitors = new MonitorService();

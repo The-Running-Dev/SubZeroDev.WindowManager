@@ -20,8 +20,9 @@ public sealed class AppearanceTests
         CopyThemeAs(run, "user.blue", json => json["tokens"]!["surface"] = "#FF224466");
         WritePreset(run, "user.blue", "user.blue", null);
         run.Start(HostRun.HostExe);
-        // The clock's initialize and instance.create go out before the baseline is taken.
-        var before = await run.WaitForAsync(s => HostRun.Texts(s, "subzerodev.clock").Count == 1, Startup);
+        // Every worker's initialize and instance.create go out before the baseline is taken: the clock and the launcher.
+        var before = await run.WaitForAsync(s => HostRun.Texts(s, "subzerodev.clock").Count == 1
+            && s["contributions"]!.AsArray().All(c => c!["reason"] is null), Startup);
         Assert.Equal(DefaultSurface, Background(before));
         var messages = (long)before["workerMessages"]!;
 

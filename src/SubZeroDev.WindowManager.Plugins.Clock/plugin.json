@@ -11,7 +11,13 @@
   "modes": [ "coexistence", "replacement" ],
   "requiresExplorer": false,
   "contributions": [
-    { "id": "clock", "kind": "panelItem", "displayName": "Clock", "multiInstance": true, "settingsSchema": {} }
+    { "id": "clock", "kind": "panelItem", "displayName": "Clock", "multiInstance": true, "settingsSchema": {
+        "type": "object",
+        "properties": {
+          "format": { "type": "string", "default": "HH:mm" },
+          "showDate": { "type": "boolean", "default": false }
+        }
+      } }
   ],
   "settingsVersion": 1
 }

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using SubZeroDev.WindowManager.Protocol;
 
 namespace SubZeroDev.WindowManager.Sdk;
@@ -31,6 +32,47 @@ public readonly record struct SdkResult(SdkError? Error)
 public readonly record struct SdkResult<T>(T? Value, SdkError? Error)
 {
     public bool Ok => Error is null;
+}
+
+/// <summary>Requests to the host that answer with no value, mapped to <see cref="SdkResult"/>.</summary>
+internal static class HostRequests
+{
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+
+    public static async Task<SdkResult> SendAsync(Connection connection, string method, object parameters, string subject,
+        CancellationToken ct)
+    {
+        if (!connection.IsOpen)
+        {
+            return new(new SdkError(ErrorCode.NotConnected, "The host connection is closed.", false));
+        }
+
+        RpcMessage response;
+        try
+        {
+            response = await connection.RequestAsync(method, parameters, RequestTimeout, ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            return new(new SdkError(ErrorCode.Timeout, $"The host did not answer {method} for {subject}.", true));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return new(new SdkError(ErrorCode.Cancelled, $"{method} for {subject} was cancelled.", false));
+        }
+        catch (IOException e)
+        {
+            return new(new SdkError(ErrorCode.NotConnected, e.Message, false));
+        }
+
+        if (response.Error is { } error)
+        {
+            var retryable = error.Data is JsonObject data && data["retryable"] is JsonValue v && v.TryGetValue<bool>(out var r) && r;
+            return new(new SdkError((ErrorCode)error.Code, error.Message, retryable));
+        }
+
+        return SdkResult.Success;
+    }
 }
 
 /// <summary>Thrown synchronously by <see cref="Surface.SetView"/> for a tree that breaks I11; a programming error in the plugin.</summary>

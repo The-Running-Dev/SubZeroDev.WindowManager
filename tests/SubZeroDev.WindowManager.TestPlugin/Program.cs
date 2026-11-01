@@ -17,6 +17,10 @@ namespace SubZeroDev.WindowManager.TestPlugin;
 /// event to <c>events.log</c> in its data folder;
 /// <c>subscriber</c> shows "ok" and appends "available &lt;true|false&gt; &lt;items&gt;" to <c>feed.log</c> in its
 /// data folder for each <c>windows.running</c> update (its manifest must subscribe to that feed).
+/// <c>save-settings</c> appends "start &lt;settings&gt;" to <c>settings.log</c>, then saves its plugin settings
+/// with <c>count</c> one higher and appends "saved &lt;ok|code&gt;"; <c>save-invalid</c> does the same but saves
+/// <c>count</c> as a string; <c>migrate-throws</c> appends "start &lt;settings&gt;" and throws from
+/// <c>MigrateSettingsAsync</c>. All three show "ok".
 /// <c>fixture-windows</c> is not a plugin at all: see <see cref="Fixture"/>.
 /// </summary>
 public static class Program
@@ -48,7 +52,7 @@ public sealed class ProbePlugin : Plugin
 {
     private IDisposable? _subscription;
 
-    protected internal override Task OnStartAsync(CancellationToken ct)
+    protected internal override async Task OnStartAsync(CancellationToken ct)
     {
         Program.DataDirectory = Context.DataDirectory;
         Directory.CreateDirectory(Context.DataDirectory);
@@ -62,6 +66,19 @@ public sealed class ProbePlugin : Plugin
             });
         }
 
+        if (Program.Scenario is "save-settings" or "save-invalid" or "migrate-throws")
+        {
+            Program.Append("settings.log", $"start {Context.Settings.ToJsonString()}");
+        }
+
+        if (Program.Scenario is "save-settings" or "save-invalid")
+        {
+            var count = Context.Settings["count"] is JsonValue value && value.TryGetValue<int>(out var n) ? n : 0;
+            JsonNode next = Program.Scenario == "save-settings" ? JsonValue.Create(count + 1) : JsonValue.Create("many");
+            var saved = await Context.SaveSettingsAsync(new JsonObject { ["count"] = next }, ct).ConfigureAwait(false);
+            Program.Append("settings.log", $"saved {(saved.Ok ? "ok" : $"{saved.Error!.Code} {(int)saved.Error.Code}")}");
+        }
+
         if (Program.Scenario == "buttons")
         {
             Context.Commands.Register("samples.echo", (context, _) =>
@@ -70,9 +87,12 @@ public sealed class ProbePlugin : Plugin
                 return Task.FromResult(new CommandResult(JsonValue.Create("echo")));
             });
         }
-
-        return Task.CompletedTask;
     }
+
+    protected internal override Task<MigratedSettings> MigrateSettingsAsync(SettingsScope scope, int fromVersion, JsonObject settings,
+        CancellationToken ct) => Program.Scenario == "migrate-throws"
+            ? throw new InvalidOperationException("This migration always fails.")
+            : base.MigrateSettingsAsync(scope, fromVersion, settings, ct);
 
     private static string Lower(InvocationSource source) => source.ToString().ToLowerInvariant();
 

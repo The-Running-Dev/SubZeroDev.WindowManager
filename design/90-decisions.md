@@ -14,6 +14,20 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S9: settings, saving and migration
+- **Context:** Plugins get settings at two levels: per instance in the layout, and per plugin in `plugin-settings\<id>.json`. Both have to be checked against the manifest's schema, change while the shell runs, and survive a plugin that moves to a newer settings version.
+- **Chosen:**
+  - A manifest whose `settingsSchema` (plugin or contribution) or `argsSchema` uses a keyword outside the subset is Invalid, and the problem names the keyword.
+  - A worker is only ever given settings that pass its schema, with the schema's defaults filled in. Stored settings that are unreadable, invalid, newer than the manifest or fail to migrate are replaced by the defaults in memory, a line goes to the plugin's log, and the file is left byte for byte.
+  - Plugin settings older than the manifest's `settingsVersion` are migrated by the worker through `settings.migrate` before `initialize`. The prior file is copied once to `<id>.v<N>.bak`, then the migrated settings are written. A migration that throws, returns another version or returns invalid settings writes nothing.
+  - `settings.save` is checked against the schema and refused with `1008 SettingsInvalid` (the host's `DocumentInvalid`) without writing. Instance saves rewrite the instance's `settings` in the active layout.
+  - A layout edit that only changes an instance's settings sends `instance.settingsChanged` to the live instance instead of recreating it; an external edit of a plugin-settings file sends `plugin.settingsChanged`.
+  - The clock gains `format` (default `HH:mm`) and `showDate`; it ticks each second when the format shows seconds.
+- **Rejected:**
+  - Recreating an instance on every settings edit, because the view would flash and the instance would lose its state.
+  - Rewriting invalid stored settings with the defaults, because a hand edit with one typo would lose everything else in the file.
+- **Known gap:** instance settings carry `settingsVersion` but are not migrated yet; an instance whose version differs is recreated with its settings as stored.
+
 ## 2026-11-01 — S8: the launcher and plugin popups
 - **Context:** The first popup, the first text input and the first list with a selection. It has to open fast on the monitor under the pointer, start what was picked in front of everything else, and close when the user looks away.
 - **Chosen:**

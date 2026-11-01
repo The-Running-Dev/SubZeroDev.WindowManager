@@ -268,6 +268,16 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
                 _instances.Remove(id);
                 Forget(id);
             }
+            else if (!JsonNode.DeepEquals(placement.Instance.Settings, entry.Placement.Instance.Settings))
+            {
+                // Only the settings changed: the live instance is told rather than recreated.
+                entry.Placement = placement;
+                if (entry is { Created: true, Channel: { } channel })
+                {
+                    channel.Notify(Methods.InstanceSettingsChanged,
+                        new InstanceSettingsChangedParams(SurfaceIdOf(id), EffectiveSettings(placement.Instance)));
+                }
+            }
         }
 
         foreach (var (id, placement) in wanted)
@@ -291,9 +301,9 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>Whether <paramref name="a"/> can stay the same live instance as <paramref name="b"/>, given new settings at most.</summary>
     private static bool SameInstance(ContributionInstance a, ContributionInstance b) =>
-        a.Plugin == b.Plugin && a.Contribution == b.Contribution && a.SettingsVersion == b.SettingsVersion
-        && JsonNode.DeepEquals(a.Settings, b.Settings);
+        a.Plugin == b.Plugin && a.Contribution == b.Contribution && a.SettingsVersion == b.SettingsVersion;
 
     /// <summary>Starts the worker if needed and creates its instances that are not created yet.</summary>
     private void Start(string pluginId)
@@ -406,13 +416,31 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
         channel.NotificationReceived += (_, notification) => Enqueue(() => OnNotification(channel, notification));
     }
 
+    /// <summary>
+    /// The instance's settings with the contribution's schema defaults filled in. Settings that fail the schema
+    /// are replaced by the defaults, with a line in the plugin's log; the layout file is not touched.
+    /// </summary>
+    private JsonObject EffectiveSettings(ContributionInstance instance)
+    {
+        var schema = _catalog.GetManifest(instance.Plugin)?.ContributionSettingsSchema(instance.Contribution);
+        var problems = SettingsSchemaSubset.Validate(schema, instance.Settings);
+        if (problems.Count == 0)
+        {
+            return SettingsSchemaSubset.WithDefaults(schema, instance.Settings);
+        }
+
+        _pluginLogs.Write(instance.Plugin, "host",
+            $"The settings of {instance.Id} fail the schema, so defaults are used: {string.Join("; ", problems)}");
+        return SettingsSchemaSubset.Defaults(schema);
+    }
+
     private void Create(IWorkerChannel channel, Entry entry)
     {
         entry.Created = true;
         entry.Channel = channel;
         var instance = entry.Placement.Instance;
         var request = new InstanceCreateParams(SurfaceIdOf(instance.Id), instance.Contribution,
-            (JsonObject)instance.Settings.DeepClone(), instance.SettingsVersion, entry.Placement.Context);
+            EffectiveSettings(instance), instance.SettingsVersion, entry.Placement.Context);
         _ = Task.Run(async () =>
         {
             var created = await channel.RequestAsync<InstanceCreateParams, JsonElement?>(Methods.InstanceCreate, request,
@@ -709,7 +737,7 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
 
     private sealed class Entry(InstancePlacement placement)
     {
-        public InstancePlacement Placement { get; } = placement;
+        public InstancePlacement Placement { get; set; } = placement;
 
         public string PluginId => Placement.Instance.Plugin;
 

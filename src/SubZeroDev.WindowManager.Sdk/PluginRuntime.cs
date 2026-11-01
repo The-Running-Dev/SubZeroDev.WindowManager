@@ -85,6 +85,23 @@ public static class PluginRuntime
         return declared;
     }
 
+    /// <summary>plugin.json's <c>settingsVersion</c>; 1 when absent or unreadable.</summary>
+    internal static int DeclaredSettingsVersion
+    {
+        get
+        {
+            try
+            {
+                return JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "plugin.json")))?["settingsVersion"] is JsonValue value
+                    && value.TryGetValue<int>(out var version) ? version : 1;
+            }
+            catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                return 1;
+            }
+        }
+    }
+
     private static string? ReadPluginId()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "plugin.json");
@@ -200,6 +217,23 @@ public static class PluginRuntime
                 case Methods.InstanceSettingsChanged:
                     Enqueue(message, () => SettingsChangedAsync(message.ParamsAs<InstanceSettingsChangedParams>()!));
                     break;
+                case Methods.PluginSettingsChanged:
+                    var changed = message.ParamsAs<PluginSettingsChangedParams>()!;
+                    Enqueue(message, () =>
+                    {
+                        if (plugin.Context is not { } context)
+                        {
+                            return Task.CompletedTask;
+                        }
+
+                        context.Settings = changed.Settings;
+                        return plugin.OnPluginSettingsChangedAsync(changed.Settings, CancellationToken.None);
+                    });
+                    break;
+                case Methods.SettingsMigrate when message.Id is { } id:
+                    var migrate = message.ParamsAs<SettingsMigrateParams>()!;
+                    _callbacks.Writer.TryWrite(() => MigrateAsync(id, migrate));
+                    break;
                 case Methods.ElementEvent:
                     Enqueue(message, () => EventAsync(message.ParamsAs<ElementEventParams>()!));
                     break;
@@ -275,6 +309,22 @@ public static class PluginRuntime
             await plugin.OnStartAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
+        private async Task MigrateAsync(long id, SettingsMigrateParams parameters)
+        {
+            try
+            {
+                var scope = parameters.Scope == Scope.Instance ? SettingsScope.Instance : SettingsScope.Plugin;
+                var migrated = await plugin.MigrateSettingsAsync(scope, parameters.FromVersion, parameters.Settings, CancellationToken.None)
+                    .ConfigureAwait(false);
+                connection.Respond(id, new SettingsMigrateResult(migrated.Version, migrated.Settings));
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                LogError(exception, "settings.migrate failed.");
+                connection.Fail(id, WireErrorCodes.CommandFailed, exception.Message);
+            }
+        }
+
         private async Task CreateAsync(InstanceCreateParams parameters)
         {
             var surface = new Surface(connection, parameters.InstanceId);
@@ -292,10 +342,16 @@ public static class PluginRuntime
             }
         }
 
-        private Task SettingsChangedAsync(InstanceSettingsChangedParams parameters) =>
-            _instances.TryGetValue(parameters.InstanceId, out var instance)
-                ? instance.OnSettingsChangedAsync(parameters.Settings, CancellationToken.None)
-                : Task.CompletedTask;
+        private Task SettingsChangedAsync(InstanceSettingsChangedParams parameters)
+        {
+            if (!_instances.TryGetValue(parameters.InstanceId, out var instance))
+            {
+                return Task.CompletedTask;
+            }
+
+            instance.Settings = parameters.Settings;
+            return instance.OnSettingsChangedAsync(parameters.Settings, CancellationToken.None);
+        }
 
         private Task EventAsync(ElementEventParams parameters)
         {

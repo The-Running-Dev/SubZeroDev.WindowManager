@@ -35,6 +35,17 @@ public sealed record PluginManifest(
     public IReadOnlyList<string> Subscribes =>
         [.. (Raw["subscribes"] as JsonArray ?? []).Select(item => item is JsonValue value && value.TryGetValue<string>(out var id) ? id : string.Empty)];
 
+    /// <summary>The plugin-level <c>settingsSchema</c>; null when absent.</summary>
+    public JsonObject? SettingsSchema => Raw["settingsSchema"] as JsonObject;
+
+    /// <summary>The version of the plugin's settings shape; 1 when absent.</summary>
+    public int SettingsVersion => Raw["settingsVersion"] is JsonValue value && value.TryGetValue<int>(out var version) ? version : 1;
+
+    /// <summary>The <c>settingsSchema</c> of a contribution; null when absent or the contribution is not declared.</summary>
+    public JsonObject? ContributionSettingsSchema(string contributionId) =>
+        (Raw["contributions"] as JsonArray ?? []).OfType<JsonObject>()
+            .FirstOrDefault(contribution => Text(contribution, "id") == contributionId)?["settingsSchema"] as JsonObject;
+
     private static string? Text(JsonObject json, string name) =>
         json[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 }
@@ -130,6 +141,7 @@ public static partial class PluginManifestReader
                     problems.Add($"contribution '{contributionId}' has a multiInstance that is not true or false.");
                 }
 
+                SettingsSchemaSubset.Check(item["settingsSchema"], $"contribution '{contributionId}' settingsSchema", problems);
                 contributions.Add(new ContributionDeclaration(
                     contributionId ?? string.Empty, kind ?? string.Empty,
                     Text(item, "displayName") ?? contributionId ?? string.Empty,
@@ -165,6 +177,14 @@ public static partial class PluginManifestReader
             {
                 problems.Add($"command '{Text(command, "id")}' has a defaultHotkey that is not a string.");
             }
+
+            SettingsSchemaSubset.Check(command["argsSchema"], $"command '{Text(command, "id")}' argsSchema", problems);
+        }
+
+        SettingsSchemaSubset.Check(document["settingsSchema"], "settingsSchema", problems);
+        if (document["settingsVersion"] is { } settingsVersion && !(Int(document, "settingsVersion") is > 0))
+        {
+            problems.Add($"settingsVersion {settingsVersion.ToJsonString()} is not a positive whole number.");
         }
 
         if (document["dependencies"] is JsonArray dependencies

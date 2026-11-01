@@ -71,6 +71,12 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
     /// </summary>
     public Action<string, WorkerNotification>? WorkerNotifications { get; set; }
 
+    /// <summary>
+    /// Where plugin-level settings are loaded, and migrated through the worker, before <c>initialize</c>. Set once
+    /// at startup; without it workers start with empty settings.
+    /// </summary>
+    public PluginSettingsStore? PluginSettings { get; set; }
+
     public IReadOnlyList<PluginStatus> All
     {
         get
@@ -318,7 +324,7 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
             }
 
             process = started.Value!;
-            (channel, var outcome) = await ConnectAsync(worker, pipe, process, token, dataDirectory, ct).ConfigureAwait(false);
+            (channel, var outcome) = await ConnectAsync(worker, manifest, pipe, process, token, dataDirectory, ct).ConfigureAwait(false);
             if (channel is null)
             {
                 return outcome;
@@ -353,8 +359,8 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
     /// Waits for the worker to connect, then completes the handshake and <c>initialize</c>. Returns the open
     /// channel, or no channel and the outcome once the process has been dealt with.
     /// </summary>
-    private async Task<(WorkerChannel? Channel, Outcome Outcome)> ConnectAsync(Worker worker, NamedPipeServerStream pipe,
-        IWorkerProcess process, string token, string dataDirectory, CancellationToken ct)
+    private async Task<(WorkerChannel? Channel, Outcome Outcome)> ConnectAsync(Worker worker, PluginManifest manifest,
+        NamedPipeServerStream pipe, IWorkerProcess process, string token, string dataDirectory, CancellationToken ct)
     {
         var pluginId = worker.Status.PluginId;
         _ = PumpStandardErrorAsync(pluginId, process.StandardError);
@@ -420,8 +426,13 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         channel.Diagnostic += (_, text) => _pluginLogs.Write(pluginId, "host", text);
         ChannelOpened?.Invoke(this, channel);
         channel.Start();
+        var settings = PluginSettings is { } store
+            ? await store.LoadAsync(manifest, (fromVersion, stored, cancel) => channel.RequestAsync<SettingsMigrateParams, SettingsMigrateResult>(
+                Methods.SettingsMigrate, new SettingsMigrateParams(Scope.Plugin, null, fromVersion, stored), InitializeTimeout, cancel), ct)
+                .ConfigureAwait(false)
+            : new JsonObject();
         var initialize = await channel.RequestAsync<InitializeParams, JsonElement?>(Methods.Initialize,
-            new InitializeParams(ProtocolInfo.ProtocolVersion, _hostVersion, _mode, new JsonObject(), 0, dataDirectory,
+            new InitializeParams(ProtocolInfo.ProtocolVersion, _hostVersion, _mode, settings, manifest.SettingsVersion, dataDirectory,
                 CultureInfo.CurrentUICulture.Name),
             InitializeTimeout, ct).ConfigureAwait(false);
         if (!initialize.Ok)

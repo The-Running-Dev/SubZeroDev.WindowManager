@@ -250,6 +250,7 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
         CoreErrorCode.Timeout => WireErrorCodes.Timeout,
         CoreErrorCode.Cancelled => WireErrorCodes.Cancelled,
         CoreErrorCode.Undeclared => WireErrorCodes.Undeclared,
+        CoreErrorCode.DocumentInvalid => WireErrorCodes.SettingsInvalid,
         _ => WireErrorCodes.CommandFailed,
     };
 

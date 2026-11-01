@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Nodes;
 using SubZeroDev.WindowManager.Sdk;
 
 namespace SubZeroDev.WindowManager.Plugins.Clock;
@@ -13,14 +14,25 @@ public sealed class ClockPlugin : Plugin
     protected override ContributionInstance CreateInstance(InstanceRequest request) => new ClockInstance(request);
 }
 
-/// <summary>Shows <c>HH:mm</c> and updates it just after each minute boundary.</summary>
+/// <summary>
+/// Shows the time in the instance's <c>format</c> (default <c>HH:mm</c>), with the date first when
+/// <c>showDate</c> is set. It updates each second when the format shows seconds, else just after each minute.
+/// </summary>
 public sealed class ClockInstance(InstanceRequest request) : ContributionInstance(request)
 {
+    private const string DefaultFormat = "HH:mm";
+    private readonly Lock _gate = new();
     private Timer? _timer;
 
     protected override Task OnCreatedAsync(CancellationToken ct)
     {
         Surface.SetView(View.Text("time", Prop<string>.State("time"), "clock"));
+        Tick(null);
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnSettingsChangedAsync(JsonObject settings, CancellationToken ct)
+    {
         Tick(null);
         return Task.CompletedTask;
     }
@@ -35,17 +47,39 @@ public sealed class ClockInstance(InstanceRequest request) : ContributionInstanc
         await base.DisposeAsync().ConfigureAwait(false);
     }
 
+    private string Format => Settings["format"] is JsonValue value && value.TryGetValue<string>(out var text) && text.Length > 0
+        ? text
+        : DefaultFormat;
+
+    private bool ShowDate => Settings["showDate"] is JsonValue value && value.TryGetValue<bool>(out var show) && show;
+
     private void Tick(object? _)
     {
-        var now = DateTime.Now;
-        Surface.SetState("time", now.ToString("HH:mm", CultureInfo.InvariantCulture));
-        var next = now.Date.AddHours(now.Hour).AddMinutes(now.Minute + 1).AddMilliseconds(50) - now;
-        if (_timer is null)
+        lock (_gate)
         {
-            _timer = new Timer(Tick, null, next, Timeout.InfiniteTimeSpan);
-        }
-        else
-        {
+            var now = DateTime.Now;
+            var format = Format;
+            string text;
+            try
+            {
+                text = now.ToString(format, CultureInfo.InvariantCulture);
+            }
+            catch (FormatException)
+            {
+                format = DefaultFormat;
+                text = now.ToString(format, CultureInfo.InvariantCulture);
+            }
+
+            Surface.SetState("time", ShowDate ? $"{now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} {text}" : text);
+            var next = format.Contains('s', StringComparison.Ordinal)
+                ? now.Date.AddHours(now.Hour).AddMinutes(now.Minute).AddSeconds(now.Second + 1).AddMilliseconds(50) - now
+                : now.Date.AddHours(now.Hour).AddMinutes(now.Minute + 1).AddMilliseconds(50) - now;
+            if (_timer is null)
+            {
+                _timer = new Timer(Tick, null, next, Timeout.InfiniteTimeSpan);
+                return;
+            }
+
             try
             {
                 _timer.Change(next, Timeout.InfiniteTimeSpan);

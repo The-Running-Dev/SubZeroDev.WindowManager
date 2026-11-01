@@ -13,14 +13,9 @@ public interface IPopups
 /// <summary>A popup the plugin owns. Its view is kept while it is closed, so it can be set before opening.</summary>
 public sealed class PopupSurface : Surface
 {
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
-
-    private readonly Connection _connection;
-
     internal PopupSurface(Connection connection, string popupId)
         : base(connection, "popup:" + popupId)
     {
-        _connection = connection;
         PopupId = popupId;
     }
 
@@ -28,44 +23,10 @@ public sealed class PopupSurface : Surface
 
     /// <summary>Asks the host to show the popup at the anchor; it answers once the window is shown.</summary>
     public Task<SdkResult> OpenAsync(PopupAnchor anchor, CancellationToken ct) =>
-        RequestAsync(Methods.PopupOpen, new PopupOpenParams(PopupId, anchor), ct);
+        HostRequests.SendAsync(Connection, Methods.PopupOpen, new PopupOpenParams(PopupId, anchor), PopupId, ct);
 
     public Task<SdkResult> CloseAsync(CancellationToken ct) =>
-        RequestAsync(Methods.PopupClose, new PopupCloseParams(PopupId), ct);
-
-    private async Task<SdkResult> RequestAsync(string method, object parameters, CancellationToken ct)
-    {
-        if (!_connection.IsOpen)
-        {
-            return new(new SdkError(ErrorCode.NotConnected, "The host connection is closed.", false));
-        }
-
-        RpcMessage response;
-        try
-        {
-            response = await _connection.RequestAsync(method, parameters, RequestTimeout, ct).ConfigureAwait(false);
-        }
-        catch (TimeoutException)
-        {
-            return new(new SdkError(ErrorCode.Timeout, $"The host did not answer {method} for {PopupId}.", true));
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            return new(new SdkError(ErrorCode.Cancelled, $"{method} for {PopupId} was cancelled.", false));
-        }
-        catch (IOException e)
-        {
-            return new(new SdkError(ErrorCode.NotConnected, e.Message, false));
-        }
-
-        if (response.Error is { } error)
-        {
-            var retryable = error.Data is JsonObject data && data["retryable"] is JsonValue v && v.TryGetValue<bool>(out var r) && r;
-            return new(new SdkError((ErrorCode)error.Code, error.Message, retryable));
-        }
-
-        return SdkResult.Success;
-    }
+        HostRequests.SendAsync(Connection, Methods.PopupClose, new PopupCloseParams(PopupId), PopupId, ct);
 }
 
 internal sealed class Popups(Connection connection, IReadOnlySet<string> declared) : IPopups

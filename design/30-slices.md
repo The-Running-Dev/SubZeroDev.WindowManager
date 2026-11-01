@@ -135,7 +135,7 @@ Acceptance:
 Out of scope: recent items, file search, web search, calculator, pinned favourites.
 
 ## S9 — Settings that survive restart
-Status: todo
+Status: done
 Delivers: Ben can change how a plugin item behaves, for example the clock's format, and the change sticks across restarts and plugin updates.
 Touches: Protocol (`settings.migrate`, `settings.save`, `instance.settingsChanged`, `plugin.settingsChanged`); Sdk (`MigrateSettingsAsync`, `SaveSettingsAsync`); Host.Core (settings schema subset validation, plugin-settings documents, migration and backup); clock settings `format` and `showDate`
 Depends on: S6
