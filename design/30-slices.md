@@ -56,7 +56,7 @@ Acceptance:
 Out of scope: guardian recovery of the host, the plugin manager UI (S10), disabling plugins.
 
 ## S4 — The desktop is restored even when the app dies
-Status: todo
+Status: done
 Delivers: If the app is killed or crashes, Ben gets the normal Windows desktop back without the panel's reserved space left behind, and the app comes back on its own.
 Touches: Recovery (`Journal`, `Reverter`, `JournalDocument`); Host.Core (`IRecoveryJournal`); Host.Platform (`IAppBarService` journal-first registration); Guardian (stale-journal recovery, host watch and ping, relaunch budget, `--attach`, `--recover-only`, crash records); Host.App (guardian link, relaunching the guardian)
 Depends on: S1

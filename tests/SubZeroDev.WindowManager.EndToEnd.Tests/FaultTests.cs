@@ -102,8 +102,12 @@ public sealed partial class FaultTests
         Assert.Equal(5, Times(Path.Combine(data, "created.log")).Count);
 
         await sampling.CancelAsync();
-        Assert.Equal(1, await sampler);
-        Assert.Equal(stallsBefore, (long)recovered["watchdog"]!["stalls"]!);
+        var (most, overlaps) = await sampler;
+        Assert.True(most == 1, $"Up to {most} faulty-plugin processes ran at once: {overlaps}");
+        var stalls = (long)recovered["watchdog"]!["stalls"]!;
+        Assert.True(stallsBefore == stalls, $"{stalls - stallsBefore} UI stalls during the test:{Environment.NewLine}"
+            + string.Join(Environment.NewLine, run.HostLog().Split('\n').Where(line => line.Contains("watchdog", StringComparison.Ordinal)
+                || line.Contains(Faulty, StringComparison.Ordinal))));
         Assert.True(Live(recovered, Clock));
         await run.WaitForAsync(s => ClockText(s) == Minute(DateTime.Now), TimeSpan.FromSeconds(3));
         Assert.Equal(0, await run.StopAsync());
@@ -151,23 +155,27 @@ public sealed partial class FaultTests
         return (long)pressed["lastPointerPress"]! - clicked;
     }
 
-    /// <summary>The most faulty-plugin processes seen at once, sampling every 50 ms (I4).</summary>
-    private static async Task<int> SampleProcessesAsync(string dataRoot, CancellationToken ct)
+    /// <summary>
+    /// The most faulty-plugin processes running at once, sampling every 50 ms (I4). A process that has ended can still
+    /// be listed while something holds a handle to it, so only those that have not exited count.
+    /// </summary>
+    private static async Task<(int Most, string Overlaps)> SampleProcessesAsync(string dataRoot, CancellationToken ct)
     {
         var most = 0;
-        var folder = Path.Combine(dataRoot, "plugins", Faulty);
+        var overlaps = new List<string>();
+        var folder = Path.Combine(dataRoot, "plugins", Faulty) + Path.DirectorySeparatorChar;
         while (!ct.IsCancellationRequested)
         {
-            var count = 0;
+            var seen = new List<string>();
             foreach (var process in Process.GetProcessesByName(TestPluginProcess))
             {
                 using (process)
                 {
                     try
                     {
-                        if (process.MainModule?.FileName.StartsWith(folder, StringComparison.OrdinalIgnoreCase) == true)
+                        if (process.MainModule?.FileName.StartsWith(folder, StringComparison.OrdinalIgnoreCase) == true && !process.HasExited)
                         {
-                            count++;
+                            seen.Add($"{process.Id}@{process.StartTime:HH:mm:ss.fff}");
                         }
                     }
                     catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception)
@@ -176,7 +184,12 @@ public sealed partial class FaultTests
                 }
             }
 
-            most = Math.Max(most, count);
+            if (seen.Count > 1 && overlaps.Count < 10)
+            {
+                overlaps.Add($"{DateTime.Now:HH:mm:ss.fff} [{string.Join(", ", seen)}]");
+            }
+
+            most = Math.Max(most, seen.Count);
             try
             {
                 await Task.Delay(50, ct);
@@ -186,7 +199,7 @@ public sealed partial class FaultTests
             }
         }
 
-        return most;
+        return (most, string.Join("; ", overlaps));
     }
 
     private static JsonObject Contribution(JsonObject status, string plugin) =>

@@ -114,7 +114,9 @@ public sealed class SurfaceManager : ISurfaceManager
                 }
                 else
                 {
-                    _log.Write(LogLevel.Warning, "surfaces", $"Panel {definition.Id} could not reserve space: {granted.Error}");
+                    window.ReserveError = granted.Error!.Code.ToString();
+                    window.Panel.Behaviour = "overlay";
+                    _log.Write(LogLevel.Error, "surfaces", $"Panel {definition.Id} could not reserve space, shown as overlay: {granted.Error}");
                     window.MoveTo(OverlayRect(primary.Bounds, edge, window.ThicknessPx));
                 }
             }

@@ -3,5 +3,9 @@
     <OutputType>WinExe</OutputType>
     <AssemblyName>SubZeroDev.WindowManager</AssemblyName>
     <RootNamespace>SubZeroDev.WindowManager.Guardian</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Recovery\SubZeroDev.WindowManager.Recovery.csproj" />
+  </ItemGroup>
 </Project>

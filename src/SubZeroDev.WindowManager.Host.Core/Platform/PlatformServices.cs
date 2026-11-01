@@ -43,3 +43,13 @@ public interface IAppBarService
 }
 
 public sealed record FullscreenChangedEventArgs(string MonitorId, bool IsFullscreen);
+
+/// <summary>Write-ahead record of desktop changes, implemented over the Recovery module.</summary>
+public interface IRecoveryJournal
+{
+    Task<Outcome<Guid>> BeginAsync(Recovery.DesktopChange change, CancellationToken ct);   // durable before return (I6)
+
+    Task<Outcome> EndAsync(Guid changeId, CancellationToken ct);                  // after revert
+
+    Task<Outcome> MarkCleanExitAsync(CancellationToken ct);
+}

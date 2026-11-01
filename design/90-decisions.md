@@ -13,6 +13,62 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-01 — S4: The journal lives in its own Recovery project
+- **Context:** The guardian must revert a journal without loading the host, and the host must write the same document.
+- **Chosen:** `SubZeroDev.WindowManager.Recovery` holds `JournalDocument`, `Journal`, `Reverter` and `Recoverer`, with its own `Outcome` and `RecoveryErrorCode` (`JournalUnreadable`, `JournalWriteFailed`, `RevertFailed`). Host.Core's `RecoveryJournal` wraps it and maps a failed write to `CoreErrorCode.JournalWriteFailed`. The contract names only `JournalUnreadable`; `JournalWriteFailed` and `RevertFailed` are added.
+- **Rejected:**
+  - Putting the journal in Host.Core, because the guardian would then carry the host's dependencies.
+
+## 2026-11-01 — S4: An appBar entry records the window, not the rectangle
+- **Context:** Reverting an app bar is `ABM_REMOVE` for its window; the shell then recomputes the work area itself.
+- **Chosen:** The `appBar` payload holds `hwnd`, `edge` and `thicknessPx`. The entry is written (and flushed) before `ABM_NEW` and ended after `ABM_REMOVE` returns; a refused `ABM_NEW` ends it at once.
+- **Rejected:**
+  - Recording the granted rectangle, because it is known only after `ABM_SETPOS` and is not needed to revert.
+
+## 2026-11-01 — S4: A failed journal write shows the panel as an overlay
+- **Context:** I6 forbids an app bar the journal does not know about.
+- **Chosen:** When `BeginAsync` fails, `RegisterAsync` returns `JournalWriteFailed` without sending `ABM_NEW`. The surface manager shows the panel as `overlay` over the monitor bounds, sets `PanelWindow.ReserveError` and logs the error.
+- **Rejected:**
+  - Reserving anyway, because a crash would then leave space nobody can give back.
+
+## 2026-11-01 — S4: Both the guardian and the host run startup recovery
+- **Context:** A host can be started without a guardian (tests, a debugger), and the guardian may have died with the previous host.
+- **Chosen:** `Recoverer.Recover` runs in the guardian before it starts a host and in the host before it writes its fresh journal. A journal whose host is alive (pid and start time within 2 s) is left alone; a dead host's entries are reverted newest first, the journal is cleared and a crash record is written. An unreadable journal is moved to `.corrupt` and startup continues.
+- **Rejected:**
+  - Recovery only in the guardian, because a host started on its own would overwrite a stale journal it never reverted.
+
+## 2026-11-01 — S4: The host answers pings through the UI thread
+- **Context:** S4.6 asks for a host that stops answering for 30 s to be killed. A hung UI thread with a healthy pipe thread must count as hung.
+- **Chosen:** The guardian serves a `CurrentUserOnly` pipe and writes `ping` every 5 s. The host's guardian link answers `pong` only after a callback queued on the UI dispatcher has run. The guardian checks once a second and kills the host's process tree 30 s after the last reply, then recovers with reason `hostHung`.
+- **Rejected:**
+  - Answering from the pipe thread, because a frozen UI would still look alive.
+  - Window-message probes (`SendMessageTimeout`), because the host may have no window yet during startup.
+
+## 2026-11-01 — S4: Guardian restarts use their own budget copy and 1, 2, 4 s backoffs
+- **Context:** I17 sets the host restart budget from `restartPolicy` (default 3 in 300 s). The guardian does not reference Host.Core, where `RestartBudget` lives.
+- **Chosen:** The guardian reads `restartPolicy` from `settings.json` itself and keeps a sliding-window budget with backoffs of 1, 2 and 4 s. The host uses `RestartBudget` with the same backoffs to relaunch a dead guardian with `--attach <hostPid>`; the attached guardian listens on a pipe named from the host pid, so the host knows it without being told. When the budget is spent the guardian shows a message naming its log and exits 3.
+- **Rejected:**
+  - The plugin backoffs (1, 5, 30 s), because a host restart already takes seconds and S4.2 allows 10 s.
+  - Referencing Host.Core from the guardian, because it would load the host's dependencies into the watchdog.
+
+## 2026-11-01 — S4: Tests observe recovery through checkpoints and guardian.json
+- **Context:** S4.1 needs the journal read by another process between the write and `ABM_NEW`, and S4.5 needs the guardian's message dismissed.
+- **Chosen:** Under the test hook, `AppBarService` awaits named checkpoints (`before-appbar`, `after-remove`) that hold while `hook\hold-<name>` exists, a `hang` file sleeps the UI thread for 2 minutes, and the guardian writes `hook\guardian.json` (pid, args, state, hostPid) and waits for `hook\dismiss` instead of a message box. Without the hook the checkpoints are no-ops.
+- **Rejected:**
+  - Timing-based reads of the journal, because `ABM_NEW` follows the write within microseconds.
+
+## 2026-11-01 — S4: The guardian exits 4 when it cannot start the host
+- **Context:** The contract gives the guardian `0`, `2` and `3`, and none fits a guardian that never got a host running: a missing host executable or a bad `--attach` argument.
+- **Chosen:** Exit `4` for that case. A host that exits `2` (another host running) makes the guardian exit `2`, and a spent budget is `3` as before. A host that exits `0` with entries still journalled is reverted before the guardian exits `0`.
+- **Rejected:**
+  - Exit `3`, because the restart budget was never touched and the log would point the wrong way.
+
+## 2026-11-01 — S4: Supervision survives its own failures
+- **Context:** Review found that one unexpected exception in the guardian's ping loop would stop the pings and get a healthy host killed as hung, and that a sleeping machine would count its sleep as 30 s of silence.
+- **Chosen:** The ping loop logs any failure and serves the pipe again a second later; the host reconnects the same way. Silence is counted a tick at a time, at most 2 s per tick. A kill that does not end the host within 10 s is logged and tried again. Journal reads and replacements are retried for 250 ms while the other process has the file open.
+- **Rejected:**
+  - Wall-clock time since the last reply, because it jumps after sleep or a clock change.
+
 ## 2026-11-01 — S3: The message rate is 200 a second, measured over the trailing second
 - **Context:** S3.7 needs a configured rate, and the design names none. A clock or a media widget sends a few patches a second; a drag or a progress bar can send dozens.
 - **Chosen:** `SupervisorTimings.MessagesPerSecond` = 200, counted over the second before each message. Past the rate, events are dropped (with a rate-limited log line) and `state.patch` and `view.set` still pass, because the host coalesces them latest-wins. Ten seconds in which every message is over the rate close the channel with `Flood`, timed from the first; a message within the rate starts the count again.
