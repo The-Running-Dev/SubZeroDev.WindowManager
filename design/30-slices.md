@@ -8,7 +8,7 @@ Built from [10-design.md](10-design.md) and [20-contract.md](20-contract.md). Th
 Each criterion runs as an automated test unless it says *manual*. A manual check is recorded in the slice's pull request with the observed result.
 
 ## S1 — Themed panel on the desktop
-Status: todo
+Status: done
 Delivers: Ben can start the app and get a panel along the bottom of the main screen. Windows treats it like a second taskbar, its look comes from an editable theme file, and it disappears cleanly on quit.
 Touches: solution and CI build; Guardian (launch and wait only); Host.App; Host.Core (`IConfigStore` read path for `settings.json`, layouts and presets; diagnostics log); Host.Platform (`IMonitorService`, `IAppBarService`, single-instance mutex); Host.Theming (theme load and validate, `Wm.Panel`, `Wm.Placeholder`); Host.Surfaces (panel window, placeholder); built-in theme `subzerodev.default`, layout `subzerodev.default`, preset `subzerodev.default`
 Depends on: none

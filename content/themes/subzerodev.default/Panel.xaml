@@ -1,0 +1,71 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:wm="using:SubZeroDev.WindowManager.Host.Surfaces.Controls">
+
+    <Style x:Key="Wm.Panel" TargetType="wm:WmPanel">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmPanel">
+                    <Border Background="{ThemeResource Wm.Brush.surface}" BorderBrush="{ThemeResource Wm.Brush.border}" BorderThickness="0,1,0,0">
+                        <Grid Padding="6,0" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ContentPresenter Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Center" Content="{TemplateBinding Start}" />
+                            <ContentPresenter Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Content="{TemplateBinding Center}" />
+                            <ContentPresenter Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Content="{TemplateBinding End}" />
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Wm.Placeholder" TargetType="wm:WmPlaceholder">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmPlaceholder">
+                    <Border x:Name="Root" Padding="8,2" CornerRadius="4" Background="{ThemeResource Wm.Brush.surfaceAlt}"
+                            BorderBrush="{ThemeResource Wm.Brush.border}" BorderThickness="1">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="ReasonStates">
+                                <VisualState x:Name="Starting" />
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Opacity" Value="0.5" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Incompatible">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.BorderBrush" Value="{ThemeResource Wm.Brush.warning}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Invalid">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.BorderBrush" Value="{ThemeResource Wm.Brush.warning}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Faulted">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.BorderBrush" Value="{ThemeResource Wm.Brush.danger}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Unavailable" />
+                                <VisualState x:Name="NotSupportedInMode" />
+                                <VisualState x:Name="Missing">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.BorderBrush" Value="{ThemeResource Wm.Brush.attention}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <TextBlock Foreground="{ThemeResource Wm.Brush.textMuted}" FontSize="12" Text="{TemplateBinding PluginName}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

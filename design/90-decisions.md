@@ -13,6 +13,13 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-01 — S1: Pin Windows App SDK 1.8.260317003
+- **Context:** The platform baseline left the exact Windows App SDK release to the first slice, and the prototype checks had to pass on it.
+- **Chosen:** Windows App SDK 1.8.260317003 with SDK.BuildTools 10.0.26100.4654, pinned in `Directory.Packages.props`. Runtime-loaded templates with visual states, an acrylic backdrop behind a translucent panel, and app bars all work on it unpackaged and self-contained.
+- **Rejected:**
+  - A 2.x release, because none had been validated against the prototype checks.
+  - Floating or wildcard versions, because a silent runtime change would invalidate the checks.
+
 ## 2026-11-01 — Platform baseline: .NET 10, pinned Windows App SDK, Windows 11 22H2, x64
 - **Context:** The brief left versions, minimum build and architectures open.
 - **Chosen:** .NET 10 (LTS) for the host, guardian, SDK and plugins. A stable Windows App SDK release, pinned in the first slice. Windows 11 22H2 (build 22621) minimum. x64 only.

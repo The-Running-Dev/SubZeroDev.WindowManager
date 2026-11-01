@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>SubZeroDev.WindowManager</AssemblyName>
+    <RootNamespace>SubZeroDev.WindowManager.Guardian</RootNamespace>
+  </PropertyGroup>
+</Project>

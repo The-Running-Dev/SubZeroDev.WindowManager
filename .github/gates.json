@@ -1,0 +1,7 @@
+{
+  "gates": [
+    { "name": "build", "command": "dotnet build SubZeroDev.WindowManager.slnx -c Release" },
+    { "name": "test", "command": "dotnet test SubZeroDev.WindowManager.slnx -c Release --no-build" },
+    { "name": "hygiene", "command": "git diff --check HEAD" }
+  ]
+}
