@@ -59,6 +59,9 @@ public sealed class PanelWindow
     /// <summary>The rectangle the shell granted, when the panel reserves space.</summary>
     public RectInt? AppBarRect { get; set; }
 
+    /// <summary>Why a reserve panel fell back to overlay (a <c>CoreErrorCode</c> name), or null.</summary>
+    public string? ReserveError { get; set; }
+
     public RectInt Bounds
     {
         get

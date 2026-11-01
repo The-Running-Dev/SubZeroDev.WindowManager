@@ -17,7 +17,8 @@ namespace SubZeroDev.WindowManager.Host.App;
 /// End-to-end test support, active only when <c>SUBZERODEV_WM_TEST_HOOK</c> names a directory. Every
 /// 250 ms it writes <c>status.json</c> there (what the host shows, read from the live visual tree) and
 /// exits normally once an <c>exit</c> file appears. A <c>retry</c> file holding a plugin id runs that
-/// plugin's placeholder Retry command, and every pointer press on a panel is time-stamped.
+/// plugin's placeholder Retry command, every pointer press on a panel is time-stamped, and a <c>hang</c>
+/// file blocks the UI thread for two minutes so the guardian sees the host stop answering.
 /// </summary>
 internal sealed class TestHook
 {
@@ -36,14 +37,17 @@ internal sealed class TestHook
     private readonly IPackageCatalog _catalog;
     private readonly DispatcherQueueTimer _timer;
     private readonly DispatcherWatchdog _watchdog;
+    private readonly GuardianLink? _guardian;
     private readonly HashSet<WmPanel> _watched = [];
     private long _lastPointerPress;
+    private int _writing;
 
     public TestHook(string directory, App app, HostOptions options, Locations locations, ThemeEngine theme, SurfaceManager surfaces,
         IPluginSupervisor supervisor, WorkerLauncher launcher, IPackageCatalog catalog, DispatcherQueue dispatcher,
-        DispatcherWatchdog watchdog)
+        DispatcherWatchdog watchdog, GuardianLink? guardian)
     {
         _watchdog = watchdog;
+        _guardian = guardian;
         _supervisor = supervisor;
         _launcher = launcher;
         _catalog = catalog;
@@ -67,6 +71,26 @@ internal sealed class TestHook
 
     public void Stop() => _timer.Stop();
 
+    /// <summary>
+    /// A desktop-change checkpoint for tests: when <c>hold-&lt;name&gt;</c> exists the host writes
+    /// <c>held-&lt;name&gt;</c> and waits (up to a minute) until the test deletes the hold file.
+    /// </summary>
+    public static Func<string, Task> Checkpoint(string directory) => async name =>
+    {
+        var hold = Path.Combine(directory, "hold-" + name);
+        if (!File.Exists(hold))
+        {
+            return;
+        }
+
+        await File.WriteAllTextAsync(Path.Combine(directory, "held-" + name), string.Empty);
+        var deadline = DateTime.UtcNow.AddMinutes(1);
+        while (File.Exists(hold) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(50);
+        }
+    };
+
     private void Tick()
     {
         if (File.Exists(Path.Combine(_directory, "exit")))
@@ -76,19 +100,49 @@ internal sealed class TestHook
             return;
         }
 
-        // The test reads status.json while this replaces it; a refused replace waits for the next tick.
+        var hang = Path.Combine(_directory, "hang");
+        if (File.Exists(hang))
+        {
+            File.Delete(hang);
+            Thread.Sleep(TimeSpan.FromMinutes(2));
+        }
+
         // An exception escaping a dispatcher callback ends a WinUI process without UnhandledException.
         try
         {
             WatchPointers();
             RunRetry();
-            var temp = Path.Combine(_directory, "status.json.tmp");
-            File.WriteAllText(temp, Snapshot().ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Utf8NoBom);
-            File.Move(temp, Path.Combine(_directory, "status.json"), overwrite: true);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
         }
+
+        // The snapshot reads UI objects here; the file is written off the UI thread so a slow disk
+        // (an antivirus scan of the temp folder) is not counted as a UI stall. A tick that finds the
+        // previous write still running skips its own.
+        if (Interlocked.Exchange(ref _writing, 1) == 1)
+        {
+            return;
+        }
+
+        var json = Snapshot().ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        _ = Task.Run(() =>
+        {
+            // The test reads status.json while this replaces it; a refused replace waits for the next tick.
+            try
+            {
+                var temp = Path.Combine(_directory, "status.json.tmp");
+                File.WriteAllText(temp, json, Utf8NoBom);
+                File.Move(temp, Path.Combine(_directory, "status.json"), overwrite: true);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+            }
+            finally
+            {
+                Volatile.Write(ref _writing, 0);
+            }
+        });
     }
 
     /// <summary>Time-stamps pointer presses on each panel, handled or not, as UTC milliseconds.</summary>
@@ -157,6 +211,7 @@ internal sealed class TestHook
                 ["thicknessPx"] = window.ThicknessPx,
                 ["bounds"] = Rect(window.Bounds),
                 ["appBarRect"] = window.AppBarRect is { } granted ? Rect(granted) : null,
+                ["reserveError"] = window.ReserveError,
                 ["background"] = TemplateBackground(window.Panel),
                 ["placeholders"] = placeholders,
             });
@@ -167,8 +222,8 @@ internal sealed class TestHook
             ["ready"] = ready,
             ["hostPid"] = Environment.ProcessId,
             ["args"] = new JsonArray(_options.Args.Select(a => (JsonNode?)a).ToArray()),
-            ["guardianPid"] = _options.GuardianPid,
-            ["guardianPipe"] = _options.GuardianPipe,
+            ["guardianPid"] = _guardian?.GuardianPid ?? _options.GuardianPid,
+            ["guardianPipe"] = _guardian?.PipeName ?? _options.GuardianPipe,
             ["dataRoot"] = _locations.DataRoot,
             ["contentRoot"] = _locations.ContentRoot,
             ["workArea"] = Rect(MonitorService.PrimaryWorkArea()),

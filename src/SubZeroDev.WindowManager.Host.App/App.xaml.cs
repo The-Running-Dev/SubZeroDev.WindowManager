@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -7,6 +8,7 @@ using SubZeroDev.WindowManager.Host.Platform;
 using SubZeroDev.WindowManager.Host.Surfaces;
 using SubZeroDev.WindowManager.Host.Theming;
 using SubZeroDev.WindowManager.Protocol;
+using SubZeroDev.WindowManager.Recovery;
 using LogLevel = SubZeroDev.WindowManager.Host.Core.Diagnostics.LogLevel;
 
 namespace SubZeroDev.WindowManager.Host.App;
@@ -27,6 +29,8 @@ public sealed partial class App : Application
     private string _layoutId = HostSettingsDocument.DefaultPreset;
     private TestHook? _testHook;
     private DispatcherWatchdog? _watchdog;
+    private GuardianLink? _guardian;
+    private RecoveryJournal? _journal;
     private int _exiting;
 
     public App(HostOptions options)
@@ -92,6 +96,20 @@ public sealed partial class App : Application
         var preset = LoadPreset(config, settings.ActivePreset, _log);
 
         var dispatcher = DispatcherQueue.GetForCurrentThread();
+        _guardian = GuardianLink.Start(_options, dispatcher, _log, settings.RestartPolicy);
+        var log = _log;
+        using var self = Process.GetCurrentProcess();
+        Recoverer.Recover(_locations.DataRoot, self.SessionId, "startup", hostExited: false, exitCode: null,
+            line => log.Write(LogLevel.Warning, "recovery", line));
+        _journal = new RecoveryJournal(Journal.PathForSession(_locations.DataRoot, self.SessionId), Environment.ProcessId,
+            new DateTimeOffset(self.StartTime));
+        var started = await _journal.StartAsync(CancellationToken.None);
+        if (!started.Ok)
+        {
+            _log.Write(LogLevel.Error, "recovery", $"Could not start the recovery journal: {started.Error}");
+        }
+
+        var hookDirectory = Environment.GetEnvironmentVariable(TestHook.Variable);
         _theme = new ThemeEngine(_locations, _log, dispatcher);
         var appearance = new AppearanceSelection(preset.Theme,
             new PaletteSelection(preset.Palette, preset.PaletteLight, preset.PaletteDark), preset.AssetPacks);
@@ -116,7 +134,8 @@ public sealed partial class App : Application
         _contributions = new ContributionHost(_supervisor, _catalog, _pluginLogs, _log);
 
         var monitors = new MonitorService();
-        _surfaces = new SurfaceManager(config, monitors, new AppBarService(monitors), _theme, _contributions, _log, Retry);
+        var checkpoint = string.IsNullOrWhiteSpace(hookDirectory) ? null : TestHook.Checkpoint(hookDirectory);
+        _surfaces = new SurfaceManager(config, monitors, new AppBarService(monitors, _journal, checkpoint), _theme, _contributions, _log, Retry);
         _layoutId = preset.Layout;
         await ApplyLayoutAsync();
 
@@ -130,7 +149,6 @@ public sealed partial class App : Application
         };
         config.StartWatching();
 
-        var hookDirectory = Environment.GetEnvironmentVariable(TestHook.Variable);
         var debug = false;
 #if DEBUG
         debug = true;
@@ -143,7 +161,7 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!);
+                _watchdog!, _guardian);
             _testHook.Start();
         }
     }
@@ -243,6 +261,16 @@ public sealed partial class App : Application
         _testHook?.Stop();
         _watchdog?.Dispose();
         await StopAsync();
+        if (_guardian is not null)
+        {
+            await _guardian.DisposeAsync();
+        }
+
+        if (_journal is not null && (await _journal.MarkCleanExitAsync(CancellationToken.None)).Error is { } journalError)
+        {
+            _log?.Write(LogLevel.Error, "recovery", $"Could not mark the clean exit: {journalError}");
+        }
+
         _log?.Write(LogLevel.Info, "host", "Stopped.");
         if (_log is not null)
         {

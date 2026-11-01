@@ -47,7 +47,7 @@ SubZeroDev.WindowManager.Host.exe --guardian-pid <pid> --guardian-pipe <name>
 wm-pack <buildOutputDir> --manifest <plugin.json> --out <package.zip>
 ```
 
-Exit codes. Guardian: `0` normal, `2` another guardian running, `3` the restart budget was spent. Host: `0` normal, `2` another host running, `10` fatal startup failure (logged). `wm-pack`: `0` ok, `1` invalid manifest, `2` entry executable missing from the output, `3` IO.
+Exit codes. Guardian: `0` normal, `2` another guardian or host running, `3` the restart budget was spent, `4` the host could not be started. Host: `0` normal, `2` another host running, `10` fatal startup failure (logged). `wm-pack`: `0` ok, `1` invalid manifest, `2` entry executable missing from the output, `3` IO.
 
 ### Wire protocol (Protocol)
 

@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SubZeroDev.WindowManager.Protocol\SubZeroDev.WindowManager.Protocol.csproj" />
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Recovery\SubZeroDev.WindowManager.Recovery.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="SubZeroDev.WindowManager.Host.Core.Tests" />

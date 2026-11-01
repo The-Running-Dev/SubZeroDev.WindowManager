@@ -16,6 +16,8 @@ internal sealed class HostRun : IDisposable
 {
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(30);
 
+    private readonly DateTime _created = DateTime.Now;
+
     private HostRun(string root)
     {
         Root = root;
@@ -44,6 +46,30 @@ internal sealed class HostRun : IDisposable
         new(Path.Combine(Path.GetTempPath(), "SubZeroDev.WindowManager.EndToEnd", Guid.NewGuid().ToString("N")));
 
     public const string HostProcessName = "SubZeroDev.WindowManager.Host";
+
+    public const string GuardianProcessName = "SubZeroDev.WindowManager";
+
+    /// <summary>This session's recovery journal under the scratch data root.</summary>
+    public string JournalPath
+    {
+        get
+        {
+            using var self = System.Diagnostics.Process.GetCurrentProcess();
+            return Path.Combine(DataRoot, "recovery", $"session-{self.SessionId}.json");
+        }
+    }
+
+    /// <summary>The journal as JSON, or null when there is none (or it is being replaced).</summary>
+    public JsonObject? ReadJournal() => ReadJson(JournalPath);
+
+    /// <summary>What the guardian last published under the test hook, or null.</summary>
+    public JsonObject? ReadGuardian() => ReadJson(Path.Combine(HookDirectory, "guardian.json"));
+
+    public string[] CrashRecords()
+    {
+        var directory = Path.Combine(DataRoot, "logs", "crash");
+        return Directory.Exists(directory) ? [.. Directory.EnumerateFiles(directory, "*.json").Order()] : [];
+    }
 
     /// <summary>
     /// Skips the test when there is no interactive desktop to place windows and app bars on. Under CI
@@ -89,9 +115,14 @@ internal sealed class HostRun : IDisposable
         return [.. ids];
     }
 
-    public Process Start(string exe)
+    public Process Start(string exe, params string[] args)
     {
         var start = new ProcessStartInfo(exe) { UseShellExecute = false };
+        foreach (var arg in args)
+        {
+            start.ArgumentList.Add(arg);
+        }
+
         start.Environment["SUBZERODEV_WM_DATA_ROOT"] = DataRoot;
         start.Environment["SUBZERODEV_WM_TEST_HOOK"] = HookDirectory;
         start.Environment["SUBZERODEV_WM_INSTANCE"] = Instance;
@@ -268,17 +299,57 @@ internal sealed class HostRun : IDisposable
         }
 
         Process?.Dispose();
+
+        // Hosts restarted by a guardian, and guardians relaunched by a host, are not children of the first process.
+        foreach (var name in new[] { GuardianProcessName, HostProcessName })
+        {
+            foreach (var process in System.Diagnostics.Process.GetProcessesByName(name))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (process.StartTime >= _created)
+                        {
+                            process.Kill(entireProcessTree: true);
+                            process.WaitForExit(5000);
+                        }
+                    }
+                    catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception)
+                    {
+                    }
+                }
+            }
+        }
+
         try
         {
+            foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
+
             Directory.Delete(Root, recursive: true);
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
         }
     }
 
+    private static JsonObject? ReadJson(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path))?.AsObject() : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>The host's own log so far, so a failure on a machine without the data root still shows why.</summary>
-    private string HostLog()
+    public string HostLog(string pattern = "host-*.log")
     {
         var logs = Path.Combine(DataRoot, "logs");
         if (!Directory.Exists(logs))
@@ -286,7 +357,7 @@ internal sealed class HostRun : IDisposable
             return "(none)";
         }
 
-        return string.Join(Environment.NewLine, Directory.EnumerateFiles(logs, "host-*.log").Select(path =>
+        return string.Join(Environment.NewLine, Directory.EnumerateFiles(logs, pattern).Select(path =>
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             using var reader = new StreamReader(stream);
