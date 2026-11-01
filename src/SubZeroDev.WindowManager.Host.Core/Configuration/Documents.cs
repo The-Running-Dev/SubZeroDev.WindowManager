@@ -121,6 +121,11 @@ public static partial class Documents
         {
             case JsonValue v when v.TryGetValue<string>(out var p):
                 single = p;
+                if (!IsPackageId(p))
+                {
+                    problems.Add($"palette: '{p}' is not a package id.");
+                }
+
                 break;
             case JsonObject o:
                 light = RequiredPackageId(o, "light", problems, "palette.");

@@ -18,7 +18,8 @@ namespace SubZeroDev.WindowManager.Host.App;
 /// 250 ms it writes <c>status.json</c> there (what the host shows, read from the live visual tree) and
 /// exits normally once an <c>exit</c> file appears. A <c>retry</c> file holding a plugin id runs that
 /// plugin's placeholder Retry command, every pointer press on a panel is time-stamped, and a <c>hang</c>
-/// file blocks the UI thread for two minutes so the guardian sees the host stop answering.
+/// file blocks the UI thread for two minutes so the guardian sees the host stop answering. A
+/// <c>preset</c> file holding a preset id runs <c>host.preset.apply</c> and records the outcome.
 /// </summary>
 internal sealed class TestHook
 {
@@ -41,6 +42,7 @@ internal sealed class TestHook
     private readonly HashSet<WmPanel> _watched = [];
     private long _lastPointerPress;
     private int _writing;
+    private JsonObject? _lastPresetApply;
 
     public TestHook(string directory, App app, HostOptions options, Locations locations, ThemeEngine theme, SurfaceManager surfaces,
         IPluginSupervisor supervisor, WorkerLauncher launcher, IPackageCatalog catalog, DispatcherQueue dispatcher,
@@ -112,6 +114,7 @@ internal sealed class TestHook
         {
             WatchPointers();
             RunRetry();
+            RunPresetApply();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -175,6 +178,32 @@ internal sealed class TestHook
         }
     }
 
+    private void RunPresetApply()
+    {
+        var file = Path.Combine(_directory, "preset");
+        if (!File.Exists(file))
+        {
+            return;
+        }
+
+        var presetId = File.ReadAllText(file).Trim();
+        File.Delete(file);
+        _ = ApplyPresetAsync(presetId);
+    }
+
+    private async Task ApplyPresetAsync(string presetId)
+    {
+        try
+        {
+            var outcome = await _app.ApplyPresetAsync(presetId, CancellationToken.None);
+            _lastPresetApply = new JsonObject { ["preset"] = presetId, ["ok"] = outcome.Ok, ["code"] = outcome.Error?.Code.ToString() };
+        }
+        catch (Exception e)
+        {
+            _lastPresetApply = new JsonObject { ["preset"] = presetId, ["ok"] = false, ["code"] = e.GetType().Name };
+        }
+    }
+
     private JsonObject Snapshot()
     {
         var panels = new JsonArray();
@@ -232,14 +261,18 @@ internal sealed class TestHook
                 ["id"] = _theme.Current.ThemeId,
                 ["source"] = _theme.CurrentSource.ToString(),
                 ["backdrop"] = _theme.CurrentBackdrop.ToString(),
-                ["errors"] = new JsonArray(_app.InitialThemeErrors.Select(e => (JsonNode?)new JsonObject
-                {
-                    ["code"] = e.Code.ToString(),
-                    ["file"] = e.File,
-                    ["key"] = e.Key,
-                    ["detail"] = e.Detail,
-                }).ToArray()),
+                ["palette"] = _theme.CurrentPaletteId,
+                ["appliedAtUtcMs"] = _theme.AppliedAtUtcMs,
+                ["errors"] = Errors(_app.InitialThemeErrors),
+                ["lastApply"] = _theme.LastApply is { } last ? new JsonObject { ["applied"] = last.Applied, ["errors"] = Errors(last.Errors) } : null,
             },
+            ["settings"] = new JsonObject
+            {
+                ["health"] = _app.SettingsHealth.ToString(),
+                ["activePreset"] = _app.ActivePresetId,
+            },
+            ["lastPresetApply"] = _lastPresetApply?.DeepClone(),
+            ["workerMessages"] = WorkerChannel.MessagesSent,
             ["panels"] = panels,
             ["contributions"] = new JsonArray(_surfaces.Views.Select(view => (JsonNode?)new JsonObject
             {
@@ -248,6 +281,13 @@ internal sealed class TestHook
                 ["reason"] = view.Reason,
                 ["hasRetry"] = view.Placeholder?.RetryCommand is not null,
                 ["texts"] = new JsonArray(view.Texts().Select(text => (JsonNode?)text).ToArray()),
+                ["textItems"] = new JsonArray(view.TextElements().Select(item => (JsonNode?)new JsonObject
+                {
+                    ["text"] = item.Element.Text,
+                    ["style"] = item.StyleKey,
+                    ["foreground"] = TemplateForeground(item.Element),
+                    ["fontSize"] = FirstTextBlock(item.Element)?.FontSize,
+                }).ToArray()),
                 ["bounds"] = ScreenBounds(view),
             }).ToArray()),
             ["plugins"] = new JsonArray(_supervisor.All.Select(status => (JsonNode?)new JsonObject
@@ -305,6 +345,34 @@ internal sealed class TestHook
         return false;
     }
 
+    private static JsonArray Errors(IEnumerable<ThemeError> errors) => new(errors.Select(e => (JsonNode?)new JsonObject
+    {
+        ["code"] = e.Code.ToString(),
+        ["file"] = e.File,
+        ["key"] = e.Key,
+        ["detail"] = e.Detail,
+    }).ToArray());
+
+    /// <summary>The colour a Text element is drawn in, read from its template's TextBlock, as <c>#AARRGGBB</c>.</summary>
+    private static string? TemplateForeground(Control control) =>
+        FirstTextBlock(control)?.Foreground is SolidColorBrush solid ? Hex(solid.Color) : null;
+
+    private static TextBlock? FirstTextBlock(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if ((child as TextBlock ?? FirstTextBlock(child)) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    private static string Hex(Windows.UI.Color color) => $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
+
     private static JsonObject Rect(RectInt r) => new() { ["left"] = r.Left, ["top"] = r.Top, ["right"] = r.Right, ["bottom"] = r.Bottom };
 
     /// <summary>The background of the control template's root element, as <c>#AARRGGBB</c>.</summary>
@@ -322,9 +390,7 @@ internal sealed class TestHook
             Control inner => inner.Background,
             _ => null,
         };
-        return brush is SolidColorBrush solid
-            ? $"#{solid.Color.A:X2}{solid.Color.R:X2}{solid.Color.G:X2}{solid.Color.B:X2}"
-            : null;
+        return brush is SolidColorBrush solid ? Hex(solid.Color) : null;
     }
 
     private static string? CurrentState(Control control, string group)

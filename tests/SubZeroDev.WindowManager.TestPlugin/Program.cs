@@ -7,6 +7,7 @@ namespace SubZeroDev.WindowManager.TestPlugin;
 /// Scenarios, chosen by the first argument:
 /// <c>invalid-view</c> shows "ok", then sends a stale patch and four invalid views the host must reject;
 /// <c>ignore-shutdown</c> shows "ok" and never stops, so the host has to kill it;
+/// <c>styled</c> shows "ok" with the classes <c>primary</c> and <c>compact</c>, for theme restyling;
 /// <c>faulty</c> shows "ok", appends a line to <c>created.log</c> in its data folder for each instance
 /// created, and every 50 ms acts on the switch files there (see <see cref="Switches"/>).
 /// </summary>
@@ -51,7 +52,9 @@ public sealed class ProbeInstance(InstanceRequest request) : ContributionInstanc
 {
     protected internal override Task OnCreatedAsync(CancellationToken ct)
     {
-        Surface.SetView(View.Text("t", Prop<string>.State("t")));
+        Surface.SetView(Program.Scenario == "styled"
+            ? View.Text("t", Prop<string>.State("t"), "primary", "compact")
+            : View.Text("t", Prop<string>.State("t")));
         Surface.SetState("t", "ok");
         if (Program.Scenario == "faulty")
         {

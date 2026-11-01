@@ -73,7 +73,7 @@ Acceptance:
 Out of scope: Explorer-restart re-registration (S12), `workArea` changes (replacement mode), sign-in registration (S15).
 
 ## S5 — Change the look while it runs
-Status: todo
+Status: done
 Delivers: Ben can switch theme, colour palette or preset while the desktop is running, and every panel and plugin item restyles at once, with no plugin restarting.
 Touches: Host.Core (`IConfigStore` write path, watcher, conflict detection, `.lastgood`); Host.Theming (`IThemeEngine.ApplyAsync`, palettes, `Wm.Color.*`/`Wm.Brush.*`, `Wm.Element.<Kind>[.<class>]` resolution, `panelBackdrop`, light and dark palette pairs); Host.Surfaces (re-templating from retained views); `host.preset.apply`; built-in palettes `subzerodev.light`, `subzerodev.dark`
 Depends on: S2

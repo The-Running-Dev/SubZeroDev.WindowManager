@@ -31,7 +31,8 @@ public sealed record ThemePackage(
 /// The file half of theme loading: everything that can run off the UI thread (I9). It finds the theme
 /// folder, checks <c>theme.json</c>, reads each resource dictionary, and injects the token resources
 /// (<c>Wm.Color.t</c>, <c>Wm.Brush.t</c>) into every dictionary so <c>{ThemeResource Wm.Brush.t}</c>
-/// resolves while the dictionary loads.
+/// resolves while the dictionary loads. Token colours are the host's, then the theme's defaults, then
+/// the palette's, each overriding the one before.
 /// </summary>
 public static class ThemePackageReader
 {
@@ -70,7 +71,8 @@ public static class ThemePackageReader
         return File.Exists(Path.Combine(builtIn, "theme.json")) ? builtIn : null;
     }
 
-    public static (ThemePackage? Package, IReadOnlyList<ThemeError> Errors) Read(Locations locations, string themeId, bool builtInOnly)
+    public static (ThemePackage? Package, IReadOnlyList<ThemeError> Errors) Read(Locations locations, string themeId, bool builtInOnly,
+        IReadOnlyDictionary<string, uint>? palette = null)
     {
         var errors = new List<ThemeError>();
         var root = Locate(locations, themeId, builtInOnly, out var source);
@@ -118,6 +120,11 @@ public static class ThemePackageReader
                     errors.Add(new ThemeError(ThemeErrorCode.PaletteInvalid, metadataPath, token, "Token colours must match #AARRGGBB."));
                 }
             }
+        }
+
+        foreach (var (token, argb) in palette ?? new Dictionary<string, uint>())
+        {
+            tokens[token] = argb;
         }
 
         var backdrop = metadata["panelBackdrop"] is JsonValue b && b.TryGetValue<string>(out var backdropName)
