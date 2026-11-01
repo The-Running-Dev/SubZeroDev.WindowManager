@@ -205,11 +205,19 @@ public sealed class SurfaceManager : ISurfaceManager
         }
     }
 
+    /// <summary>Runs from the dispatcher queue, where an escaped exception would end the host without UnhandledException.</summary>
     private void Render(Guid instanceId)
     {
-        if (_views.TryGetValue(instanceId, out var view))
+        try
         {
-            view.Render(_contributions.Describe(instanceId));
+            if (_views.TryGetValue(instanceId, out var view))
+            {
+                view.Render(_contributions.Describe(instanceId));
+            }
+        }
+        catch (Exception e)
+        {
+            _log.Write(LogLevel.Error, "surfaces", $"Rendering instance {instanceId} failed: {e}");
         }
     }
 

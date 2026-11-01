@@ -13,6 +13,11 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-01 — S2: Dispatcher callbacks catch their own exceptions
+- **Context:** In WinUI 3 an exception escaping a `DispatcherQueue` callback or timer tick ends the process with 0xC000027B and never reaches `Application.UnhandledException`. CI hit this when the test hook's status replace met the test's open read.
+- **Chosen:** Each dispatcher callback and timer tick catches and logs its own failures; unhandled exceptions are also written to the host log synchronously, and CI keeps host crash dumps.
+- **Rejected:** Relying on `UnhandledException` with `Handled = true` (it does not see these exceptions).
+
 ## 2026-11-01 — S2: Plugin-facing projects target plain net10.0
 - **Context:** Protocol, Sdk and plugin projects are built by third parties, and the host projects target `net10.0-windows10.0.26100.0`.
 - **Chosen:** Protocol, Sdk, the clock and the test plugin target `net10.0` with `win-x64`, so a plugin needs no Windows SDK projection and the host can still reference Protocol.

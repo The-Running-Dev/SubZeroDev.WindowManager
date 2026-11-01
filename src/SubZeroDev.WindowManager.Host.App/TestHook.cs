@@ -70,9 +70,17 @@ internal sealed class TestHook
             return;
         }
 
-        var temp = Path.Combine(_directory, "status.json.tmp");
-        File.WriteAllText(temp, Snapshot().ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Utf8NoBom);
-        File.Move(temp, Path.Combine(_directory, "status.json"), overwrite: true);
+        // The test reads status.json while this replaces it; a refused replace waits for the next tick.
+        // An exception escaping a dispatcher callback ends a WinUI process without UnhandledException.
+        try
+        {
+            var temp = Path.Combine(_directory, "status.json.tmp");
+            File.WriteAllText(temp, Snapshot().ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Utf8NoBom);
+            File.Move(temp, Path.Combine(_directory, "status.json"), overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     private JsonObject Snapshot()
