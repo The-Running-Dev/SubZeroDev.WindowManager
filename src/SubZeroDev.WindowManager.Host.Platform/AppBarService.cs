@@ -15,7 +15,12 @@ public sealed class AppBarService : IAppBarService
     private readonly HashSet<nint> _registered = [];
     private readonly Lock _gate = new();
 
-    public AppBarService(IMonitorService monitors) => _monitors = monitors;
+    public AppBarService(IMonitorService monitors)
+    {
+        _monitors = monitors;
+        // Last resort: a host that exits without closing its panels still gives the space back.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => RemoveAll();
+    }
 
     public event EventHandler<FullscreenChangedEventArgs> FullscreenChanged
     {
@@ -77,6 +82,34 @@ public sealed class AppBarService : IAppBarService
             Native.SHAppBarMessage(Native.AbmRemove, ref data);
             return Outcome.Success;
         }, ct);
+
+    public void RemoveNow(nint hwnd)
+    {
+        lock (_gate)
+        {
+            if (!_registered.Remove(hwnd))
+            {
+                return;
+            }
+        }
+
+        var data = NewData(hwnd);
+        Native.SHAppBarMessage(Native.AbmRemove, ref data);
+    }
+
+    private void RemoveAll()
+    {
+        nint[] windows;
+        lock (_gate)
+        {
+            windows = [.. _registered];
+        }
+
+        foreach (var hwnd in windows)
+        {
+            RemoveNow(hwnd);
+        }
+    }
 
     /// <summary>Asks the shell for space on <paramref name="edge"/>, trims the answer to the thickness, and claims it.</summary>
     private static RectInt SetPosition(nint hwnd, MonitorInfo monitor, PanelEdge edge, int thickness)

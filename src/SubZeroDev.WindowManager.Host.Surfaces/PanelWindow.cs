@@ -16,6 +16,7 @@ namespace SubZeroDev.WindowManager.Host.Surfaces;
 public sealed class PanelWindow
 {
     private readonly Window _window;
+    private bool _closeRequested;
 
     public PanelWindow(PanelDefinition definition, MonitorInfo monitor, PanelEdge edge, WmPanel panel)
     {
@@ -34,8 +35,14 @@ public sealed class PanelWindow
         presenter.IsAlwaysOnTop = true;
         _window.AppWindow.SetPresenter(presenter);
         _window.AppWindow.IsShownInSwitchers = false;
+        // Panels are shell surfaces: Alt+F4 and WM_CLOSE from elsewhere do not close them.
+        _window.AppWindow.Closing += (_, e) => e.Cancel = !_closeRequested;
+        _window.Closed += (_, _) => Closed?.Invoke(this, EventArgs.Empty);
         Handle = WinRT.Interop.WindowNative.GetWindowHandle(_window);
     }
+
+    /// <summary>Raised while the window closes, before its handle is destroyed.</summary>
+    public event EventHandler? Closed;
 
     public PanelDefinition Definition { get; }
 
@@ -67,7 +74,11 @@ public sealed class PanelWindow
 
     public void Show() => _window.AppWindow.Show(activateWindow: false);
 
-    public void Close() => _window.Close();
+    public void Close()
+    {
+        _closeRequested = true;
+        _window.Close();
+    }
 
     /// <summary>
     /// Applies the theme's backdrop. <c>transparent</c> needs a custom composition backdrop that S1

@@ -46,6 +46,19 @@ public sealed partial class App : Application
         {
             _log?.Write(LogLevel.Error, "host", $"Startup failed: {e}");
             ExitCode = ExitCodes.StartupFailed;
+            _testHook?.Stop();
+            if (_surfaces is not null)
+            {
+                try
+                {
+                    await _surfaces.ShutdownAsync(CancellationToken.None);
+                }
+                catch (Exception cleanup)
+                {
+                    _log?.Write(LogLevel.Error, "host", $"Cleanup after the failed start failed: {cleanup}");
+                }
+            }
+
             if (_log is not null)
             {
                 await _log.DisposeAsync();

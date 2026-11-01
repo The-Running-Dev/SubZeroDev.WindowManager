@@ -82,6 +82,7 @@ public sealed class SurfaceManager : ISurfaceManager
             };
 
             var window = new PanelWindow(definition, primary, edge, panel);
+            window.Closed += (_, _) => ReleaseSpace(window);
             _panels.Add(window);
             Style(window);
             window.SetBackdrop(_theme.CurrentBackdrop);
@@ -123,12 +124,23 @@ public sealed class SurfaceManager : ISurfaceManager
             if (window.AppBarRect is not null)
             {
                 await _appBars.RemoveAsync(window.Handle, ct);
+                window.AppBarRect = null;
             }
 
             window.Close();
         }
 
         _panels.Clear();
+    }
+
+    /// <summary>A panel closed by any path other than <see cref="ShutdownAsync"/> still gives its space back.</summary>
+    private void ReleaseSpace(PanelWindow window)
+    {
+        if (window.AppBarRect is not null)
+        {
+            _appBars.RemoveNow(window.Handle);
+            window.AppBarRect = null;
+        }
     }
 
     private static WmZone? BuildZone(PanelDefinition definition, string key)

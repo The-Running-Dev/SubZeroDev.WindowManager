@@ -154,7 +154,18 @@ public static class ThemePackageReader
                 continue;
             }
 
-            var xaml = InjectTokens(path, File.ReadAllText(path), tokens, out var parseError);
+            string text;
+            try
+            {
+                text = File.ReadAllText(path);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                errors.Add(new ThemeError(ThemeErrorCode.AssetMissing, path, "resources", $"The file cannot be read: {e.Message}"));
+                continue;
+            }
+
+            var xaml = InjectTokens(path, text, tokens, out var parseError);
             if (parseError is not null)
             {
                 errors.Add(parseError);

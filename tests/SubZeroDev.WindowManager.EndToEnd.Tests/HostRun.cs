@@ -43,10 +43,50 @@ internal sealed class HostRun : IDisposable
     public static HostRun Create() =>
         new(Path.Combine(Path.GetTempPath(), "SubZeroDev.WindowManager.EndToEnd", Guid.NewGuid().ToString("N")));
 
-    /// <summary>Skips the test when there is no interactive desktop to place windows and app bars on.</summary>
+    public const string HostProcessName = "SubZeroDev.WindowManager.Host";
+
+    /// <summary>
+    /// Skips the test when there is no interactive desktop to place windows and app bars on. Under CI
+    /// (the <c>CI</c> variable is set) a missing desktop fails instead, so a skip never reads as green.
+    /// </summary>
     public static void RequireDesktop()
     {
-        Assert.SkipUnless(Interactive.HasDesktop(), "No interactive desktop: session 0 or no input desktop.");
+        if (Interactive.HasDesktop())
+        {
+            return;
+        }
+
+        const string reason = "No interactive desktop: session 0 or no input desktop.";
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI")))
+        {
+            Assert.Fail(reason + " CI must run the end-to-end tests on a desktop.");
+        }
+
+        Assert.Skip(reason);
+    }
+
+    /// <summary>Host processes that started at or after <paramref name="since"/>.</summary>
+    public static int[] HostsStartedSince(DateTime since)
+    {
+        var ids = new List<int>();
+        foreach (var process in System.Diagnostics.Process.GetProcessesByName(HostProcessName))
+        {
+            using (process)
+            {
+                try
+                {
+                    if (process.StartTime >= since)
+                    {
+                        ids.Add(process.Id);
+                    }
+                }
+                catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                }
+            }
+        }
+
+        return [.. ids];
     }
 
     public Process Start(string exe)
@@ -186,6 +226,37 @@ internal static partial class Interactive
         }
     }
 
+    /// <summary>The window's rectangle in physical pixels.</summary>
+    public static (int Left, int Top, int Right, int Bottom) WindowRect(nint hwnd)
+    {
+        var previous = SetThreadDpiAwarenessContext(PerMonitorAwareV2);
+        try
+        {
+            if (!GetWindowRect(hwnd, out var rect))
+            {
+                throw new InvalidOperationException("GetWindowRect failed.");
+            }
+
+            return (rect.Left, rect.Top, rect.Right, rect.Bottom);
+        }
+        finally
+        {
+            SetThreadDpiAwarenessContext(previous);
+        }
+    }
+
+    /// <summary>Asks the window to close, as Alt+F4 or another process would.</summary>
+    public static void RequestClose(nint hwnd)
+    {
+        const uint WmClose = 0x0010;
+        if (!PostMessageW(hwnd, WmClose, 0, 0))
+        {
+            throw new InvalidOperationException("PostMessage failed.");
+        }
+    }
+
+    public static bool IsAlive(nint hwnd) => IsWindow(hwnd);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect
     {
@@ -224,4 +295,16 @@ internal static partial class Interactive
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GetMonitorInfoW(nint monitor, ref MonitorInfo info);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetWindowRect(nint hwnd, out Rect rect);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool PostMessageW(nint hwnd, uint message, nint wParam, nint lParam);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool IsWindow(nint hwnd);
 }

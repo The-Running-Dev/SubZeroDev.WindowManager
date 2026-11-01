@@ -31,6 +31,12 @@ public interface IAppBarService
 
     Task<Outcome> RemoveAsync(nint hwnd, CancellationToken ct);   // reverts, then ends the journal entry
 
+    /// <summary>
+    /// Removes the app bar on the calling thread, for close paths that cannot wait for a task: a
+    /// window that is closing, or the process exiting. Does nothing when the window holds none.
+    /// </summary>
+    void RemoveNow(nint hwnd);
+
     event EventHandler<FullscreenChangedEventArgs> FullscreenChanged;
 
     event EventHandler ShellRestarted;    // "TaskbarCreated"

@@ -36,7 +36,17 @@ public static class Program
         start.ArgumentList.Add("--guardian-pipe");
         start.ArgumentList.Add($"SubZeroDev.WindowManager.Guardian.{Guid.NewGuid():N}");
 
-        using var host = Process.Start(start);
+        Process? started;
+        try
+        {
+            started = Process.Start(start);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return HostFailed;
+        }
+
+        using var host = started;
         if (host is null)
         {
             return HostFailed;

@@ -56,6 +56,29 @@ public sealed class ConfigStore : IConfigStore
 
     public async Task<Outcome<DocumentState>> WriteAsync(DocumentId id, string? basedOnHash, JsonObject content, CancellationToken ct)
     {
+        var result = await WriteLockedAsync(id, basedOnHash, content, ct).ConfigureAwait(false);
+        if (result.Ok)
+        {
+            Changed?.Invoke(this, new DocumentChangedEventArgs(id, result.Value!, ChangeOrigin.Host));
+        }
+
+        return result;
+    }
+
+    public async Task<Outcome> DeleteAsync(DocumentId id, string? basedOnHash, CancellationToken ct)
+    {
+        var result = await DeleteLockedAsync(id, basedOnHash, ct).ConfigureAwait(false);
+        if (result.Ok)
+        {
+            Changed?.Invoke(this, new DocumentChangedEventArgs(id, Get(id), ChangeOrigin.Host));
+        }
+
+        return result;
+    }
+
+    // Changed is raised by the two methods above once the writer is released, so handlers may write.
+    private async Task<Outcome<DocumentState>> WriteLockedAsync(DocumentId id, string? basedOnHash, JsonObject content, CancellationToken ct)
+    {
         await _writer.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -89,7 +112,6 @@ public sealed class ConfigStore : IConfigStore
             }
 
             var state = new DocumentState(id, (JsonObject)content.DeepClone(), Hash(bytes), DocumentHealth.Valid, null);
-            Changed?.Invoke(this, new DocumentChangedEventArgs(id, state, ChangeOrigin.Host));
             return Outcome<DocumentState>.Success(state);
         }
         finally
@@ -98,7 +120,7 @@ public sealed class ConfigStore : IConfigStore
         }
     }
 
-    public async Task<Outcome> DeleteAsync(DocumentId id, string? basedOnHash, CancellationToken ct)
+    private async Task<Outcome> DeleteLockedAsync(DocumentId id, string? basedOnHash, CancellationToken ct)
     {
         await _writer.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -124,7 +146,6 @@ public sealed class ConfigStore : IConfigStore
                 return Outcome.Fail(CoreErrorCode.IoFailure, $"{path}: {e.Message}", retryable: true);
             }
 
-            Changed?.Invoke(this, new DocumentChangedEventArgs(id, Get(id), ChangeOrigin.Host));
             return Outcome.Success;
         }
         finally

@@ -95,6 +95,7 @@ internal sealed class TestHook
             panels.Add(new JsonObject
             {
                 ["id"] = window.Definition.Id.ToString(),
+                ["handle"] = (long)window.Handle,
                 ["monitor"] = window.Monitor.StableId,
                 ["scale"] = window.Monitor.Scale,
                 ["edge"] = window.Panel.Edge,
