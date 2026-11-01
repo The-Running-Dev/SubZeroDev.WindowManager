@@ -108,7 +108,8 @@ internal sealed class HostRun : IDisposable
         {
             if (Process is { HasExited: true })
             {
-                throw new InvalidOperationException($"The process exited with {Process.ExitCode} before reporting status.");
+                throw new InvalidOperationException(
+                    $"The process exited with {Process.ExitCode} before reporting status. Host log:{Environment.NewLine}{HostLog()}");
             }
 
             if (File.Exists(path))
@@ -274,6 +275,23 @@ internal sealed class HostRun : IDisposable
         catch (IOException)
         {
         }
+    }
+
+    /// <summary>The host's own log so far, so a failure on a machine without the data root still shows why.</summary>
+    private string HostLog()
+    {
+        var logs = Path.Combine(DataRoot, "logs");
+        if (!Directory.Exists(logs))
+        {
+            return "(none)";
+        }
+
+        return string.Join(Environment.NewLine, Directory.EnumerateFiles(logs, "host-*.log").Select(path =>
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }));
     }
 
     private static string Metadata(string key) =>

@@ -35,3 +35,10 @@ jobs:
         run: dotnet build SubZeroDev.WindowManager.slnx -c Release
       - name: Test
         run: dotnet test SubZeroDev.WindowManager.slnx -c Release --no-build --logger "console;verbosity=normal"
+      - name: Crash events
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2; StartTime = (Get-Date).AddHours(-1) } -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'SubZeroDev' } |
+            Format-List TimeCreated, ProviderName, Message
