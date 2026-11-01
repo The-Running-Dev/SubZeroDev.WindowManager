@@ -77,7 +77,9 @@ Images are PNG or SVG. Paths are relative to the package; a path that escapes th
 
 **Recovery journal.** One per user session.
 - `hostPid`, `hostStartTime`, `cleanExit`: bool.
-- `entries`: list of DesktopChange `{ id: GUID, kind, monitor, appliedAt, payload }`. `kind` is `appBar` (payload: window handle, edge, rectangle) or `workArea` (payload: the original work area rectangle). The second exists for replacement mode and is not applied in the first release.
+- `entries`: list of DesktopChange `{ id: GUID, kind, monitor, appliedAt, payload }`. `kind` is `appBar` (payload: window handle, edge, rectangle) or `workArea` (payload: the original work area rectangle). The second is used in replacement mode, where the host owns the work area.
+
+**Shell registration.** One per user, written only by the guardian. `registered`: bool; `previous`: the per-user `Winlogon\Shell` value before registration, or its absence; `registeredAt`. It is what `--shell off` restores.
 
 **Diagnostics.** A rolling host log, one rolling log per plugin (worker log calls plus captured stderr), and a crash record for each guardian recovery. Retention is bounded by size.
 
@@ -124,14 +126,15 @@ Host.Platform depends on Host.Core only for the abstractions Core defines. Core 
 | **Sdk** | The worker runtime: pipe connection and handshake, message loop, ordering, instance objects, view builder, state publishing, commands, feeds, settings access, logging, stop deadlines | Protocol | The plugin-author API. Shipped as a NuGet package. |
 | **PackTool** | Building a plugin package: validates the manifest against the built output, writes the archive | Protocol | A command-line tool. Shipped with the SDK. |
 | **Recovery** | Recovery journal format, durable writes, and *revert* operations for each DesktopChange kind (Win32 calls only, no UI) | nothing beyond the OS | Journal read/write and revert. Used by host and guardian. |
-| **Guardian** | Entry point: single-instance check, stale-journal recovery, launching and watching the host, relaunch budget, sign-in registration | Recovery | Command-line entry. Nothing else. |
+| **Guardian** | Entry point: single-instance check, stale-journal recovery, launching and watching the host, relaunch budget, sign-in registration, shell registration (`--shell on|off`) and its policy checks, the replacement-mode fallback to Explorer | Recovery | Command-line entry. Nothing else. |
 | **Host.Core** | Config store (load, validate, migrate, atomic write, watch); package discovery and catalog; compatibility and dependency resolution; plugin supervisor (lifecycle state machine, restart budget, heartbeats); worker channels; command router; feed broker; journal writer; diagnostics. Defines the platform abstractions. | Protocol, Recovery | Services consumed by Theming, Surfaces, Settings. Platform interfaces. |
-| **Host.Platform** | The Windows integration layer: monitors and stable ids, DPI, app bars, full-screen detection, Explorer restart detection, global hotkeys, foreground rights and window activation, icon extraction, worker process launch inside a job object, single-instance mutex | Host.Core (abstractions) | Implementations of the Core interfaces. |
+| **Host.Platform** | The Windows integration layer: monitors and stable ids, DPI, app bars, full-screen detection, Explorer restart detection, global hotkeys, foreground rights and window activation, icon extraction, worker process launch inside a job object, single-instance mutex. In replacement mode also: the shell roles (shell window, shell hook, task-manager window), the notification-area and app-bar host (`Shell_TrayWnd`), the work area, start-up programs, the low-level Windows-key hook, and session commands (lock, sign out, restart, shut down, sleep) | Host.Core (abstractions) | Implementations of the Core interfaces. |
 | **Host.Theming** | Loading themes, palettes and asset packs; validating a theme against the template vocabulary; building the merged resource dictionary; resolving icons through the asset-pack chain; atomic appearance switch | Host.Core | The active appearance and its change event; template and icon resolution. |
 | **Host.Surfaces** | Panel, gadget and popup windows; placing them per layout and monitor; app-bar behaviour; z-order and full-screen handling; mapping view nodes to themed controls; bindings; placeholders; keyboard navigation; dispatching user actions | Host.Core, Host.Platform (through Core interfaces), Host.Theming | Apply layout, show and close popups, focus a panel. |
 | **Host.Settings** | The settings window: plugin manager (list, state, enable, disable, retry, inspect, install, remove, logs), layout editor, appearance picker, settings forms generated from schemas | Host.Core, Host.Theming | Opening the window, through the `host.settings.open` command. |
 | **Host.App** | The composition root: startup order, single UI thread, shutdown order, guardian link | everything above | The host executable. |
 | **Clock / Launcher / RunningWindows** | Each plugin's own behaviour | Sdk | Their manifest-declared commands, feeds and contributions. |
+| **Tray / DesktopIcons / Session / Indicators** | The replacement-mode features: notification-area icons (from the host's `host.tray.icons` feed), Desktop-folder icons, the power menu, and volume, network and battery | Sdk | Same |
 
 Platform primitives several plugins need belong to the host and are exposed as `host.*` commands, never as plugin-to-plugin code. These cover window activation, application icons, and opening popups anchored to host-owned elements.
 
@@ -192,6 +195,25 @@ On a monitor topology or DPI change, Surfaces re-matches panels to monitors. A p
 
 On full-screen detection on a monitor (the shell's full-screen notification for app bars, plus foreground-window bounds equal to monitor bounds for other panels), panels on that monitor drop out of topmost. They return when the full-screen window leaves.
 
+### 8. Replacement mode
+
+The same host, plugins and themes, with the host doing the jobs Explorer did. It follows what LiteStep did when it was the shell.
+
+1. **Registration.** Ben runs `SubZeroDev.WindowManager.exe --shell on`. The guardian reads the per-user `Winlogon\Shell` value and the settings that override it: the Custom User Interface policy and a Shell Launcher configuration. If one overrides it, the guardian names it and changes nothing. Otherwise it records the previous value, or its absence, in the shell registration, then writes its own command line with `--mode replacement`. `--shell off` writes back exactly what was recorded. No step needs elevation.
+2. **Sign-in.** Windows starts the guardian instead of Explorer. With Shift held, it starts `explorer.exe` and exits, which is the escape hatch. Started with `--mode replacement` while Explorer already is the shell, it exits, unless `--take-over` asks it to close Explorer the way Explorer's own exit command does, so Windows does not restart it.
+3. **Host start.** The guardian starts the host with `--mode replacement` (flow 1 from step 3). Before the first panel shows, the host:
+   - takes the shell roles: its desktop window becomes the shell window, a hook window receives shell-hook messages (window created, destroyed, activated, flashing), and it registers as the task-manager window;
+   - creates `Shell_TrayWnd` and `TrayNotifyWnd`, so the `Shell_NotifyIcon` and `SHAppBarMessage` calls of other applications reach it over `WM_COPYDATA`, and then broadcasts `TaskbarCreated` so running applications re-add their icons;
+   - hides minimised windows (`ARW_HIDE`), and sets the work area itself from its `reserve` panels and other applications' app bars, journalling the original as `workArea`;
+   - installs the Windows-key hook on its own thread.
+
+   After the first panel shows, it signals the shell-ready event (`ShellDesktopSwitchEvent`) and sends `WM_USER` to the desktop window, so the sign-in screen gives way.
+4. **Plugins** start as in flow 1, with `--wm-mode replacement`. A plugin whose `modes` lacks `replacement`, or with `requiresExplorer: true`, is `Incompatible`.
+5. **Start-up programs.** On the session's first host start only, the host runs them in LiteStep's order: HKLM RunOnce, RunOnceEx, HKLM Run, HKCU Run, the common Startup folder, the user Startup folder, then HKCU RunOnce. It skips a source that policy disables. A host relaunch in the same session runs nothing.
+6. **File Explorer.** `explorer.exe <path>`, started while the host holds the shell window, opens a folder window and does not take over the desktop. Win+E and the launcher use this.
+7. **Failure.** A host crash is flow 5, and the guardian also restores the work area. When the relaunch budget is spent, the guardian starts `explorer.exe` as the shell for the rest of the session before it shows its message. The registration stays, so the next sign-in tries again.
+8. **The way back.** `--shell off`, the switch in Settings, and `host.shell.restoreExplorer` (which also ends the host and starts Explorer for this session) all restore the recorded value.
+
 ## Distribution
 
 The first release has a single user, Ben, on one machine.
@@ -199,7 +221,8 @@ The first release has a single user, Ben, on one machine.
 **Desktop.** A per-user, unpackaged install. A release is a zip on the GitHub repository's Releases page. It holds the guardian, the host (self-contained .NET and Windows App SDK, so nothing else needs installing), the built-in plugins, and the sample themes, palettes, asset packs, layouts and presets.
 - **First install:** extract to the per-user programs folder and run the guardian once. A first-run flag registers the start-menu shortcut and, when `startAtSignIn` is on, the per-user Run key. No administrator rights are needed.
 - **Upgrade:** exit the app, replace the install folder, and start it again. User data lives in a separate per-user data folder and is migrated forward on load.
-- **Removal:** the guardian's uninstall flag removes the shortcut and Run key. Deleting the data folder is left to the user.
+- **Removal:** the guardian's uninstall flag removes the shortcut and Run key, and unregisters the shell if it is registered. Deleting the data folder is left to the user.
+- **Replacement mode:** no separate install. `--shell on` registers the app as Ben's shell, and `--shell off` or Settings unregisters it (flow 8).
 
 **Plugin SDK.** A NuGet package containing Sdk and Protocol, plus PackTool as a .NET tool. For the first release both are attached to the same GitHub release, and a plugin developer adds them through a local package folder. A `samples` plugin, built only against that package in a separate project, proves acceptance criterion 1 in CI.
 
@@ -239,6 +262,13 @@ The first release has a single user, Ben, on one machine.
 | Host process | Crash, kill, hang (the guardian pings the host every 5 s; 30 s without a reply counts as a hang and the guardian kills it) | Guardian wait or ping | Flow 5 | Desktop returns to plain Explorer, then the host comes back | Journal cleared; crash record |
 | Guardian process | Crash or kill | Host waits on the guardian process | Host relaunches the guardian in attach mode with its own pid | Nothing | None |
 | Both | Killed together (process-tree kill), or power loss | The next guardian start finds a non-empty journal | Revert at the next start (flow 1, step 2). App bars and the shell work area do not survive sign-out, so power loss leaves nothing to undo. | Nothing | Journal cleared |
+| Shell registration | A policy or Shell Launcher overrides the per-user value | The guardian reads them before writing | Write nothing; exit 5 naming the override | The message names the setting to change | Registry unchanged |
+| Replacement start | The host cannot start, or keeps crashing, after sign-in | Guardian relaunch budget (I17) | Start `explorer.exe` as the shell for the rest of the session (I23) | One message naming the log; a normal Explorer desktop | Registration kept; journal reverted |
+| Replacement start | Explorer already is the shell | Another process owns the shell window | Without `--take-over`: exit 6. Host already running: run without the shell roles and log `ShellRoleTaken` | Nothing changes | None |
+| Notification area | A malformed or oversized `Shell_NotifyIcon` message, or the owner window dies | Size and version checks on `WM_COPYDATA`; window check before each use | Ignore the message; drop a dead window's icons | The icon disappears | None |
+| Notification area | The host restarts | Host start in replacement mode | Broadcast `TaskbarCreated`, so applications re-add their icons | Icons return | None |
+| Desktop: app bar (replacement) | Another application's app bar asks for an edge | `ABM_*` through `Shell_TrayWnd` | Apply the rules Explorer applies: propose a non-overlapping rectangle, reserve it, recompute the work area (journalled) | Maximised windows fit the remaining space | Journal updated |
+| Session command | Restart, shut down or sign out is blocked by an application, or refused | Return value | Typed error | A notice at the element | None |
 | Pipes | Another user or process connects | Pipe ACL is current user only; one-time token | Reject the connection | Nothing | None |
 
 Retry semantics: worker restarts and host relaunches use the bounded budget above, with backoff. Command invocations are **never** retried automatically, because a command may have side effects such as launching an application. Config writes are not retried; the user re-saves. App-bar registration is retried only on the "taskbar created" broadcast.
@@ -266,6 +296,9 @@ Retry semantics: worker restarts and host relaunches use the bounded budget abov
 7. **Packaging.** *Chosen:* unpackaged, per-user, self-contained. *Rejected:* MSIX. Package identity virtualises file and registry access, which complicates user plugin folders and later shell-replacement launch. It also needs a signing certificate. It can come back as an extra channel later.
 8. **Desktop-layer gadgets.** *Chosen:* windows kept at the bottom of the z-order. *Rejected:* re-parenting into Explorer's desktop worker window. Undocumented, breaks across Windows builds, and does not exist without Explorer.
 9. **Threads for windows.** *Chosen:* one UI thread for all surfaces. *Rejected:* a thread per panel. Resources are thread-affine, so each thread would need its own copy of the theme, and theme switches would have to coordinate across threads.
+10. **How the app becomes the shell.** *Chosen:* the per-user `HKCU\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\Shell` value, written and restored by the guardian. It needs no elevation, affects only Ben's account, and is the route LiteStep's users took. *Rejected:* the machine-wide `HKLM` value. It needs elevation and changes every account. *Rejected:* Shell Launcher. It needs elevation and an Enterprise feature, and it is built for kiosks. *Rejected:* writing the Custom User Interface policy. Policies belong to administrators; the app reports one instead of changing it. *Rejected:* replacing or renaming `explorer.exe`. That breaks File Explorer, servicing and every other account.
+11. **Hosting the notification area and app bars.** *Chosen:* in replacement mode the host creates `Shell_TrayWnd` itself and implements the `Shell_NotifyIcon` and `SHAppBarMessage` protocols that applications send it, as LiteStep's tray service did; the icons reach plugins as a host feed. *Rejected:* a plugin owning the tray window. The window must exist before applications start and must survive plugin restarts. *Rejected:* hosting the notification area in coexistence mode. Explorer owns `Shell_TrayWnd` while it runs, and a second one would take icons away from it.
+12. **The Windows key.** *Chosen:* a low-level keyboard hook in the host, on its own thread, installed only in replacement mode. *Rejected:* `RegisterHotKey` alone, which cannot express a lone Windows-key press. *Rejected:* a hook in a plugin process. The hook must answer every key press within the system timeout, and a worker restart would drop keys.
 
 Decided here with no live alternative worth a paragraph (logged in [90-decisions.md](90-decisions.md)): .NET 10 (LTS) for everything; a pinned stable Windows App SDK release chosen in the first slice; Windows 11 22H2 (build 22621) minimum; x64 only for the first release.
 
@@ -281,3 +314,5 @@ Decided here with no live alternative worth a paragraph (logged in [90-decisions
    - App-bar registration behaves correctly from a WinUI 3 window.
 
    A failure in any of them is a design change recorded in [90-decisions.md](90-decisions.md), not a silent workaround.
+6. **The per-user shell value on Ben's build.** The design assumes Windows honours the per-user `Winlogon\Shell` value on Windows 11 Enterprise build 26200. S17's prototype check confirms it. If it does not, the fallback is the per-user Custom User Interface value (`HKCU\...\Policies\System\Shell`), which also needs no elevation. Switching to it is a decision entry.
+7. **Explorer-hosted features without Explorer.** Toasts, the notification centre, Quick Settings and Task View are hosted by Explorer or its shell-experience processes. S23's qualification records which of them still work with Explorer absent on Ben's build. The brief keeps them out of scope.

@@ -10,8 +10,39 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 - **Prototype checks**: runtime XAML templates with visual states, transparent shaped panels with backdrops, and app bars from WinUI 3. A failure is a new entry here.
 - **Windows App SDK release**: pinned in the foundation slice.
 - **Performance budgets**: set after the first working prototype.
+- **Per-user shell value on build 26200**: honoured by Windows? Default until S17's check: yes; otherwise the per-user Custom User Interface value.
 
 ---
+
+## 2026-11-01 — Replacement mode: the Windows key goes through a host hook
+- **Context:** Without Explorer, nothing handles a lone Windows-key press or Win+R, Win+E, Win+D and Win+M.
+- **Chosen:** A low-level keyboard hook in the host, on its own thread, installed only in replacement mode.
+- **Rejected:**
+  - `RegisterHotKey` alone, because it cannot express a lone Windows-key press.
+  - A hook in a plugin process, because a worker restart would drop keys and a slow callback would delay every key press.
+
+## 2026-11-01 — Replacement mode: the host owns the notification area
+- **Context:** Applications send `Shell_NotifyIcon` and `SHAppBarMessage` to whichever window has the class `Shell_TrayWnd`. Without Explorer, nobody receives them.
+- **Chosen:** In replacement mode the host creates `Shell_TrayWnd` and implements both protocols, as LiteStep's tray service did. The icons reach plugins through the `host.tray.icons` feed, and clicks go back through `host.tray.invoke`.
+- **Rejected:**
+  - A plugin owning the window, because it must exist before applications start and survive plugin restarts.
+  - Hosting it in coexistence mode, because a second `Shell_TrayWnd` would take icons from Explorer's.
+
+## 2026-11-01 — Replacement mode: registered through the per-user shell value
+- **Context:** The app has to become the program Windows starts at sign-in, for Ben's account, without administrator rights, and always be reversible.
+- **Chosen:** The guardian writes the per-user `Winlogon\Shell` value after recording the previous one in `shell.json`, and restores it on `--shell off`. A policy or Shell Launcher setting that overrides it is reported, never changed.
+- **Rejected:**
+  - The machine-wide `HKLM` value, because it needs elevation and changes every account.
+  - Shell Launcher, because it needs elevation and an Enterprise feature, and it is built for kiosks.
+  - Writing the Custom User Interface policy, because policies belong to administrators. It stays the fallback if Windows ignores the per-user value.
+  - Replacing or renaming `explorer.exe`, because File Explorer, servicing and other accounts depend on it.
+
+## 2026-11-01 — Full Explorer replacement is in scope
+- **Context:** Ben: "I want this to be a full replacement of the windows explorer shell all together", as LiteStep was. The brief listed full shell replacement and tray hosting as non-goals.
+- **Chosen:** The brief, design and contract now include replacement mode. Slices S17 to S23 are appended after S16, so coexistence mode is finished first and replacement mode builds on it. Toasts, the notification centre, virtual desktops, skinning other applications, and replacing File Explorer's folder windows stay out of scope.
+- **Rejected:**
+  - Building replacement mode before S6 to S16, because it needs the launcher, running windows, settings, icons and release that those slices deliver.
+  - Skinning other applications in the WindowBlinds way, because it needs code injected into their processes.
 
 ## 2026-11-01 — S5: A broken live edit keeps the running preset
 - **Context:** startup falls back to the default preset when the active one is missing or invalid. A live edit that breaks the active preset file would then switch the look and layout to the default while the user is still typing.
