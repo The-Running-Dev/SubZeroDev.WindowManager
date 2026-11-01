@@ -96,7 +96,8 @@ internal sealed class TestHook
                 foreach (var placeholder in zone.Items.OfType<WmContribution>().Select(c => c.Content).OfType<WmPlaceholder>())
                 {
                     var state = CurrentState(placeholder, WmPlaceholder.ReasonStatesGroup);
-                    ready &= state is not null;
+                    // Reason names the visual state; until the state catches up the tree is half-built.
+                    ready &= state is not null && state == placeholder.Reason;
                     placeholders.Add(new JsonObject
                     {
                         ["plugin"] = placeholder.PluginName,
