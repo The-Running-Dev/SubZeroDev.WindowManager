@@ -15,6 +15,14 @@ public abstract class Plugin
     protected internal virtual Task OnStopAsync(CancellationToken ct) => Task.CompletedTask;
 
     protected internal abstract ContributionInstance CreateInstance(InstanceRequest request);
+
+    /// <summary>The host showed one of the plugin's popups; it has foreground rights while this runs (I18).</summary>
+    protected internal virtual Task OnPopupOpenedAsync(PopupSurface popup, PopupTrigger trigger, CancellationToken ct) => Task.CompletedTask;
+
+    protected internal virtual Task OnPopupClosedAsync(PopupSurface popup, PopupCloseReason reason, CancellationToken ct) => Task.CompletedTask;
+
+    /// <summary>An element in a popup's view did something. The foreground grant of I18 covers it too.</summary>
+    protected internal virtual Task OnPopupEventAsync(PopupSurface popup, ElementEvent e, CancellationToken ct) => Task.CompletedTask;
 }
 
 public sealed class PluginContext
@@ -23,7 +31,7 @@ public sealed class PluginContext
 
     internal PluginContext(Connection connection, string pluginId, HostMode mode, string dataDirectory, JsonObject settings,
         IReadOnlySet<string> declaredCommands, IReadOnlySet<string> declaredFeeds, IReadOnlySet<string> declaredSubscriptions,
-        Action<Func<Task>> enqueue)
+        IReadOnlySet<string> declaredPopups, Action<Func<Task>> enqueue)
     {
         _connection = connection;
         PluginId = pluginId;
@@ -32,6 +40,7 @@ public sealed class PluginContext
         Settings = settings;
         Log = new HostLogger(connection);
         CommandTable = new Commands(connection, declaredCommands);
+        PopupTable = new Popups(connection, declaredPopups);
         FeedTable = new Feeds(connection, declaredFeeds, declaredSubscriptions, enqueue,
             (exception, message) => Log.LogError(exception, "{Message}", message));
     }
@@ -56,6 +65,11 @@ public sealed class PluginContext
     public IFeeds Feeds => FeedTable;
 
     internal Feeds FeedTable { get; }
+
+    /// <summary>The popups in plugin.json.</summary>
+    public IPopups Popups => PopupTable;
+
+    internal Popups PopupTable { get; }
 
     internal Connection Connection => _connection;
 }
@@ -96,7 +110,7 @@ public abstract class ContributionInstance : IAsyncDisposable
     }
 }
 
-/// <summary>A view the plugin owns: an instance's main view, or later a popup.</summary>
+/// <summary>A view the plugin owns: an instance's main view, or a popup.</summary>
 public class Surface
 {
     private readonly Connection _connection;

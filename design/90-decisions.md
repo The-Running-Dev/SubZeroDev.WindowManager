@@ -14,6 +14,24 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-01 — S8: the launcher and plugin popups
+- **Context:** The first popup, the first text input and the first list with a selection. It has to open fast on the monitor under the pointer, start what was picked in front of everything else, and close when the user looks away.
+- **Chosen:**
+  - A popup is one borderless, always-on-top tool window per plugin popup, created on first use and hidden between uses, so later opens skip window creation. Escape and Alt+F4 both close it as `Escape`; losing activation closes it as `LightDismiss`.
+  - Popup element events reach the plugin through `OnPopupEventAsync`; popups are declared in the manifest's `popups` list and a missing declaration is `1007 Undeclared` locally.
+  - A TextInput with `navigates` moves that list's selection with Up and Down and, on Enter, runs the selected item's action, so keyboard and click launch through the same `applications.launch` invocation. The plugin selects the first match after every search.
+  - The index is the per-user and all-users Programs shortcuts whose target exists, then `shell:AppsFolder` items whose parsing name contains `!` (packaged-app AUMIDs); a name already seen is skipped, so a shortcut wins. It is built at start and rebuilt in the background on every open.
+  - Packaged apps start through `IApplicationActivationManager`; executables through `ShellExecute` with the shortcut's arguments. The worker calls `AllowSetForegroundWindow(ASFW_ANY)` and waits up to 3 s for input idle before closing the popup, so the new window takes the foreground. When the new window takes it first, the popup has already closed as `LightDismiss` and the worker's close does nothing.
+  - `launcher.open { mode: "run" }` swaps the popup's view for a command line; a program that cannot start shows its error in the view instead of failing a command.
+  - The default layout gains the launcher button in the bottom panel's start zone.
+  - The acceptance tests press Ctrl+Alt+Space when it is free and otherwise bind `launcher.open` to the first free fallback through the host's `hotkeys` setting, because a tool on the development machine already holds Ctrl+Alt+Space; the host then reports the default as `in-use`, as designed.
+- **Rejected:**
+  - Creating the window on every open, because the first open already costs most of the 300 ms budget.
+  - `Get-StartApps` or the package manager API for packaged apps, because the first spawns PowerShell and the second needs package identity the worker does not have.
+  - Searching in the host, because ranking and sources belong to the plugin and the host would need to know what an application is.
+  - Closing the popup before the launched program has a window, because focus would fall back to the panel and the new window would open behind it.
+- **Known gap:** packaged-app results show the default icon until the icon resolver learns AUMIDs.
+
 ## 2026-11-01 — S7: the running-windows strip
 - **Context:** The first feed and the first list of plugin items. The list must match what a taskbar shows, mark the window in front, survive many windows, and say why an icon is missing.
 - **Chosen:**

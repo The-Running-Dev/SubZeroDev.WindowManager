@@ -120,7 +120,7 @@ Acceptance:
 Out of scope: grouping, thumbnails, drag and drop, jump lists, virtual desktops.
 
 ## S8 — Launch applications by search
-Status: todo
+Status: done
 Delivers: Ben can press a shortcut or click the launcher button, type part of an application's name, and start it with Enter.
 Touches: Protocol (`popup.*`); Sdk (`IPopups`, `PopupSurface`); Host.Surfaces (popup windows, `Wm.Popup`, light dismiss, TextInput with `navigates`, List selection); plugin `subzerodev.launcher` (popup `search`, commands `launcher.open`, `launcher.close`, `applications.launch`, feed `applications.index`, contribution `launcher`)
 Depends on: S7

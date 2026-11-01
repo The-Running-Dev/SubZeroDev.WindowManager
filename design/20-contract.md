@@ -235,6 +235,7 @@ public abstract class Plugin
     protected internal virtual Task OnPluginSettingsChangedAsync(JsonObject settings, CancellationToken ct);
     protected internal virtual Task OnPopupOpenedAsync(PopupSurface popup, PopupTrigger trigger, CancellationToken ct);
     protected internal virtual Task OnPopupClosedAsync(PopupSurface popup, PopupCloseReason reason, CancellationToken ct);
+    protected internal virtual Task OnPopupEventAsync(PopupSurface popup, ElementEvent e, CancellationToken ct); // a popup element's `event` action
 }
 
 public enum SettingsScope { Plugin, Instance }
@@ -313,7 +314,8 @@ public static class View   // builder helpers producing Protocol.ViewNode; sugar
         Prop<string>? label = null, Prop<IconRef>? icon = null, Prop<bool>? active = null, params string[] classes);
     public static ViewNode Stack(string id, StackOrientation orientation, params ViewNode[] children);
     public static ViewNode List(string id, string automationName, Prop<JsonArray> items, ViewNode itemTemplate,
-        StackOrientation orientation = StackOrientation.Panel, ListSelection selection = ListSelection.None);
+        StackOrientation orientation = StackOrientation.Panel, ListSelection selection = ListSelection.None,
+        Prop<string>? selectedKey = null);
     public static ViewNode TextInput(string id, string automationName, Prop<string> value,
         string? placeholder = null, string? navigates = null);
     // Toggle, Image, Progress, Separator and Spacer follow the same pattern.
@@ -387,7 +389,7 @@ The public names other plugins may depend on:
 | Plugin id | Commands | Feeds | Popups | Contributions |
 |---|---|---|---|---|
 | `subzerodev.clock` | none | none | none | `clock` (panelItem, multiInstance; settings: `format: string`, `showDate: bool`) |
-| `subzerodev.launcher` | `launcher.open { mode?: "search"\|"run" }` (default hotkey `Ctrl+Alt+Space`; `run` takes a command line, as Win+R did), `launcher.close`, `applications.launch { exe?: string, aumid?: string, args?: string }` | `applications.index` (array of `{ key, name, exe?, aumid? }`) | `search` | `launcher` (panelItem: a button that opens `search`) |
+| `subzerodev.launcher` | `launcher.open { mode?: "search"\|"run" }` (default hotkey `Ctrl+Alt+Space`; `run` takes a command line, as Win+R did), `launcher.close`, `applications.launch { exe?: string, aumid?: string, args?: string }` | `applications.index` (array of `{ key, name, exe?, aumid?, args? }`; `key` is the shortcut path, or `aumid:` and the AUMID) | `search` | `launcher` (panelItem: a button that opens `search`) |
 | `subzerodev.running-windows` | `windows.activate { hwnd }`, `windows.minimize { hwnd }` | `windows.running` (array of `{ key, hwnd, title, exe?, aumid?, monitorId, active, minimized }`) | none | `windows` (panelItem, multiInstance; settings: `scope: "allMonitors"\|"thisMonitor"`) |
 | `subzerodev.tray` | none | none (subscribes to `host.tray.icons`) | none | `tray` (panelItem: the notification area). `modes: ["replacement"]` |
 | `subzerodev.desktop-icons` | none | none | none | `icons` (gadget on the desktop layer: the user's and the public Desktop folders) |
@@ -456,6 +458,7 @@ public interface IPluginSupervisor
     Task<Outcome<DebugAttachInfo>> DebugAttachAsync(string pluginId, CancellationToken ct);
     IWorkerChannel? GetChannel(string pluginId);                         // null unless Running
     event EventHandler<PluginStatus> StatusChanged;
+    event EventHandler<IWorkerChannel> ChannelOpened;                    // after the handshake, before the first read
 }
 public sealed record DebugAttachInfo(string Pipe, string Token);
 
@@ -785,4 +788,3 @@ All errors are typed codes with a detail string for logs. None is a bare excepti
 - **Performance budgets** (startup, idle memory and CPU, interaction latency): set after the first working prototype, per the brief.
 - **The per-user `Winlogon\Shell` value on build 26200** (design open question 6): confirmed by S17's prototype check; the fallback is the per-user Custom User Interface value.
 - **Explorer-hosted features without Explorer** (design open question 7): recorded by S23.
-- **`applications.index` sources**: Start-menu shortcuts and the AUMIDs of installed packaged apps are the intent. The enumeration method for packaged apps without package identity on the host is to be confirmed in the launcher slice.

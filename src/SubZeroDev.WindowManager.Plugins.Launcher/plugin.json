@@ -1,0 +1,41 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.launcher",
+  "version": "0.1.0",
+  "displayName": "Launcher",
+  "publisher": "SubZeroDev",
+  "description": "Finds installed applications as you type and starts them; also runs a command line, as Win+R did.",
+  "hostApi": "^1.0",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.Launcher.exe", "args": [] },
+  "capabilities": [ "applications.read", "applications.launch" ],
+  "modes": [ "coexistence", "replacement" ],
+  "requiresExplorer": false,
+  "contributions": [
+    {
+      "id": "launcher",
+      "kind": "panelItem",
+      "displayName": "Launcher",
+      "multiInstance": true
+    }
+  ],
+  "commands": [
+    {
+      "id": "launcher.open",
+      "title": "Open the launcher",
+      "defaultHotkey": "Ctrl+Alt+Space",
+      "argsSchema": { "type": "object", "properties": { "mode": { "type": "string", "enum": [ "search", "run" ] } } }
+    },
+    { "id": "launcher.close", "title": "Close the launcher" },
+    {
+      "id": "applications.launch",
+      "title": "Start an application",
+      "argsSchema": {
+        "type": "object",
+        "properties": { "exe": { "type": "string" }, "aumid": { "type": "string" }, "args": { "type": "string" } }
+      }
+    }
+  ],
+  "feeds": [ { "id": "applications.index", "schema": {} } ],
+  "popups": [ { "id": "search" } ],
+  "settingsVersion": 1
+}

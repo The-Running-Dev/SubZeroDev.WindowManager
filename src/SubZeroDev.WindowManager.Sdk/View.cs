@@ -84,9 +84,11 @@ public static class View
         Node(id, ElementKind.Stack, [], ("orientation", Lower(orientation))) with { Children = children };
 
     public static ViewNode List(string id, string automationName, Prop<JsonArray> items, ViewNode itemTemplate,
-        StackOrientation orientation = StackOrientation.Panel, ListSelection selection = ListSelection.None) =>
+        StackOrientation orientation = StackOrientation.Panel, ListSelection selection = ListSelection.None,
+        Prop<string>? selectedKey = null) =>
         Node(id, ElementKind.List, [],
-            ("automationName", automationName), ("items", items.ToJson()), ("orientation", Lower(orientation)), ("selection", Lower(selection)))
+            ("automationName", automationName), ("items", items.ToJson()), ("orientation", Lower(orientation)), ("selection", Lower(selection)),
+            ("selectedKey", selectedKey?.ToJson()))
         with { ItemTemplate = itemTemplate };
 
     public static ViewNode TextInput(string id, string automationName, Prop<string> value,
