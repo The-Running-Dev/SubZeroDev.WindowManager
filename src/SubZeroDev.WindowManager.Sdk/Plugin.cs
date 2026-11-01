@@ -16,6 +16,18 @@ public abstract class Plugin
 
     protected internal abstract ContributionInstance CreateInstance(InstanceRequest request);
 
+    /// <summary>
+    /// Moves stored settings from <paramref name="fromVersion"/> to the shape plugin.json's <c>settingsVersion</c>
+    /// declares. The host may call it before <c>initialize</c>, so <see cref="Context"/> can be unset. The default
+    /// returns the settings unchanged at the declared version. Throwing leaves the stored settings untouched and
+    /// starts the plugin with defaults.
+    /// </summary>
+    protected internal virtual Task<MigratedSettings> MigrateSettingsAsync(SettingsScope scope, int fromVersion, JsonObject settings,
+        CancellationToken ct) => Task.FromResult(new MigratedSettings(PluginRuntime.DeclaredSettingsVersion, settings));
+
+    /// <summary>The plugin-level settings changed outside the plugin; <see cref="PluginContext.Settings"/> already holds them.</summary>
+    protected internal virtual Task OnPluginSettingsChangedAsync(JsonObject settings, CancellationToken ct) => Task.CompletedTask;
+
     /// <summary>The host showed one of the plugin's popups; it has foreground rights while this runs (I18).</summary>
     protected internal virtual Task OnPopupOpenedAsync(PopupSurface popup, PopupTrigger trigger, CancellationToken ct) => Task.CompletedTask;
 
@@ -24,6 +36,14 @@ public abstract class Plugin
     /// <summary>An element in a popup's view did something. The foreground grant of I18 covers it too.</summary>
     protected internal virtual Task OnPopupEventAsync(PopupSurface popup, ElementEvent e, CancellationToken ct) => Task.CompletedTask;
 }
+
+public enum SettingsScope
+{
+    Plugin,
+    Instance,
+}
+
+public sealed record MigratedSettings(int Version, JsonObject Settings);
 
 public sealed class PluginContext
 {
@@ -51,7 +71,25 @@ public sealed class PluginContext
 
     public string DataDirectory { get; }
 
-    public JsonObject Settings { get; }
+    /// <summary>The plugin-level settings, with schema defaults filled in. Replaced when they change.</summary>
+    public JsonObject Settings { get; internal set; }
+
+    /// <summary>
+    /// Stores plugin-level settings. The host checks them against plugin.json's <c>settingsSchema</c> and answers
+    /// <see cref="ErrorCode.SettingsInvalid"/> without writing when they fail it.
+    /// </summary>
+    public async Task<SdkResult> SaveSettingsAsync(JsonObject settings, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var result = await HostRequests.SendAsync(_connection, Methods.SettingsSave,
+            new SettingsSaveParams(Scope.Plugin, null, (JsonObject)settings.DeepClone()), "plugin settings", ct).ConfigureAwait(false);
+        if (result.Ok)
+        {
+            Settings = (JsonObject)settings.DeepClone();
+        }
+
+        return result;
+    }
 
     /// <summary>Forwarded to the host as <c>log</c> notifications, into the plugin's log file.</summary>
     public ILogger Log { get; }
@@ -87,12 +125,16 @@ public abstract class ContributionInstance : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(request);
         InstanceId = request.InstanceId;
         ContributionId = request.ContributionId;
+        Settings = request.Settings;
         Surface = request.Surface;
     }
 
     public string InstanceId { get; }
 
     public string ContributionId { get; }
+
+    /// <summary>The instance's settings, with the contribution's schema defaults filled in.</summary>
+    public JsonObject Settings { get; internal set; }
 
     protected Surface Surface { get; }
 
@@ -101,7 +143,19 @@ public abstract class ContributionInstance : IAsyncDisposable
 
     protected internal virtual Task OnEventAsync(ElementEvent e, CancellationToken ct) => Task.CompletedTask;
 
+    /// <summary>The instance's settings changed in the layout; <see cref="Settings"/> already holds them.</summary>
     protected internal virtual Task OnSettingsChangedAsync(JsonObject settings, CancellationToken ct) => Task.CompletedTask;
+
+    /// <summary>
+    /// Stores this instance's settings in the layout. The host checks them against the contribution's
+    /// <c>settingsSchema</c> and answers <see cref="ErrorCode.SettingsInvalid"/> without writing when they fail it.
+    /// </summary>
+    public Task<SdkResult> SaveSettingsAsync(JsonObject settings, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return HostRequests.SendAsync(Surface.Connection, Methods.SettingsSave,
+            new SettingsSaveParams(Scope.Instance, InstanceId, (JsonObject)settings.DeepClone()), $"settings of {InstanceId}", ct);
+    }
 
     public virtual ValueTask DisposeAsync()
     {
@@ -124,6 +178,8 @@ public class Surface
     }
 
     public string SurfaceId { get; }
+
+    internal Connection Connection => _connection;
 
     /// <summary>Validates the tree (I11), bumps the revision and sends it. Safe from any thread.</summary>
     public void SetView(ViewNode root)

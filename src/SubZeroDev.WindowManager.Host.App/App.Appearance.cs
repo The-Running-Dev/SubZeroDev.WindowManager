@@ -127,6 +127,7 @@ public sealed partial class App
             return;
         }
 
+        _settingsService?.OnDocumentChanged(e);
         if (e.Id == DocumentId.HostSettings)
         {
             OnSettingsChanged(e.State);
