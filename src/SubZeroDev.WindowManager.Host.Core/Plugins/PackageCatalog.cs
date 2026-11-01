@@ -29,7 +29,7 @@ public sealed class PackageCatalog : IPackageCatalog, IDisposable
         _builtInRoot = Path.Combine(locations.ContentRoot, "plugins");
         _userRoot = Path.Combine(locations.DataRoot, "plugins");
         _log = log;
-        _rescan = new Timer(_ => Rescan(), null, Timeout.Infinite, Timeout.Infinite);
+        _rescan = new Timer(_ => RescanSafely(), null, Timeout.Infinite, Timeout.Infinite);
         Rescan(raise: false);
 
         if (watch)
@@ -108,27 +108,20 @@ public sealed class PackageCatalog : IPackageCatalog, IDisposable
                 problems.Add("plugin.json is not a JSON object.");
             }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
             problems.Add($"plugin.json could not be read: {e.Message}");
         }
 
         if (manifest is not null)
         {
-            if (manifest.Id != folderName)
+            try
             {
-                problems.Add($"The folder '{folderName}' does not match the manifest id '{manifest.Id}'.");
+                CheckEntry(folder, folderName, manifest, problems);
             }
-
-            var root = Path.GetFullPath(folder) + Path.DirectorySeparatorChar;
-            var entry = Path.GetFullPath(Path.Combine(folder, manifest.Entry.Path));
-            if (!entry.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
             {
-                problems.Add($"entry.path '{manifest.Entry.Path}' leaves the package folder.");
-            }
-            else if (!File.Exists(entry))
-            {
-                problems.Add($"entry.path '{manifest.Entry.Path}' does not exist.");
+                problems.Add($"entry.path '{manifest.Entry.Path}' is not a valid path.");
             }
         }
 
@@ -139,7 +132,39 @@ public sealed class PackageCatalog : IPackageCatalog, IDisposable
         return (record, problems.Count == 0 ? manifest : null);
     }
 
+    private static void CheckEntry(string folder, string folderName, PluginManifest manifest, List<string> problems)
+    {
+        if (manifest.Id != folderName)
+        {
+            problems.Add($"The folder '{folderName}' does not match the manifest id '{manifest.Id}'.");
+        }
+
+        var root = Path.GetFullPath(folder) + Path.DirectorySeparatorChar;
+        var entry = Path.GetFullPath(Path.Combine(folder, manifest.Entry.Path));
+        if (!entry.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        {
+            problems.Add($"entry.path '{manifest.Entry.Path}' leaves the package folder.");
+        }
+        else if (!File.Exists(entry))
+        {
+            problems.Add($"entry.path '{manifest.Entry.Path}' does not exist.");
+        }
+    }
+
     private void Schedule() => _rescan.Change(Debounce, Timeout.InfiniteTimeSpan);
+
+    /// <summary>The watcher's rescan runs on a timer thread, where an escaped exception would end the host.</summary>
+    private void RescanSafely()
+    {
+        try
+        {
+            Rescan();
+        }
+        catch (Exception e)
+        {
+            _log.Write(LogLevel.Error, "catalog", $"Rescanning the plugins failed: {e}");
+        }
+    }
 
     private void Rescan(bool raise = true)
     {

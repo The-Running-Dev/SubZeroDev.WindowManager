@@ -50,9 +50,19 @@ public static partial class PluginManifestReader
         PluginEntry? entry = null;
         if (document["entry"] is JsonObject entryObject && Text(entryObject, "path") is { Length: > 0 } path)
         {
-            var args = entryObject["args"] is JsonArray array
-                ? array.Select(item => item?.GetValue<string>() ?? string.Empty).ToList()
-                : [];
+            var args = new List<string>();
+            foreach (var item in entryObject["args"] as JsonArray ?? [])
+            {
+                if (item is JsonValue value && value.TryGetValue<string>(out var arg))
+                {
+                    args.Add(arg);
+                }
+                else
+                {
+                    problems.Add($"entry.args item {item?.ToJsonString() ?? "null"} is not a string.");
+                }
+            }
+
             entry = new PluginEntry(path, args);
         }
         else
@@ -65,7 +75,7 @@ public static partial class PluginManifestReader
         {
             foreach (var item in modeArray)
             {
-                switch (item?.GetValue<string>())
+                switch (item is JsonValue value && value.TryGetValue<string>(out var mode) ? mode : null)
                 {
                     case "coexistence": modes.Add(HostMode.Coexistence); break;
                     case "replacement": modes.Add(HostMode.Replacement); break;
@@ -91,10 +101,16 @@ public static partial class PluginManifestReader
                     problems.Add($"contribution '{contributionId}' has kind '{kind}'; only panelItem is defined.");
                 }
 
+                var multiInstance = false;
+                if (item["multiInstance"] is { } multi && !(multi is JsonValue value && value.TryGetValue(out multiInstance)))
+                {
+                    problems.Add($"contribution '{contributionId}' has a multiInstance that is not true or false.");
+                }
+
                 contributions.Add(new ContributionDeclaration(
                     contributionId ?? string.Empty, kind ?? string.Empty,
                     Text(item, "displayName") ?? contributionId ?? string.Empty,
-                    item["multiInstance"]?.GetValue<bool>() ?? false));
+                    multiInstance));
             }
         }
 

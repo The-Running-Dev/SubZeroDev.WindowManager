@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using SubZeroDev.WindowManager.Host.Core.Diagnostics;
 using SubZeroDev.WindowManager.Host.Platform;
 using SubZeroDev.WindowManager.Protocol;
 
@@ -161,6 +162,31 @@ public sealed partial class PluginTests
         Assert.Equal(DocumentHealth.Valid, e.State.Health);
     }
 
+    [Theory]
+    [InlineData("\"args\": [1]", "\"modes\": [\"coexistence\"]", "\"multiInstance\": true")]
+    [InlineData("\"args\": []", "\"modes\": [5]", "\"multiInstance\": true")]
+    [InlineData("\"args\": []", "\"modes\": [\"coexistence\"]", "\"multiInstance\": \"x\"")]
+    public void A_wrong_typed_manifest_field_marks_the_package_invalid(string args, string modes, string multiInstance)
+    {
+        using var scratch = new Scratch();
+        var folder = Path.Combine(scratch.DataRoot, "plugins", "example.bad");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "worker.exe"), string.Empty);
+        File.WriteAllText(Path.Combine(folder, "plugin.json"), $$"""
+            {
+              "manifestVersion": 1, "id": "example.bad", "version": "0.1.0", "displayName": "Bad", "publisher": "Test",
+              "hostApi": "^1.0", "entry": { "path": "worker.exe", {{args}} }, {{modes}},
+              "contributions": [ { "id": "c", "kind": "panelItem", "displayName": "C", {{multiInstance}} } ]
+            }
+            """);
+
+        using var catalog = new PackageCatalog(scratch.Locations, new NullLog(), watch: false);
+
+        var record = Assert.Single(catalog.All(PackageKind.Plugin), record => record.Id == "example.bad");
+        Assert.Equal(PackageHealth.Invalid, record.Health);
+        Assert.Null(catalog.GetManifest("example.bad"));
+    }
+
     [Fact]
     public void Paths_map_back_to_documents()
     {
@@ -231,5 +257,12 @@ public sealed partial class PluginTests
         }
 
         return seen;
+    }
+
+    private sealed class NullLog : IHostLog
+    {
+        public void Write(Diagnostics.LogLevel level, string area, string message)
+        {
+        }
     }
 }

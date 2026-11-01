@@ -233,7 +233,17 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         // The handshake deadline covers connecting and hello; the process ending fails it at once.
         using var handshake = CancellationTokenSource.CreateLinkedTokenSource(ct);
         handshake.CancelAfter(WorkerChannel.HandshakeTimeout);
-        _ = process.Exited.ContinueWith(_ => handshake.Cancel(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        _ = process.Exited.ContinueWith(_ =>
+        {
+            try
+            {
+                handshake.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The handshake already finished.
+            }
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         try
         {
             await pipe.WaitForConnectionAsync(handshake.Token).ConfigureAwait(false);

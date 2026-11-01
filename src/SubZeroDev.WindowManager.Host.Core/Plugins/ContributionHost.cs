@@ -351,8 +351,10 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
 
         foreach (var entry in _instances.Values.Where(entry => entry.PluginId == change.Id))
         {
+            // The new worker numbers its views from 1 again.
             entry.Created = false;
             entry.Channel = null;
+            entry.Model = new SurfaceModel(SurfaceIdOf(entry.Placement.Instance.Id));
             Publish(entry, PlaceholderReason.Starting, null);
         }
 

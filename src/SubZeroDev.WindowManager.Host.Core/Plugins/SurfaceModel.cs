@@ -66,7 +66,7 @@ public sealed class SurfaceModel(string surfaceId)
             return new SurfaceUpdate(SurfaceUpdateResult.Stale, $"Patch revision {patch.Revision} is below the view revision {ViewRevision}.");
         }
 
-        foreach (var key in patch.Remove ?? [])
+        foreach (var key in (patch.Remove ?? []).OfType<string>())
         {
             _state.Remove(key);
         }

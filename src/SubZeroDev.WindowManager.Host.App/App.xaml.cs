@@ -37,9 +37,11 @@ public sealed partial class App : Application
         DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
         UnhandledException += (_, e) =>
         {
-            _log?.Write(LogLevel.Error, "host", $"Unhandled: {e.Exception}");
+            _log?.WriteNow(LogLevel.Error, "host", $"Unhandled: {e.Exception}");
             e.Handled = true;
         };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            _log?.WriteNow(LogLevel.Error, "host", $"Unhandled off the UI thread: {e.ExceptionObject}");
     }
 
     public static int ExitCode { get; private set; } = ExitCodes.Normal;

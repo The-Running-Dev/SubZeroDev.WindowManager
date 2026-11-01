@@ -33,6 +33,13 @@ jobs:
           global-json-file: global.json
       - name: Build
         run: dotnet build SubZeroDev.WindowManager.slnx -c Release
+      - name: Keep crash dumps
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\SubZeroDev.WindowManager.Host.exe'
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpFolder -Value "$env:RUNNER_TEMP\dumps" -PropertyType ExpandString -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpType -Value 2 -PropertyType DWord -Force | Out-Null
       - name: Test
         run: dotnet test SubZeroDev.WindowManager.slnx -c Release --no-build --logger "console;verbosity=normal"
       - name: Crash events
@@ -42,3 +49,21 @@ jobs:
           Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2; StartTime = (Get-Date).AddHours(-1) } -ErrorAction SilentlyContinue |
             Where-Object { $_.Message -match 'SubZeroDev' } |
             Format-List TimeCreated, ProviderName, Message
+      - name: Crash dump stacks
+        if: failure()
+        shell: pwsh
+        run: |
+          $dumps = Get-ChildItem "$env:RUNNER_TEMP\dumps" -Filter *.dmp -ErrorAction SilentlyContinue
+          if (-not $dumps) { 'No dumps.'; exit 0 }
+          dotnet tool install --global dotnet-dump | Out-Null
+          foreach ($dump in $dumps) {
+            "=== $($dump.Name)"
+            dotnet-dump analyze $dump.FullName -c 'pe -nested' -c 'clrthreads' -c 'clrstack -all' -c 'exit'
+          }
+      - name: Upload crash dumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-dumps
+          path: ${{ runner.temp }}/dumps
+          if-no-files-found: ignore

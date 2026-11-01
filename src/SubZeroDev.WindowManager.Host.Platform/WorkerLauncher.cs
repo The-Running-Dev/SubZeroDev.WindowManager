@@ -213,7 +213,15 @@ public sealed unsafe class WorkerLauncher : IWorkerLauncher, IDisposable
             _waitHandle = new ProcessWaitHandle(handle);
             _wait = ThreadPool.RegisterWaitForSingleObject(_waitHandle, (_, _) =>
             {
-                _exited.TrySetResult(JobNative.GetExitCodeProcess(_handle, out var code) ? (int)code : -1);
+                // The wait can fire while Dispose closes the handle; an escaped exception here would end the host.
+                try
+                {
+                    _exited.TrySetResult(JobNative.GetExitCodeProcess(_handle, out var code) ? (int)code : -1);
+                }
+                catch (ObjectDisposedException)
+                {
+                    _exited.TrySetResult(-1);
+                }
             }, null, Timeout.Infinite, executeOnlyOnce: true);
         }
 
