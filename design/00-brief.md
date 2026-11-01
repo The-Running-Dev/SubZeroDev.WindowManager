@@ -6,13 +6,14 @@
 Sources: [notes/2026-10-26-windows-shell-plugins-themes-architecture-brief.md](../notes/2026-10-26-windows-shell-plugins-themes-architecture-brief.md) (the project brief) and [notes/2026-10-26-windows-shell-plugins-themes-architecture.md](../notes/2026-10-26-windows-shell-plugins-themes-architecture.md) (the full discussion and LiteStep investigation).
 
 ## Problem
-Build a modern C# desktop environment for Windows 11 that users extend through plugins and transform through themes, layouts, palettes and icon packs. It starts by running on top of the existing Windows desktop alongside Explorer, delivers a useful daily desktop, and keeps a path open to full shell replacement once the integrations mature.
+Build a modern C# desktop environment for Windows 11 that users extend through plugins and transform through themes, layouts, palettes and icon packs. It starts by running on top of the existing Windows desktop alongside Explorer, delivers a useful daily desktop, and then replaces the Explorer shell altogether, as LiteStep did, with the same host, plugins and themes.
 
 Requirements stated by Ben:
 - This is a new project, not a copy of LiteStep. LiteStep may be used as a behavioural and architectural reference; reusing its code, module interfaces or theme formats is not required.
 - Implement it in C#, with a modern UI technology, for modern Windows 11.
 - Begin as a desktop running on top of the existing Windows desktop; it does not have to replace the shell initially.
 - Preserve a path to replacing the Windows shell after the kinks are worked out.
+- Replace the Windows Explorer shell altogether, as LiteStep did: the app becomes the shell Windows starts at sign-in, with Explorer not running (Ben, 2026-11-01, superseding the earlier non-goal "Full shell replacement").
 - Provide a substantial share of functionality through plugins, not built into the host: build an extensible base, then basic plugins, then keep extending those plugins.
 - Make colours, icons and broader appearance deeply customisable, in the spirit of WindowBlinds.
 - Bring in the beauty and customisability of Enlightenment.
@@ -27,10 +28,10 @@ Users who want control over how their desktop looks, how it is arranged, and whi
 
 ## Non-goals
 Outside the first release (the supplied brief keeps extension points for these, without making them prerequisites):
-- Full shell replacement.
-- Comprehensive tray/notification hosting.
-- Complete virtual-desktop management.
-- Skinning external applications or Windows-wide appearance.
+- Toast notifications and the notification centre. Hosting the notification area (other applications' tray icons) is in scope for replacement mode.
+- Virtual-desktop management. Task View and virtual desktops belong to Explorer, so they are unavailable in replacement mode.
+- Skinning external applications or Windows-wide appearance. It needs code injected into other processes.
+- Replacing File Explorer's folder windows. In replacement mode they still come from `explorer.exe`, started as an ordinary application.
 - A plugin/theme marketplace.
 - Compatibility with legacy LiteStep, WindowBlinds or Enlightenment theme and plugin formats.
 
@@ -44,21 +45,22 @@ The first release is ready for evaluation when:
 - Two sample visual configurations, using the same functional plugins, demonstrate a meaningful change in appearance.
 - A failed isolated plugin process leaves the host responsive and gives the user a recoverable unavailable state.
 - Normal exit restores desktop changes; abrupt-failure recovery is demonstrated in a defined test scenario.
-- The clock, launcher and running-window features work in coexistence mode.
+- The clock, launcher and running-window features work in coexistence mode and in replacement mode.
+- Replacement mode: with the app registered as Ben's shell, signing in starts it instead of Explorer and gives a complete daily desktop. That means panels, the launcher and running windows; the notification area with other applications' icons; a desktop with wallpaper and icons; the Windows key; lock, sign out, restart, shut down and sleep; volume, network and battery indicators; and File Explorer windows on demand. Registering and unregistering need no administrator rights. If the host cannot start, the session falls back to Explorer without Ben doing anything.
 - Monitor changes, mixed-DPI behaviour, keyboard access and fullscreen applications pass a documented initial test matrix.
 - Measurable startup, idle-resource and interaction-response budgets exist and are met (budgets set after the first working prototype, not in advance).
 
-First-release deliverables: host and plugin SDK (discovery, lifecycle, compatibility checks, commands, settings, diagnostics); a configurable panel; clock, launcher (shortcuts and basic search) and running-windows plugins; a plugin manager (enable, disable, configure, inspect); theme and asset support (shared styling, palettes, replaceable icons); the two sample configurations; recovery and display handling.
+First-release deliverables: host and plugin SDK (discovery, lifecycle, compatibility checks, commands, settings, diagnostics); a configurable panel; clock, launcher (shortcuts and basic search) and running-windows plugins; a plugin manager (enable, disable, configure, inspect); theme and asset support (shared styling, palettes, replaceable icons); the two sample configurations; recovery and display handling; replacement mode (shell registration and the way back to Explorer, shell roles and start-up programs, the notification-area and app-bar host, the desktop, the Windows key and session commands, system indicators).
 
 ## Narrowest useful version
-The foundation prototype: a themeable desktop surface running alongside Explorer, one separately built plugin loaded by the host, and a demonstrated isolated-worker failure that leaves the host usable. The functional desktop (clock, launcher, running windows, configuration, plugin manager) follows; then customisation and stability; then the expanded platform and a separately qualified replacement mode.
+The foundation prototype: a themeable desktop surface running alongside Explorer, one separately built plugin loaded by the host, and a demonstrated isolated-worker failure that leaves the host usable. The functional desktop (clock, launcher, running windows, configuration, plugin manager) follows; then customisation and stability; then the expanded platform; then replacement mode, built and qualified as its own milestone until Explorer is no longer needed.
 
 ## Environment
 - Windows 11 desktop, single user, local and offline.
 - C#.
 - Coexistence mode: Explorer keeps running; installation and normal launch do not change the configured Windows shell. Desktop positioning and work-area changes are reversible.
 - Multiple monitors, mixed DPI, monitor changes and fullscreen applications must be handled.
-- Replacement mode (later) uses the same host, contracts and plugins, and must handle edition-specific shell-launch mechanisms (CustomShell policy, Shell Launcher on Enterprise/Education/IoT) explicitly.
+- Replacement mode uses the same host, contracts and plugins. It is registered per user, through the account's own `Winlogon\Shell` value. It detects and reports the edition-specific mechanisms that override that value (the Custom User Interface policy, Shell Launcher on Enterprise/Education/IoT) rather than changing them. Ben's machine runs Windows 11 Enterprise.
 - Project location: `D:\Dropbox\Projects\SubZeroDev\WindowManager`.
 
 ## Lifespan

@@ -240,3 +240,101 @@ Acceptance:
   - S16.2 `docs/budgets.md` and a decision entry set each budget at no more than the measured 90th percentile plus 20 %.
   - S16.3 A CI job runs the startup and idle measurements on every pull request and fails when one exceeds its budget by more than 10 %.
 Out of scope: optimisation work beyond meeting the budgets.
+
+## S17 — Run as the Windows shell, and always get back to Explorer
+Status: todo
+Delivers: Ben can make the app his Windows shell with one command and no admin rights, sign in to it instead of Explorer, and always get Explorer back: by command, from Settings, by holding Shift at sign-in, or automatically when the host keeps failing.
+Touches: Guardian (`--shell on|off|status`, `--mode replacement`, `--take-over`, `shell.json`, Explorer fallback); Host.App (`--mode`, host mode to workers); Host.Core (mode filtering per I16, `host.shell.restoreExplorer`, `NotInReplacementMode`); Recovery (`workArea` revert); Host.Settings (a "Use as my shell" switch); `docs/replacement-mode.md`
+Depends on: S15, S4
+Acceptance:
+  - S17.1 Against a test registry root, `--shell on` records the previous per-user `Winlogon\Shell` value (or its absence) in `shell.json`, then writes `"<install>\SubZeroDev.WindowManager.exe" --mode replacement`. `--shell off` restores the previous state exactly, absence included (I22). Neither needs elevation.
+  - S17.2 With a Custom User Interface policy value present in the test root, `--shell on` exits 5, names the value, and writes nothing.
+  - S17.3 The guardian started with `--mode replacement` starts the host with `--mode replacement`, and every worker receives `--wm-mode replacement`. A plugin whose `modes` lacks `replacement`, or with `requiresExplorer: true`, is `Incompatible` with `ModeUnsupported`.
+  - S17.4 In replacement mode, when the host fails `maxRestarts + 1` times within the window, the guardian starts `explorer.exe` (a recording launcher in the test) before it shows its message (I23). With Shift reported held at start, it starts `explorer.exe` and never starts the host.
+  - S17.5 `--mode replacement` while another process owns the shell window exits 6. With `--take-over`, it asks Explorer to exit (a recorded request in the test) and continues.
+  - S17.6 In replacement mode, `host.shell.restoreExplorer` exits the host normally (journal empty) and starts `explorer.exe`; with `unregister: true` it also restores the registry as `--shell off` does. In coexistence mode it returns `NotInReplacementMode`.
+  - S17.7 On Ben's machine (Windows 11 Enterprise 26200), after `--shell on` and signing out and in, the guardian runs and `explorer.exe` does not; `--shell off` and another sign-in bring Explorer back, *manual*. If the per-user value is not honoured, switching to the fallback in design open question 6 is a decision entry.
+Out of scope: the shell roles (S18) and the notification area (S19); registration for other accounts.
+
+## S18 — Shell roles and session start-up
+Status: todo
+Delivers: Signed in to the app as his shell, Ben gets his start-up programs, windows report themselves to the running-windows list, minimised windows go to the panel instead of piling up on the screen, and File Explorer folder windows open as ordinary windows.
+Touches: Host.Platform (`IShellRoleService`, `IStartupRunner`, replacement `IAppBarService` that sets the work area, `ARW_HIDE`); Host.App (replacement start order); Host.Core (`host.files.open`); plugin `subzerodev.running-windows` (shell-hook events in replacement mode); `docs/replacement-mode.md`
+Depends on: S17, S7
+Acceptance:
+  - S18.1 In replacement mode with no other shell window, the host's desktop window is `GetShellWindow()`. Its hook window receives window created, destroyed, activated and flashing messages for a test window, and a flashing window sets `attention` on its running-windows button within 500 ms.
+  - S18.2 With another process holding the shell window, the host logs `ShellRoleTaken`, runs without the roles, and every other feature still starts. Later slices test in this state.
+  - S18.3 After the first panel shows, the host signals `ShellDesktopSwitchEvent` and sends `WM_USER` to the desktop window, once.
+  - S18.4 Against a test registry root and test Startup folders, `IStartupRunner` runs HKLM RunOnce, RunOnceEx, HKLM Run, HKCU Run, the common Startup folder, the user Startup folder, then HKCU RunOnce, in that order. It deletes a RunOnce value before running it, or after a successful start when the name begins with `!`, and leaves an HKLM value it cannot delete alone and logged. It skips a source disabled by its `Explorer` policy value (`DisableLocalMachineRun`, `DisableCurrentUserRun`, `DisableLocalMachineRunOnce`, `DisableCurrentUserRunOnce`). A second host start in the same session runs nothing (I24).
+  - S18.5 In replacement mode a `reserve` panel sets the work area itself (`SPI_SETWORKAREA`), journalled as `workArea` before it is applied (I6). After the host is killed, the guardian restores the original work area.
+  - S18.6 In replacement mode, minimised windows are hidden (`ARW_HIDE` in `SPI_GETMINIMIZEDMETRICS`).
+  - S18.7 `host.files.open { path }` starts `explorer.exe` with that path. On the replacement session this opens a folder window and no second shell, *manual*.
+Out of scope: other applications' app bars (S19); session commands (S21).
+
+## S19 — The notification area and other applications' app bars
+Status: todo
+Delivers: In replacement mode, the icons applications put in the notification area (chat, cloud sync, VPN, updaters) appear in Ben's panel, react to clicks as they do on the taskbar, and show their tooltips and balloons. Docked toolbars from other applications still get their screen edge.
+Touches: Host.Platform (`ITrayHost`: `Shell_TrayWnd` and `TrayNotifyWnd`, `WM_COPYDATA` for `Shell_NotifyIcon` versions 0 to 4 and `SHAppBarMessage`, the `TaskbarCreated` broadcast); Host.Core (`host.tray.icons` feed, `host.tray.invoke`); Host.Theming (`IconRef.Tray`); plugin `subzerodev.tray`; a test tray client under `tests/`
+Depends on: S18, S6
+Acceptance:
+  - S19.1 A test client sending `NIM_ADD`, `NIM_MODIFY` (icon, tooltip) and `NIM_DELETE` to the host's `Shell_TrayWnd` produces the matching `host.tray.icons` entries within 250 ms. The tray item shows one button per visible icon, with its icon and tooltip.
+  - S19.2 For a client on `NOTIFYICON_VERSION_4`, a click on its button sends `NIN_SELECT` and a right click sends `WM_CONTEXTMENU`, with the anchor coordinates packed as version 4 requires. A version 0 client receives `WM_LBUTTONUP` and `WM_RBUTTONUP`. The owner process gets foreground rights first (I18).
+  - S19.3 A `NIF_INFO` balloon shows as a themed notice from the tray item and goes after its timeout.
+  - S19.4 A malformed or truncated `WM_COPYDATA` payload is ignored and logged. The icons of a destroyed owner window disappear within 2 s.
+  - S19.5 On host start in replacement mode, `TaskbarCreated` is broadcast, and the test client's re-added icon appears.
+  - S19.6 A test app bar sending `ABM_NEW`, `ABM_QUERYPOS` and `ABM_SETPOS` for the top edge receives a rectangle that does not overlap the host's panels, and the work area shrinks by its height. `ABM_REMOVE` gives the space back. `ABM_GETTASKBARPOS` returns the primary panel's rectangle, and `ABM_GETSTATE` reflects its `autoHide`.
+  - S19.7 In coexistence mode the host creates no `Shell_TrayWnd`, and the tray plugin is `Incompatible`.
+Out of scope: legacy Shell Service Objects (`ShellServiceObjectDelayLoad`); toast notifications and the notification centre; `ITaskbarList` progress and overlays.
+
+## S20 — Desktop, wallpaper and icons
+Status: todo
+Delivers: In replacement mode Ben's desktop shows his preset's wallpaper and the icons from his Desktop folders, which open on double-click, and Win+D brings it forward.
+Touches: Host.Surfaces (the desktop surface, `host.desktop.show`); Host.Theming (preset `wallpaper`, asset-pack images); plugin `subzerodev.desktop-icons`
+Depends on: S18, S13
+Acceptance:
+  - S20.1 In replacement mode the desktop surface covers every monitor at the bottom of the z-order and draws the preset's `wallpaper` with its `fit`. Without one, it draws the system wallpaper (`SPI_GETDESKWALLPAPER`). Switching presets changes it within 1 s.
+  - S20.2 The desktop-icons gadget lists the user's and the public Desktop folders, merged and sorted by name. A file added to either appears within 2 s, and a deleted one disappears.
+  - S20.3 Double-clicking an icon, or pressing Enter on it, opens it as the shell would (`ShellExecute` with the `open` verb), with foreground rights granted to the started process.
+  - S20.4 `host.desktop.show` minimises every normal window, and a second call restores the same windows.
+  - S20.5 In coexistence mode the desktop-icons gadget works on the `desktop` layer over Explorer's desktop.
+Out of scope: placing icons by dragging (the view model has no drag); shell context menus on icons.
+
+## S21 — Windows key and session commands
+Status: todo
+Delivers: In replacement mode the Windows key opens Ben's launcher, the usual Windows-key shortcuts still work, and he can lock, sign out, restart, shut down or sleep from the panel.
+Touches: Host.Platform (`IWindowsKeyHook` on its own thread, `ISessionService`); Host.Core (`host.session.*`, default bindings); plugin `subzerodev.launcher` (`run` mode); plugin `subzerodev.session`
+Depends on: S18, S8
+Acceptance:
+  - S21.1 In replacement mode, a lone Windows-key press and release, with no other key between, invokes `launcher.open` with `source: hotkey`, and so does Ctrl+Esc. Holding Windows with another key does not.
+  - S21.2 Win+R invokes `launcher.open { mode: "run" }`, Win+E `host.files.open`, Win+D `host.desktop.show`, and Win+M minimises every window. Win+L still locks, because Windows handles it.
+  - S21.3 The hook answers each key event from its own thread. With the UI thread blocked for 2 s, keys typed into another application are neither delayed nor dropped.
+  - S21.4 `host.session.lock`, `signOut`, `restart`, `shutdown` and `sleep` call the matching `ISessionService` method (a recording fake in tests). A refusal returns `SessionCommandRefused`.
+  - S21.5 The `power` item opens a menu with the five commands, reachable by keyboard. Sign out, restart and shut down ask for confirmation first.
+  - S21.6 On the replacement session, each of the five commands works from the menu, *manual*.
+  - S21.7 In coexistence mode the hook is not installed.
+Out of scope: Task View and virtual-desktop keys (Win+Tab, Win+Ctrl+arrows); the Win+X menu.
+
+## S22 — System indicators
+Status: todo
+Delivers: In replacement mode, where Windows' own volume, network and battery icons are gone, Ben sees and controls them from his panel.
+Touches: Protocol and Host.Surfaces (the `Slider` element, `ViewValidator`); built-in theme (`Wm.Element.Slider`); plugin `subzerodev.indicators` (Core Audio, Network List Manager, power status)
+Depends on: S17, S8
+Acceptance:
+  - S22.1 The volume item shows the default output device's level and mute state, updated within 500 ms of a change made elsewhere. Its popup's slider and mute toggle change them.
+  - S22.2 The network item shows connected, limited or disconnected from the Network List Manager, updated within 2 s. Its popup opens `ms-settings:network`.
+  - S22.3 The battery item shows the charge and whether it is charging, is hidden on machines without a battery, and its popup opens `ms-settings:batterysaver`.
+  - S22.4 A `Slider` with a literal size or colour is rejected (I11). The built-in theme styles it, and the arrow keys move it by `step`.
+  - S22.5 The indicators run in both modes. In coexistence mode they are not placed in the built-in layout.
+Out of scope: choosing a Wi-Fi network inside the popup (Settings does it); Bluetooth; brightness.
+
+## S23 — Replacement mode qualified for daily use
+Status: todo
+Delivers: Ben can sign in to the app as his only shell for daily work, with a checked list of what works, a measured time from sign-in to a usable desktop, and a tested way back.
+Touches: `docs/replacement-mode.md` (matrix and known gaps); the benchmark harness (sign-in budget); `90-decisions.md`
+Depends on: S16, S19, S20, S21, S22
+Acceptance:
+  - S23.1 `docs/replacement-mode.md` lists each brief criterion for replacement mode with its result on Ben's machine over a week of daily use, and which Explorer-hosted features (toasts, the notification centre, Quick Settings, Task View) work, degrade or are missing. All brief criteria pass, *manual*.
+  - S23.2 The harness measures the time from the guardian's start in replacement mode to every first-party instance showing its live view. A budget is set by the S16 rule and checked.
+  - S23.3 Each way back to Explorer is exercised once on a real sign-in: `--shell off`, Settings, `host.shell.restoreExplorer`, Shift at sign-in, and the automatic fallback after a host that cannot start (forced with a broken install), *manual*.
+  - S23.4 A restart and sign-in with the app registered reach a usable desktop with no `explorer.exe` process running, *manual*.
+Out of scope: other machines and editions, beyond recording what is known.

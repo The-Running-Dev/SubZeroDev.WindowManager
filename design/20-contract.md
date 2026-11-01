@@ -31,6 +31,9 @@ Each is written so it can become an assertion or an architecture test. The owner
 | I19 | Command invocations are never retried automatically. | Host.Core (`ICommandRouter`) |
 | I20 | Within a worker, the SDK invokes plugin callbacks one at a time, in message arrival order. | Sdk |
 | I21 | Pipes are created with a current-user-only ACL and a name containing a fresh 128-bit random value per launch. | Host.Platform |
+| I22 | `--shell on` writes only the per-user `Winlogon\Shell` value, and only after recording the previous value (or its absence) in `shell.json`. `--shell off` restores exactly that state. Registration never writes a machine-wide or policy value. | Guardian |
+| I23 | In replacement mode, a session that cannot keep a host running ends with Explorer as the shell: when the relaunch budget is spent, the guardian starts `explorer.exe` before it shows any message. | Guardian |
+| I24 | Start-up programs run at most once per sign-in session, however often the host restarts. | Host.Platform (`IStartupRunner`) |
 
 ## Public surface
 
@@ -41,13 +44,15 @@ SubZeroDev.WindowManager.exe                       # guardian; normal launch
 SubZeroDev.WindowManager.exe --attach <hostPid>    # guardian relaunched by a live host
 SubZeroDev.WindowManager.exe --recover-only        # revert a stale journal, then exit
 SubZeroDev.WindowManager.exe --first-run           # register shortcut (+ Run key if startAtSignIn), then normal launch
-SubZeroDev.WindowManager.exe --uninstall           # remove shortcut and Run key, then exit
-SubZeroDev.WindowManager.Host.exe --guardian-pid <pid> --guardian-pipe <name>
+SubZeroDev.WindowManager.exe --uninstall           # remove shortcut and Run key, unregister the shell, then exit
+SubZeroDev.WindowManager.exe --shell on|off|status # register or unregister as the user's shell, or report it, then exit
+SubZeroDev.WindowManager.exe --mode replacement [--take-over]   # guardian started by Windows as the shell
+SubZeroDev.WindowManager.Host.exe --guardian-pid <pid> --guardian-pipe <name> [--mode coexistence|replacement]
 <plugin entry> [manifest args] --wm-pipe <name> --wm-token <base64url 32 bytes> --wm-data <dir> --wm-mode coexistence|replacement
 wm-pack <buildOutputDir> --manifest <plugin.json> --out <package.zip>
 ```
 
-Exit codes. Guardian: `0` normal, `2` another guardian or host running, `3` the restart budget was spent, `4` the host could not be started. Host: `0` normal, `2` another host running, `10` fatal startup failure (logged). `wm-pack`: `0` ok, `1` invalid manifest, `2` entry executable missing from the output, `3` IO.
+Exit codes. Guardian: `0` normal, `2` another guardian or host running, `3` the restart budget was spent (in replacement mode, after starting Explorer), `4` the host could not be started, `5` shell registration is overridden by a policy or Shell Launcher, `6` `--mode replacement` found Explorer already the shell without `--take-over`. Host: `0` normal, `2` another host running, `10` fatal startup failure (logged). `wm-pack`: `0` ok, `1` invalid manifest, `2` entry executable missing from the output, `3` IO.
 
 ### Wire protocol (Protocol)
 
@@ -171,7 +176,7 @@ public sealed record ViewNode(
     ViewNode? ItemTemplate = null,                         // List only
     ElementAction? Action = null);
 
-public enum ElementKind { Text, Icon, Image, Button, Toggle, Stack, List, Progress, TextInput, Separator, Spacer }
+public enum ElementKind { Text, Icon, Image, Button, Toggle, Stack, List, Progress, TextInput, Slider, Separator, Spacer }
 
 public sealed record ElementAction(InvokeAction? Invoke, string? Event, string? Popup); // exactly one is set
 public sealed record InvokeAction(string Command, JsonObject? Args); // Args values may be bindings
@@ -181,7 +186,7 @@ public sealed record InvokeAction(string Command, JsonObject? Args); // Args val
 //   { "$item": "<field>" }  field of the current List item (inside ItemTemplate only)
 // IconRef encodings:
 //   { "named": "<icon id>" } | { "app": { "exe"?: "<path>", "aumid"?: "<id>" } } | { "window": <hwnd as number> }
-//   | { "file": "<package-relative path>" }
+//   | { "file": "<package-relative path>" } | { "tray": "<host.tray.icons key>" } (replacement mode)
 
 public static class ViewValidator
 {
@@ -191,7 +196,7 @@ public sealed record ValidationResult(bool IsValid, IReadOnlyList<ValidationIssu
 public sealed record ValidationIssue(string ElementId, string Code, string Detail);
 ```
 
-Props per kind. Every kind also takes the common props `automationName: string` (required on Button, Toggle, TextInput and List), `tooltip: string`, `visible: bool`.
+Props per kind. Every kind also takes the common props `automationName: string` (required on Button, Toggle, TextInput, Slider and List), `tooltip: string`, `visible: bool`.
 
 | Kind | Props |
 |---|---|
@@ -204,6 +209,7 @@ Props per kind. Every kind also takes the common props `automationName: string` 
 | List | `items: array of objects, each with a unique string "key"`, `orientation: as Stack`, `selection: "none"\|"single" = "none"`, `selectedKey?: string` |
 | Progress | `value: number 0..1 or null` (null means indeterminate) |
 | TextInput | `value: string`, `placeholder?: string`, `navigates?: <List element id>` (Up, Down and Enter drive that list) |
+| Slider | `value: number 0..1`, `step: number = 0.05`. Its `event` action fires with `{ value }` when the user releases it or presses an arrow key. |
 | Separator | none |
 | Spacer | `flex: bool = false` |
 
@@ -327,6 +333,7 @@ public abstract record IconRef
     public sealed record App(string? Exe, string? Aumid) : IconRef;
     public sealed record Window(long Hwnd) : IconRef;
     public sealed record File(string PackagePath) : IconRef;
+    public sealed record Tray(string Key) : IconRef;   // a host.tray.icons entry, replacement mode
 }
 public enum IconSize { Small, Medium, Large }
 public enum StackOrientation { Horizontal, Vertical, Panel }
@@ -361,6 +368,17 @@ Provider `host`. Every plugin can invoke them without declaring a dependency.
 | `host.preset.apply` | `{ id: string }` | none | Writes `activePreset`, then flow 4 |
 | `host.plugin.debugAttach` | `{ pluginId: string }` | `{ pipe: string, token: string }` | Stops the plugin's worker and waits for one started by a developer with these arguments |
 | `host.exit` | none | none | Normal exit (flow 6) |
+| `host.desktop.show` | none | none | Minimises every normal window; a second call restores the ones it minimised (Win+D) |
+| `host.files.open` | `{ path?: string }` | none | Starts `explorer.exe` with the path (default: This PC) as an ordinary application (Win+E) |
+| `host.session.lock` | none | none | |
+| `host.session.signOut` | none | none | An application may block it: `CommandFailed` with `SessionCommandRefused` |
+| `host.session.restart` | none | none | Same |
+| `host.session.shutdown` | none | none | Same |
+| `host.session.sleep` | none | none | |
+| `host.shell.restoreExplorer` | `{ unregister: bool = false }` | none | Replacement mode only: normal exit, then Explorer starts as the shell for this session; with `unregister`, also `--shell off` |
+| `host.tray.invoke` | `{ key: string, action: "select"\|"contextMenu"\|"doubleClick", x: number, y: number }` | none | Replacement mode only: grants the icon's owner foreground rights (I18), then sends the click in the form its `Shell_NotifyIcon` version expects |
+
+Host feeds, provider `host`, which any plugin may subscribe to: `host.tray.icons` (replacement mode only), an array of `{ key, uid, ownerPid, tooltip, icon: { "tray": key }, hidden, balloon?: { title, text, at } }`.
 
 ### First-party plugin contracts
 
@@ -369,8 +387,12 @@ The public names other plugins may depend on:
 | Plugin id | Commands | Feeds | Popups | Contributions |
 |---|---|---|---|---|
 | `subzerodev.clock` | none | none | none | `clock` (panelItem, multiInstance; settings: `format: string`, `showDate: bool`) |
-| `subzerodev.launcher` | `launcher.open` (default hotkey `Ctrl+Alt+Space`), `launcher.close`, `applications.launch { exe?: string, aumid?: string, args?: string }` | `applications.index` (array of `{ key, name, exe?, aumid? }`) | `search` | `launcher` (panelItem: a button that opens `search`) |
+| `subzerodev.launcher` | `launcher.open { mode?: "search"\|"run" }` (default hotkey `Ctrl+Alt+Space`; `run` takes a command line, as Win+R did), `launcher.close`, `applications.launch { exe?: string, aumid?: string, args?: string }` | `applications.index` (array of `{ key, name, exe?, aumid? }`) | `search` | `launcher` (panelItem: a button that opens `search`) |
 | `subzerodev.running-windows` | `windows.activate { hwnd }`, `windows.minimize { hwnd }` | `windows.running` (array of `{ key, hwnd, title, exe?, aumid?, monitorId, active, minimized }`) | none | `windows` (panelItem, multiInstance; settings: `scope: "allMonitors"\|"thisMonitor"`) |
+| `subzerodev.tray` | none | none (subscribes to `host.tray.icons`) | none | `tray` (panelItem: the notification area). `modes: ["replacement"]` |
+| `subzerodev.desktop-icons` | none | none | none | `icons` (gadget on the desktop layer: the user's and the public Desktop folders) |
+| `subzerodev.session` | none | none | `menu` | `power` (panelItem: a button opening lock, sign out, restart, shut down and sleep) |
+| `subzerodev.indicators` | none | none | `volume`, `network`, `battery` | `volume`, `network`, `battery` (panelItem each; `battery` is hidden on machines without one) |
 
 ### Host internals (Host.Core abstractions)
 
@@ -515,6 +537,43 @@ public interface IWorkerLauncher
 }
 public sealed record WorkerStartInfo(string ExecutablePath, IReadOnlyList<string> Arguments, string WorkingDirectory);
 public sealed record WorkerProcess(int ProcessId, SafeHandle ProcessHandle, Stream StandardError);
+
+// ---- replacement mode only (flow 8); in coexistence mode these are not created
+public interface IShellRoleService
+{
+    Outcome Claim(nint desktopHwnd, nint hookHwnd);   // shell window, shell hook, task-manager window; ShellRoleTaken when another shell holds them
+    event EventHandler<ShellWindowEventArgs> WindowEvent;
+    void SignalShellReady();                           // ShellDesktopSwitchEvent, then WM_USER to the desktop window
+}
+public enum ShellWindowEventKind { Created, Destroyed, Activated, Flashing, Redraw }
+public sealed record ShellWindowEventArgs(ShellWindowEventKind Kind, nint Hwnd);
+public interface ITrayHost
+{
+    IReadOnlyList<TrayIcon> Icons { get; }
+    event EventHandler IconsChanged;
+    Task<Outcome> InvokeAsync(string key, TrayAction action, int x, int y, CancellationToken ct);
+}
+public sealed record TrayIcon(string Key, nint OwnerHwnd, uint Uid, int OwnerPid, string Tooltip, bool Hidden, TrayBalloon? Balloon);
+public sealed record TrayBalloon(string Title, string Text, DateTimeOffset At);
+public enum TrayAction { Select, ContextMenu, DoubleClick }
+public interface IStartupRunner
+{
+    Task<StartupReport> RunOnceForSessionAsync(CancellationToken ct);   // I24; LiteStep's order, policy respected
+}
+public sealed record StartupReport(bool Ran, IReadOnlyList<StartupItem> Items);
+public sealed record StartupItem(string Source, string Command, CoreError? Error);
+public interface IWindowsKeyHook : IDisposable
+{
+    event EventHandler<KeyChord> Pressed;   // VirtualKey 0 with Modifiers Win: a lone Windows-key press
+}
+public interface ISessionService
+{
+    Outcome Lock();
+    Outcome SignOut();
+    Outcome Restart();
+    Outcome Shutdown();
+    Outcome Sleep();
+}
 ```
 
 ### Recovery module
@@ -609,13 +668,14 @@ Icon sizes: the theme sets `Wm.IconSize.Small|Medium|Large` (`x:Double`, DIPs). 
 |---|---|---|---|
 | `settings.json` | singleton | `schemaVersion: 1`; `activePreset` names an existing preset, else the built-in default is used and a diagnostic is raised; `restartPolicy.maxRestarts` 0–10 (default 3); `windowSeconds` 30–3600 (default 300) | Absent on first run → defaults written |
 | `layouts\<id>.json` | `id` = file stem | Panel `id` unique within the layout; instance `id` unique across all layouts; `thickness` 16–512 DIP; `zones` keys only `start`, `center`, `end` | None; built-in layouts are copied here the first time the user edits one |
-| `presets\<id>.json` | `id` = file stem | `palette` is either a string or `{ light, dark }`; `assetPacks` may be empty | Same as layouts |
+| `presets\<id>.json` | `id` = file stem | `palette` is either a string or `{ light, dark }`; `assetPacks` may be empty; `wallpaper` (optional) is `{ image: <asset-pack image id>, fit: "fill"\|"fit"\|"stretch"\|"center" }` | Same as layouts |
 | `plugin-settings\<pluginId>.json` | plugin id | `{ pluginId, settingsVersion, settings }`; `settings` validates against the manifest `settingsSchema` | Migrated through `settings.migrate`; the prior file is kept once as `.v<N>.bak` |
 | `plugins\<id>\plugin.json` (+ package files) | manifest `id` = folder name | See the manifest below | Install replaces the folder atomically |
 | `themes\<id>\theme.json` (+ `.xaml`, assets) | `id` = folder name | `themeApi: 1`; `resources` paths stay inside the folder | none |
 | `palettes\<id>.json` or `palettes\<id>\palette.json` | `id` | `colors` values match `^#[0-9A-Fa-f]{8}$` | none |
 | `assetpacks\<id>\assetpack.json` (+ images) | `id` = folder name | Image paths stay inside the folder; PNG or SVG | none |
 | `plugin-data\<pluginId>\` | plugin id | Opaque to the host | Kept when a plugin is removed; deleted only if the user chooses to on removal |
+| `shell.json` | singleton | `{ schemaVersion: 1, registered, previous: { present, value? }, registeredAt? }`; written only by the guardian (I22) | Absent until `--shell on` |
 | `recovery\session-<sessionId>.json` | Windows session id | `JournalDocument`; written atomically | Recovered and cleared by the guardian at startup |
 | `.lastgood\<relative path>` | mirrors the source document | A copy of the last version of each document that loaded valid | Overwritten on each valid load |
 | `logs\host-<yyyyMMdd>.log`, `logs\plugins\<pluginId>-<yyyyMMdd>.log`, `logs\crash\<timestamp>.json` | date | 10 MiB per file, 7 days, 100 MiB in total | Pruned at startup |
@@ -699,6 +759,10 @@ All errors are typed codes with a detail string for logs. None is a bare excepti
 | `AppBarRefused` | Shell refused app-bar registration | yes, on "taskbar created" | Fall back to `overlay` |
 | `WindowGone` | `host.window.*` on a window that no longer exists | no | Return the error to the caller plugin |
 | `ForegroundDenied` | Windows refused activation | no | Fall back to flashing the window's taskbar button; return an error |
+| `ShellRoleTaken` | Another process holds the shell window | no | Guardian: exit 6 unless `--take-over`. Host: run without the shell roles and log it |
+| `ShellOverridden` | `--shell on` found a policy or Shell Launcher overriding the per-user value | no | Report it; change nothing |
+| `SessionCommandRefused` | Lock, sign out, restart, shut down or sleep was refused | no | Notice at the element |
+| `NotInReplacementMode` | A replacement-only command in coexistence mode | no | Return the error to the caller |
 | `JournalWriteFailed` | Recovery journal flush failed | yes, once | **Do not apply** the desktop change (I6); the panel falls back to `overlay`, and a diagnostic is raised |
 
 **`ThemeErrorCode`:** `XamlParse`, `MissingRequiredKey`, `WrongTargetType`, `AssetMissing`, `PathEscape`, `ThemeApiMismatch`, `PaletteInvalid`. None is retryable. The previous appearance stays, and the errors are shown.
@@ -713,4 +777,6 @@ All errors are typed codes with a detail string for logs. None is a bare excepti
 - **How transparent, shaped panel windows combine with backdrops.** `PanelBackdrop.Transparent` is declared, but how it is achieved, and whether templates may use non-rectangular hit-testing, waits on the prototype.
 - **Exact dependency properties beyond the props table**: anything a theme needs that is not a view prop (for example the panel's monitor scale, or an "is first item" flag) is added after the sample themes are attempted, as theme API 1 additions, before the vocabulary is frozen.
 - **Performance budgets** (startup, idle memory and CPU, interaction latency): set after the first working prototype, per the brief.
+- **The per-user `Winlogon\Shell` value on build 26200** (design open question 6): confirmed by S17's prototype check; the fallback is the per-user Custom User Interface value.
+- **Explorer-hosted features without Explorer** (design open question 7): recorded by S23.
 - **`applications.index` sources**: Start-menu shortcuts and the AUMIDs of installed packaged apps are the intent. The enumeration method for packaged apps without package identity on the host is to be confirmed in the launcher slice.
