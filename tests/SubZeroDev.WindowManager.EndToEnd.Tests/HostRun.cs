@@ -207,9 +207,9 @@ internal sealed class HostRun : IDisposable
 
     /// <summary>
     /// Copies a built plugin folder into <c>&lt;data&gt;\plugins\&lt;id&gt;</c>, setting the manifest id
-    /// (and the entry arguments, when given).
+    /// (and the entry arguments, when given), then lets <paramref name="edit"/> change the manifest.
     /// </summary>
-    public string CopyPlugin(string sourceDirectory, string id, string[]? entryArgs = null)
+    public string CopyPlugin(string sourceDirectory, string id, string[]? entryArgs = null, Action<JsonObject>? edit = null)
     {
         var target = Path.Combine(DataRoot, "plugins", id);
         foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
@@ -230,6 +230,8 @@ internal sealed class HostRun : IDisposable
         {
             manifest["entry"]!["args"] = new JsonArray(entryArgs.Select(a => (JsonNode?)a).ToArray());
         }
+
+        edit?.Invoke(manifest);
 
         File.WriteAllText(Path.Combine(target, "plugin.json"), manifest.ToJsonString());
         return target;

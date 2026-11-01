@@ -32,6 +32,42 @@ internal unsafe struct MonitorInfoEx
     public fixed char Device[32];
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal struct Msg
+{
+    public nint Window;
+    public uint Message;
+    public nuint WParam;
+    public nint LParam;
+    public uint Time;
+    public int X;
+    public int Y;
+    public uint Private;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct FlashWInfo
+{
+    public uint Size;
+    public nint Window;
+    public uint Flags;
+    public uint Count;
+    public uint Timeout;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct KeyboardInput
+{
+    public uint Type;
+    public uint Padding;
+    public ushort VirtualKey;
+    public ushort ScanCode;
+    public uint Flags;
+    public uint Time;
+    public nuint ExtraInfo;
+    public ulong Padding2;
+}
+
 internal static unsafe partial class Native
 {
     public const uint AbmNew = 0;
@@ -63,6 +99,81 @@ internal static unsafe partial class Native
     public static partial bool SystemParametersInfo(uint action, uint param, Rect* data, uint winIni);
 
     public const uint RegNotifyChangeLastSet = 0x4;
+
+    public const uint WmHotkey = 0x0312;
+    public const uint WmApp = 0x8000;
+    public const uint WmQuit = 0x0012;
+    public const uint ModNoRepeat = 0x4000;
+    public const int SwRestore = 9;
+    public const int SwMinimize = 6;
+    public const uint FlashwAll = 3;
+    public const uint FlashwTimerNoFg = 12;
+    public const uint InputKeyboard = 1;
+    public const uint KeyEventFKeyUp = 2;
+    public const ushort VkMenu = 0x12;
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool RegisterHotKey(nint window, int id, uint modifiers, uint virtualKey);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool UnregisterHotKey(nint window, int id);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetMessageW")]
+    public static partial int GetMessage(out Msg message, nint window, uint min, uint max);
+
+    [LibraryImport("user32.dll", EntryPoint = "PeekMessageW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool PeekMessage(out Msg message, nint window, uint min, uint max, uint remove);
+
+    [LibraryImport("user32.dll", EntryPoint = "PostThreadMessageW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool PostThreadMessage(uint threadId, uint message, nuint wParam, nint lParam);
+
+    [LibraryImport("kernel32.dll")]
+    public static partial uint GetCurrentThreadId();
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AllowSetForegroundWindow(int processId);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWindow(nint window);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsIconic(nint window);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ShowWindow(nint window, int command);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetForegroundWindow(nint window);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint GetForegroundWindow();
+
+    [LibraryImport("user32.dll")]
+    public static partial uint GetWindowThreadProcessId(nint window, out uint processId);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AttachThreadInput(uint attach, uint attachTo, [MarshalAs(UnmanagedType.Bool)] bool doAttach);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool BringWindowToTop(nint window);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool FlashWindowEx(ref FlashWInfo info);
+
+    [LibraryImport("user32.dll")]
+    public static partial uint SendInput(uint count, KeyboardInput* inputs, int size);
 
     [LibraryImport("advapi32.dll")]
     public static partial int RegNotifyChangeKeyValue(nint key, int watchSubtree, uint filter, nint changed, int asynchronous);

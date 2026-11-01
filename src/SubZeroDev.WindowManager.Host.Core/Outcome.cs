@@ -20,6 +20,12 @@ public enum CoreErrorCode
     WindowGone,
     ForegroundDenied,
     JournalWriteFailed,
+    PluginUnavailable,
+    CommandNotFound,
+    Timeout,
+    Cancelled,
+    Undeclared,
+    CommandFailed,
 }
 
 public sealed record CoreError(CoreErrorCode Code, string Detail, bool Retryable);

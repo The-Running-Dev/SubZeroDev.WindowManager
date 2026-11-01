@@ -4,12 +4,14 @@ using System.Text.Json.Nodes;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using SubZeroDev.WindowManager.Host.Core;
 using SubZeroDev.WindowManager.Host.Platform;
 using SubZeroDev.WindowManager.Host.Surfaces;
 using SubZeroDev.WindowManager.Host.Surfaces.Controls;
 using SubZeroDev.WindowManager.Host.Theming;
+using SubZeroDev.WindowManager.Protocol;
 
 namespace SubZeroDev.WindowManager.Host.App;
 
@@ -19,7 +21,10 @@ namespace SubZeroDev.WindowManager.Host.App;
 /// exits normally once an <c>exit</c> file appears. A <c>retry</c> file holding a plugin id runs that
 /// plugin's placeholder Retry command, every pointer press on a panel is time-stamped, and a <c>hang</c>
 /// file blocks the UI thread for two minutes so the guardian sees the host stop answering. A
-/// <c>preset</c> file holding a preset id runs <c>host.preset.apply</c> and records the outcome.
+/// <c>preset</c> file holding a preset id runs <c>host.preset.apply</c> and records the outcome. An
+/// <c>invoke</c> file (command id, then optionally a source and a JSON args line) invokes a command
+/// through the router and records the outcome; a <c>focus-panel</c> file holding a panel id focuses
+/// that panel as the keyboard shortcut will.
 /// </summary>
 internal sealed class TestHook
 {
@@ -39,6 +44,9 @@ internal sealed class TestHook
     private readonly DispatcherQueueTimer _timer;
     private readonly DispatcherWatchdog _watchdog;
     private readonly GuardianLink? _guardian;
+    private readonly CommandRouter _router;
+    private readonly HotkeyBinder _hotkeys;
+    private JsonObject? _lastInvoke;
     private readonly HashSet<WmPanel> _watched = [];
     private long _lastPointerPress;
     private int _writing;
@@ -46,8 +54,10 @@ internal sealed class TestHook
 
     public TestHook(string directory, App app, HostOptions options, Locations locations, ThemeEngine theme, SurfaceManager surfaces,
         IPluginSupervisor supervisor, WorkerLauncher launcher, IPackageCatalog catalog, DispatcherQueue dispatcher,
-        DispatcherWatchdog watchdog, GuardianLink? guardian)
+        DispatcherWatchdog watchdog, GuardianLink? guardian, CommandRouter router, HotkeyBinder hotkeys)
     {
+        _router = router;
+        _hotkeys = hotkeys;
         _watchdog = watchdog;
         _guardian = guardian;
         _supervisor = supervisor;
@@ -115,6 +125,8 @@ internal sealed class TestHook
             WatchPointers();
             RunRetry();
             RunPresetApply();
+            RunInvoke();
+            RunFocusPanel();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -191,6 +203,55 @@ internal sealed class TestHook
         _ = ApplyPresetAsync(presetId);
     }
 
+    private void RunInvoke()
+    {
+        var file = Path.Combine(_directory, "invoke");
+        if (!File.Exists(file))
+        {
+            return;
+        }
+
+        var lines = File.ReadAllLines(file);
+        File.Delete(file);
+        if (lines.Length == 0)
+        {
+            return;
+        }
+
+        var commandId = lines[0].Trim();
+        var source = lines.Length > 1 && Enum.TryParse<InvocationSource>(lines[1].Trim(), ignoreCase: true, out var parsed)
+            ? parsed
+            : InvocationSource.Keyboard;
+        var args = lines.Length > 2 && !string.IsNullOrWhiteSpace(lines[2]) ? JsonNode.Parse(lines[2]) as JsonObject : null;
+        _ = InvokeAsync(commandId, args, source);
+    }
+
+    private async Task InvokeAsync(string commandId, JsonObject? args, InvocationSource source)
+    {
+        try
+        {
+            var outcome = await _router.InvokeAsync(commandId, args, source, null, CancellationToken.None);
+            _lastInvoke = new JsonObject { ["command"] = commandId, ["ok"] = outcome.Ok, ["code"] = outcome.Error?.Code.ToString(), ["detail"] = outcome.Error?.Detail };
+        }
+        catch (Exception e)
+        {
+            _lastInvoke = new JsonObject { ["command"] = commandId, ["ok"] = false, ["code"] = e.GetType().Name };
+        }
+    }
+
+    private void RunFocusPanel()
+    {
+        var file = Path.Combine(_directory, "focus-panel");
+        if (!File.Exists(file))
+        {
+            return;
+        }
+
+        var panelId = File.ReadAllText(file).Trim();
+        File.Delete(file);
+        _surfaces.FocusPanel(panelId);
+    }
+
     private async Task ApplyPresetAsync(string presetId)
     {
         try
@@ -231,6 +292,10 @@ internal sealed class TestHook
             ready &= VisualTreeHelper.GetChildrenCount(window.Panel) > 0;
             panels.Add(new JsonObject
             {
+                ["focused"] = window.Panel.XamlRoot is { } xamlRoot
+                    && FocusManager.GetFocusedElement(xamlRoot) is FrameworkElement focused && IsDescendant(focused, window.Panel)
+                    ? focused.Name
+                    : null,
                 ["id"] = window.Definition.Id.ToString(),
                 ["handle"] = (long)window.Handle,
                 ["monitor"] = window.Monitor.StableId,
@@ -272,6 +337,20 @@ internal sealed class TestHook
                 ["activePreset"] = _app.ActivePresetId,
             },
             ["lastPresetApply"] = _lastPresetApply?.DeepClone(),
+            ["lastInvoke"] = _lastInvoke?.DeepClone(),
+            ["dispatches"] = new JsonArray(_router.Dispatches.Select(line => (JsonNode?)line).ToArray()),
+            ["commands"] = new JsonArray(_router.Commands.Select(command => (JsonNode?)new JsonObject
+            {
+                ["id"] = command.CommandId,
+                ["provider"] = command.Provider,
+                ["available"] = command.Available,
+            }).ToArray()),
+            ["hotkeys"] = new JsonArray(_hotkeys.Bindings.Select(binding => (JsonNode?)new JsonObject
+            {
+                ["command"] = binding.CommandId,
+                ["chord"] = binding.Chord,
+                ["state"] = binding.State,
+            }).ToArray()),
             ["workerMessages"] = WorkerChannel.MessagesSent,
             ["panels"] = panels,
             ["contributions"] = new JsonArray(_surfaces.Views.Select(view => (JsonNode?)new JsonObject
@@ -288,7 +367,21 @@ internal sealed class TestHook
                     ["foreground"] = TemplateForeground(item.Element),
                     ["fontSize"] = FirstTextBlock(item.Element)?.FontSize,
                 }).ToArray()),
-                ["bounds"] = ScreenBounds(view),
+                ["bounds"] = ScreenBounds(view.Root),
+                ["interactive"] = new JsonArray(view.InteractiveElements().Select(element => (JsonNode?)new JsonObject
+                {
+                    ["id"] = element.Name,
+                    ["kind"] = element is WmToggle ? "toggle" : "button",
+                    ["label"] = element switch { WmButton b => b.Label, WmToggle t => t.Label, _ => null },
+                    ["checked"] = (element as WmToggle)?.Checked,
+                    ["bounds"] = ScreenBounds(element),
+                }).ToArray()),
+                ["notices"] = new JsonArray(view.Notices().Select(notice => (JsonNode?)new JsonObject
+                {
+                    ["element"] = notice.ElementId,
+                    ["code"] = notice.Code.ToString(),
+                    ["message"] = notice.Message,
+                }).ToArray()),
             }).ToArray()),
             ["plugins"] = new JsonArray(_supervisor.All.Select(status => (JsonNode?)new JsonObject
             {
@@ -316,20 +409,20 @@ internal sealed class TestHook
         };
     }
 
-    /// <summary>The view's bounds in physical screen pixels, or null before it is laid out.</summary>
-    private JsonObject? ScreenBounds(ContributionView view)
+    /// <summary>The element's bounds in physical screen pixels, or null before it is laid out.</summary>
+    private JsonObject? ScreenBounds(FrameworkElement element)
     {
-        var window = _surfaces.Panels.FirstOrDefault(panel => IsDescendant(view.Root, panel.Panel));
-        if (window is null || view.Root.ActualWidth <= 0 || view.Root.XamlRoot is not { } root)
+        var window = _surfaces.Panels.FirstOrDefault(panel => IsDescendant(element, panel.Panel));
+        if (window is null || element.ActualWidth <= 0 || element.XamlRoot is not { } root)
         {
             return null;
         }
 
-        var origin = view.Root.TransformToVisual(null).TransformPoint(new Windows.Foundation.Point(0, 0));
+        var origin = element.TransformToVisual(null).TransformPoint(new Windows.Foundation.Point(0, 0));
         var scale = root.RasterizationScale;
         var left = window.Bounds.Left + (int)Math.Round(origin.X * scale);
         var top = window.Bounds.Top + (int)Math.Round(origin.Y * scale);
-        return Rect(new RectInt(left, top, left + (int)Math.Round(view.Root.ActualWidth * scale), top + (int)Math.Round(view.Root.ActualHeight * scale)));
+        return Rect(new RectInt(left, top, left + (int)Math.Round(element.ActualWidth * scale), top + (int)Math.Round(element.ActualHeight * scale)));
     }
 
     private static bool IsDescendant(DependencyObject element, DependencyObject ancestor)

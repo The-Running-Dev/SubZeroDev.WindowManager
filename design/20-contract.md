@@ -632,8 +632,14 @@ public interface ISurfaceManager
     Task ApplyLayoutAsync(string layoutId, CancellationToken ct);
     Task<Outcome> OpenPopupAsync(string pluginId, string popupId, PopupAnchor anchor, PopupTrigger trigger, CancellationToken ct);
     Task<Outcome> ClosePopupAsync(string pluginId, string popupId, PopupCloseReason reason, CancellationToken ct);
-    void FocusPanel(string panelId);
+    void FocusPanel(string panelId);   // activates the panel's window, then keyboard focus on its first Button or Toggle
 }
+public interface IElementActions   // where a Button or Toggle sends what the user did
+{
+    Task<Outcome<CommandResult>> InvokeCommandAsync(string commandId, JsonObject? args, InvocationSource source);
+    Task<Outcome> SendEventAsync(Guid instanceId, string elementId, ElementEventKind kind, JsonNode? value, InvocationSource source);
+}
+public sealed record ElementNotice(string ElementId, CoreErrorCode Code, string Message);   // shown in Wm.Notice for 4 s; never resent (I19)
 public enum PlaceholderReason { Starting, Disabled, Incompatible, Invalid, Faulted, Unavailable, NotSupportedInMode, Missing }
 ```
 

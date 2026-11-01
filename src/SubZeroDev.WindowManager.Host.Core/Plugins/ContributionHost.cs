@@ -30,6 +30,13 @@ public interface IContributionHost
 
     /// <summary>Raised off the UI thread, one at a time, whenever an instance's snapshot changes.</summary>
     event EventHandler<InstanceSnapshot> InstanceChanged;
+
+    /// <summary>
+    /// Sends <c>element.event</c> to the instance's worker, after <c>instance.create</c> and in queue
+    /// order. User input grants the worker foreground rights first (I18). An instance without a running
+    /// worker gets <see cref="CoreErrorCode.PluginUnavailable"/>; the event is not sent later (I19).
+    /// </summary>
+    Task<Outcome> SendEventAsync(Guid instanceId, string elementId, ElementEventKind kind, JsonNode? value, InvocationSource source);
 }
 
 /// <summary>
@@ -49,6 +56,7 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
     private readonly IPackageCatalog _catalog;
     private readonly IPluginLogs _pluginLogs;
     private readonly IHostLog _log;
+    private readonly IForegroundService? _foreground;
     private readonly Channel<Func<Task>> _work = Channel.CreateUnbounded<Func<Task>>(new UnboundedChannelOptions { SingleReader = true });
     private readonly Dictionary<Guid, Entry> _instances = [];
     private readonly HashSet<IWorkerChannel> _attached = [];
@@ -57,8 +65,10 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _loop;
 
-    public ContributionHost(IPluginSupervisor supervisor, IPackageCatalog catalog, IPluginLogs pluginLogs, IHostLog log)
+    public ContributionHost(IPluginSupervisor supervisor, IPackageCatalog catalog, IPluginLogs pluginLogs, IHostLog log,
+        IForegroundService? foreground = null)
     {
+        _foreground = foreground;
         _supervisor = supervisor;
         _catalog = catalog;
         _pluginLogs = pluginLogs;
@@ -90,6 +100,32 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
     }
 
     public void SetPlacements(IReadOnlyList<InstancePlacement> placements) => Enqueue(() => Reconcile(placements));
+
+    public Task<Outcome> SendEventAsync(Guid instanceId, string elementId, ElementEventKind kind, JsonNode? value, InvocationSource source)
+    {
+        var done = new TaskCompletionSource<Outcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Enqueue(() =>
+        {
+            if (!_instances.TryGetValue(instanceId, out var entry)
+                || entry is not { Created: true, Channel: { } channel }
+                || _supervisor.GetChannel(entry.PluginId) != channel)
+            {
+                var plugin = entry?.PluginId ?? "the plugin";
+                done.TrySetResult(Outcome.Fail(CoreErrorCode.PluginUnavailable, $"{plugin} is not running.", retryable: true));
+                return Task.CompletedTask;
+            }
+
+            if (source is InvocationSource.Pointer or InvocationSource.Keyboard or InvocationSource.Hotkey)
+            {
+                _foreground?.AllowForeground(channel.ProcessId);
+            }
+
+            done.TrySetResult(channel.Notify(Methods.ElementEvent,
+                new ElementEventParams(SurfaceIdOf(instanceId), elementId, kind, null, value?.DeepClone(), source)));
+            return Task.CompletedTask;
+        });
+        return done.Task;
+    }
 
     /// <summary>Completes once every change queued so far has been applied. For tests and shutdown.</summary>
     public Task FlushAsync()

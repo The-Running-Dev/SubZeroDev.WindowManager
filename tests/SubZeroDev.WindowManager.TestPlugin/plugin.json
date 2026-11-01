@@ -11,5 +11,8 @@
   "contributions": [
     { "id": "probe", "kind": "panelItem", "displayName": "Probe", "multiInstance": true }
   ],
+  "commands": [
+    { "id": "samples.echo", "title": "Echo", "defaultHotkey": "Ctrl+Alt+Shift+F11" }
+  ],
   "settingsVersion": 1
 }

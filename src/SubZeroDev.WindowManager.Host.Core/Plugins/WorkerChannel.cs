@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using SubZeroDev.WindowManager.Protocol;
 
@@ -61,6 +62,12 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
     public int ProcessId { get; }
 
     public event EventHandler<WorkerNotification>? NotificationReceived;
+
+    /// <summary>
+    /// Answers requests the worker sends, such as <c>command.invoke</c>. Runs off the read loop, so a slow
+    /// answer does not hold up the worker's other messages. Set before <see cref="Start"/>.
+    /// </summary>
+    public Func<WorkerChannel, RpcMessage, Task<RpcMessage>>? RequestHandler { get; set; }
 
     /// <summary>Lines for the plugin's log about what the channel dropped.</summary>
     public event EventHandler<string>? Diagnostic;
@@ -170,7 +177,7 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
     public Outcome Notify<TParams>(string method, TParams args) =>
         Post(RpcMessage.Notification(method, args))
             ? Outcome.Success
-            : Outcome.Fail(CoreErrorCode.InvalidState, $"The channel to {PluginId} is closed.");
+            : Outcome.Fail(CoreErrorCode.PluginUnavailable, $"The channel to {PluginId} is closed.");
 
     public async Task<Outcome<TResult>> RequestAsync<TParams, TResult>(string method, TParams args, TimeSpan timeout, CancellationToken ct)
     {
@@ -181,7 +188,7 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
         {
             if (!Post(RpcMessage.Request(id, method, args)))
             {
-                return Outcome<TResult>.Fail(CoreErrorCode.InvalidState, $"The channel to {PluginId} is closed.");
+                return Outcome<TResult>.Fail(CoreErrorCode.PluginUnavailable, $"The channel to {PluginId} is closed.");
             }
 
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -193,12 +200,12 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                return Outcome<TResult>.Fail(CoreErrorCode.InvalidState, $"{WireErrorCodes.Timeout} {method} timed out after {timeout.TotalMilliseconds:0} ms.");
+                return Outcome<TResult>.Fail(CoreErrorCode.Timeout, $"{WireErrorCodes.Timeout} {method} timed out after {timeout.TotalMilliseconds:0} ms.");
             }
 
             if (response.Error is { } error)
             {
-                return Outcome<TResult>.Fail(CoreErrorCode.InvalidState, $"{error.Code} {method}: {error.Message}");
+                return Outcome<TResult>.Fail(ErrorOf(error, method));
             }
 
             try
@@ -215,6 +222,36 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
             _pending.TryRemove(id, out _);
         }
     }
+
+    /// <summary>Maps a worker's error response to the host's error codes.</summary>
+    public static CoreError ErrorOf(RpcError error, string method)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        var code = error.Code switch
+        {
+            WireErrorCodes.PluginUnavailable => CoreErrorCode.PluginUnavailable,
+            WireErrorCodes.CommandNotFound => CoreErrorCode.CommandNotFound,
+            WireErrorCodes.Timeout => CoreErrorCode.Timeout,
+            WireErrorCodes.Cancelled => CoreErrorCode.Cancelled,
+            WireErrorCodes.Undeclared => CoreErrorCode.Undeclared,
+            WireErrorCodes.CommandFailed => CoreErrorCode.CommandFailed,
+            _ => CoreErrorCode.InvalidState,
+        };
+        var retryable = error.Data is JsonObject data && data["retryable"] is JsonValue value
+            && value.TryGetValue<bool>(out var flag) && flag;
+        return new CoreError(code, $"{error.Code} {method}: {error.Message}", retryable);
+    }
+
+    /// <summary>The wire code for a host error sent back to a worker.</summary>
+    public static int WireCodeOf(CoreErrorCode code) => code switch
+    {
+        CoreErrorCode.PluginUnavailable => WireErrorCodes.PluginUnavailable,
+        CoreErrorCode.CommandNotFound or CoreErrorCode.NotFound => WireErrorCodes.CommandNotFound,
+        CoreErrorCode.Timeout => WireErrorCodes.Timeout,
+        CoreErrorCode.Cancelled => WireErrorCodes.Cancelled,
+        CoreErrorCode.Undeclared => WireErrorCodes.Undeclared,
+        _ => WireErrorCodes.CommandFailed,
+    };
 
     public async ValueTask DisposeAsync()
     {
@@ -240,6 +277,22 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
 
         return true;
     }
+
+    private void Serve(Func<WorkerChannel, RpcMessage, Task<RpcMessage>> handler, RpcMessage request) =>
+        _ = Task.Run(async () =>
+        {
+            RpcMessage answer;
+            try
+            {
+                answer = await handler(this, request).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                answer = RpcMessage.Failure(request.Id, WireErrorCodes.CommandFailed, e.Message);
+            }
+
+            Post(answer);
+        });
 
     private void Close(FaultReason reason, string detail)
     {
@@ -334,7 +387,15 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
 
                 if (message.IsRequest)
                 {
-                    Post(RpcMessage.Failure(message.Id, WireErrorCodes.MethodNotFound, $"'{method}' is not served by this host yet."));
+                    if (RequestHandler is { } handler)
+                    {
+                        Serve(handler, message);
+                    }
+                    else
+                    {
+                        Post(RpcMessage.Failure(message.Id, WireErrorCodes.MethodNotFound, $"'{method}' is not served by this host yet."));
+                    }
+
                     continue;
                 }
 
