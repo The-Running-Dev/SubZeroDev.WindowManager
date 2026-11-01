@@ -16,11 +16,17 @@ namespace SubZeroDev.WindowManager.Host.Core;
 /// mode (I16). It is launched through <see cref="IWorkerLauncher"/> (I3), must complete the
 /// handshake within 10 s (I5) and answer <c>initialize</c> within 5 s. The worker's <c>log</c>
 /// notifications and stderr go to its plugin log.
+/// A running worker is pinged every 5 s and faulted after 10 s without a reply. A faulted worker's
+/// process is killed and awaited before anything else starts (I4), then it is restarted after its
+/// backoff until the restart budget is spent (I17); it is then Unavailable until <see cref="RetryAsync"/>.
 /// </summary>
 public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
 {
     public static readonly TimeSpan InitializeTimeout = TimeSpan.FromSeconds(5);
     public static readonly TimeSpan ShutdownDeadline = TimeSpan.FromSeconds(3);
+
+    /// <summary>How long a killed process may take to signal before the supervisor moves on.</summary>
+    private static readonly TimeSpan ExitWait = TimeSpan.FromSeconds(5);
 
     private readonly IPackageCatalog _catalog;
     private readonly IWorkerLauncher _launcher;
@@ -29,11 +35,16 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
     private readonly Locations _locations;
     private readonly HostMode _mode;
     private readonly string _hostVersion;
+    private readonly RestartPolicy _policy;
+    private readonly SupervisorTimings _timings;
+    private readonly Func<DateTimeOffset> _clock;
+    private readonly CancellationTokenSource _disposing = new();
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Worker> _workers = new(StringComparer.Ordinal);
 
     public PluginSupervisor(IPackageCatalog catalog, IWorkerLauncher launcher, IPluginLogs pluginLogs, IHostLog log,
-        Locations locations, HostMode mode, string hostVersion)
+        Locations locations, HostMode mode, string hostVersion, RestartPolicy policy, SupervisorTimings? timings = null,
+        Func<DateTimeOffset>? clock = null)
     {
         _catalog = catalog;
         _launcher = launcher;
@@ -42,6 +53,9 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         _locations = locations;
         _mode = mode;
         _hostVersion = hostVersion;
+        _policy = policy;
+        _timings = timings ?? SupervisorTimings.Default;
+        _clock = clock ?? (() => DateTimeOffset.Now);
     }
 
     public event EventHandler<PluginStatus>? StatusChanged;
@@ -79,9 +93,14 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         await worker.Gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (worker.Status.State == PluginState.Running)
+            switch (worker.Status.State)
             {
-                return Outcome.Success;
+                case PluginState.Running:
+                    return Outcome.Success;
+                case PluginState.Unavailable:
+                    return Outcome.Fail(CoreErrorCode.InvalidState, $"{pluginId} spent its restart budget; it starts again only on Retry.");
+                case PluginState.Faulted when worker.PendingRestart is not null:
+                    return Outcome.Fail(CoreErrorCode.StartFailed, $"{pluginId} faulted and restarts after its backoff.", retryable: true);
             }
 
             return await StartAsync(worker, ct).ConfigureAwait(false);
@@ -116,6 +135,29 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         }
     }
 
+    public async Task<Outcome> RetryAsync(string pluginId, CancellationToken ct)
+    {
+        var worker = WorkerFor(pluginId);
+        await worker.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (worker.Status.State is not (PluginState.Faulted or PluginState.Unavailable))
+            {
+                return Outcome.Fail(CoreErrorCode.InvalidState,
+                    $"{pluginId} is {worker.Status.State}; only a faulted or unavailable plugin can be retried.");
+            }
+
+            CancelRestart(worker);
+            worker.Budget.Reset();
+            _pluginLogs.Write(pluginId, "host", "Retry requested; the restart budget is reset.");
+            return await StartAsync(worker, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            worker.Gate.Release();
+        }
+    }
+
     public Task StopAllAsync(CancellationToken ct)
     {
         List<string> ids;
@@ -127,7 +169,11 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         return Task.WhenAll(ids.Select(id => StopAsync(id, ct)));
     }
 
-    public ValueTask DisposeAsync() => new(StopAllAsync(CancellationToken.None));
+    public async ValueTask DisposeAsync()
+    {
+        await _disposing.CancelAsync().ConfigureAwait(false);
+        await StopAllAsync(CancellationToken.None).ConfigureAwait(false);
+    }
 
     internal static string NewPipeName() =>
         $"SubZeroDev.WindowManager.{Environment.ProcessId}.{Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant()}";
@@ -144,7 +190,7 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         {
             if (!_workers.TryGetValue(pluginId, out var worker))
             {
-                _workers[pluginId] = worker = new Worker(Discovered(pluginId));
+                _workers[pluginId] = worker = new Worker(Discovered(pluginId), new RestartBudget(_policy, _timings.Backoffs));
             }
 
             return worker;
@@ -155,9 +201,9 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         IReadOnlyList<CoreError>? problems = null)
     {
         PluginStatus status;
+        var faults = worker.Budget.Within(_clock());
         lock (_gate)
         {
-            var faults = fault is null ? worker.Status.RecentFaults : [.. worker.Status.RecentFaults, DateTimeOffset.Now];
             status = worker.Status = worker.Status with
             {
                 State = state,
@@ -251,7 +297,7 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             await pipe.DisposeAsync().ConfigureAwait(false);
-            return Abort(worker, process, process.Exited.IsCompleted ? FaultReason.Exited : FaultReason.HandshakeTimeout,
+            return await AbortAsync(worker, process, process.Exited.IsCompleted ? FaultReason.Exited : FaultReason.HandshakeTimeout,
                 process.Exited.IsCompleted ? $"Exited with code {process.Exited.Result} before connecting." : "Did not connect within 10 s.");
         }
 
@@ -260,12 +306,12 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         try
         {
             (channel, failure) = await WorkerChannel.AcceptAsync(pipe, pluginId, process.ProcessId, token,
-                WorkerChannel.HandshakeTimeout, handshake.Token).ConfigureAwait(false);
+                WorkerChannel.HandshakeTimeout, handshake.Token, _timings).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             await pipe.DisposeAsync().ConfigureAwait(false);
-            return Abort(worker, process, process.Exited.IsCompleted ? FaultReason.Exited : FaultReason.HandshakeTimeout,
+            return await AbortAsync(worker, process, process.Exited.IsCompleted ? FaultReason.Exited : FaultReason.HandshakeTimeout,
                 process.Exited.IsCompleted ? $"Exited with code {process.Exited.Result} during the handshake." : "No hello answered within 10 s.");
         }
 
@@ -274,17 +320,17 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
             if (failure!.Incompatible)
             {
                 _pluginLogs.Write(pluginId, "host", $"{WireErrorCodes.IncompatibleVersion} {failure.Detail}");
-                process.Kill();
-                process.Dispose();
+                await KillAsync(process).ConfigureAwait(false);
                 var problem = new CoreError(CoreErrorCode.HostApiMismatch, failure.Detail, false);
                 SetStatus(worker, PluginState.Incompatible, problems: [problem]);
                 return new Outcome(problem);
             }
 
-            return Abort(worker, process, failure.Reason, $"{WireErrorCodes.Unauthorised} {failure.Detail}");
+            return await AbortAsync(worker, process, failure.Reason, $"{WireErrorCodes.Unauthorised} {failure.Detail}");
         }
 
         channel.NotificationReceived += (_, notification) => OnNotification(pluginId, notification);
+        channel.Diagnostic += (_, text) => _pluginLogs.Write(pluginId, "host", text);
         channel.Start();
         var initialize = await channel.RequestAsync<InitializeParams, JsonElement?>(Methods.Initialize,
             new InitializeParams(ProtocolInfo.ProtocolVersion, _hostVersion, _mode, new JsonObject(), 0, dataDirectory,
@@ -293,7 +339,7 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         if (!initialize.Ok)
         {
             await channel.DisposeAsync().ConfigureAwait(false);
-            return Abort(worker, process, FaultReason.ProtocolViolation, $"initialize failed: {initialize.Error!.Detail}");
+            return await AbortAsync(worker, process, FaultReason.ProtocolViolation, $"initialize failed: {initialize.Error!.Detail}");
         }
 
         worker.Process = process;
@@ -307,7 +353,10 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
 
     private async Task WatchAsync(Worker worker, IWorkerProcess process, WorkerChannel channel)
     {
-        var ended = await Task.WhenAny(process.Exited, channel.Closed).ConfigureAwait(false);
+        using var beat = new CancellationTokenSource();
+        var heartbeat = HeartbeatAsync(channel, beat.Token);
+        var ended = await Task.WhenAny(process.Exited, channel.Closed, heartbeat).ConfigureAwait(false);
+        await beat.CancelAsync().ConfigureAwait(false);
         await worker.Gate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -316,13 +365,17 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
                 return;
             }
 
-            var (reason, detail) = ended == process.Exited
-                ? (FaultReason.Exited, $"Exited with code {process.Exited.Result}.")
+            var (reason, detail) = ended == process.Exited ? (FaultReason.Exited, $"Exited with code {process.Exited.Result}.")
+                : ended == heartbeat ? (FaultReason.HeartbeatTimeout, heartbeat.Result ?? "No ping reply.")
                 : (channel.Closed.Result.Reason, channel.Closed.Result.Detail);
             worker.Channel = null;
             worker.Process = null;
             await channel.DisposeAsync().ConfigureAwait(false);
-            Abort(worker, process, reason, detail);
+            await AbortAsync(worker, process, reason, detail).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            _log.Write(LogLevel.Error, "plugins", $"Watching {worker.Status.PluginId} failed: {e}");
         }
         finally
         {
@@ -330,8 +383,58 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Pings the worker every <see cref="SupervisorTimings.PingInterval"/>; completes with the fault
+    /// detail once no reply has arrived for <see cref="SupervisorTimings.PingTimeout"/>, or with null
+    /// when cancelled.
+    /// </summary>
+    private async Task<string?> HeartbeatAsync(WorkerChannel channel, CancellationToken ct)
+    {
+        var check = TimeSpan.FromMilliseconds(Math.Min(1000, _timings.PingTimeout.TotalMilliseconds / 10));
+        var lastReply = Environment.TickCount64;
+        var lastPing = lastReply;
+        Task? ping = null;
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(check, ct).ConfigureAwait(false);
+                var now = Environment.TickCount64;
+                var silent = TimeSpan.FromMilliseconds(now - Interlocked.Read(ref lastReply));
+                if (silent >= _timings.PingTimeout)
+                {
+                    return $"No ping reply for {silent.TotalSeconds:0.0} s.";
+                }
+
+                if (ping is not { IsCompleted: false } && now - lastPing >= _timings.PingInterval.TotalMilliseconds)
+                {
+                    lastPing = now;
+                    ping = channel.RequestAsync<object?, JsonElement?>(Methods.Ping, null, _timings.PingTimeout, ct)
+                        .ContinueWith(reply =>
+                        {
+                            if (reply.IsCompletedSuccessfully && reply.Result.Ok)
+                            {
+                                Interlocked.Exchange(ref lastReply, Environment.TickCount64);
+                            }
+                        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
     private async Task StopCoreAsync(Worker worker)
     {
+        if (CancelRestart(worker) && worker.Status.State == PluginState.Faulted)
+        {
+            _pluginLogs.Write(worker.Status.PluginId, "host", "Stopped; the pending restart is cancelled.");
+            SetStatus(worker, PluginState.Stopped);
+            return;
+        }
+
         if (worker is not { Channel: { } channel, Process: { } process })
         {
             return;
@@ -350,7 +453,6 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         }
         else
         {
-            process.Kill();
             _pluginLogs.Write(pluginId, "host", $"Killed after {(int)ShutdownDeadline.TotalMilliseconds} ms.");
             _log.Write(LogLevel.Warning, "plugins", $"{pluginId} did not exit within {(int)ShutdownDeadline.TotalMilliseconds} ms and was killed.");
         }
@@ -358,25 +460,107 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         worker.Channel = null;
         worker.Process = null;
         await channel.DisposeAsync().ConfigureAwait(false);
-        process.Dispose();
+        await KillAsync(process).ConfigureAwait(false);
         SetStatus(worker, PluginState.Stopped);
     }
 
+    /// <summary>
+    /// Records the fault against the restart budget. Within budget the worker is Faulted and restarts
+    /// after its backoff; past it, the worker is Unavailable until <see cref="RetryAsync"/> (I17).
+    /// Called with the worker's gate held.
+    /// </summary>
     private Outcome Fault(Worker worker, FaultReason reason, string detail)
     {
         var pluginId = worker.Status.PluginId;
         _pluginLogs.Write(pluginId, "host", $"Faulted ({reason}): {detail}");
         _log.Write(LogLevel.Warning, "plugins", $"{pluginId} faulted ({reason}): {detail}");
-        SetStatus(worker, PluginState.Faulted, fault: reason,
-            problems: [new CoreError(CoreErrorCode.StartFailed, detail, true)]);
+        var backoff = worker.Budget.RecordFault(_clock());
+        if (backoff is null)
+        {
+            var spent = $"{_policy.MaxRestarts + 1} faults within {_policy.WindowSeconds} s; the last was {reason}: {detail}";
+            _pluginLogs.Write(pluginId, "host", $"Unavailable: {spent}");
+            _log.Write(LogLevel.Error, "plugins", $"{pluginId} is unavailable: {spent}");
+            SetStatus(worker, PluginState.Unavailable, fault: reason, problems: [new CoreError(CoreErrorCode.StartFailed, spent, true)]);
+            return Outcome.Fail(CoreErrorCode.StartFailed, spent, retryable: true);
+        }
+
+        var restart = CancellationTokenSource.CreateLinkedTokenSource(_disposing.Token);
+        worker.PendingRestart = restart;
+        _pluginLogs.Write(pluginId, "host", $"Restarting in {backoff.Value.TotalSeconds:0.###} s.");
+        SetStatus(worker, PluginState.Faulted, fault: reason, problems: [new CoreError(CoreErrorCode.StartFailed, detail, true)]);
+        _ = RestartAfterAsync(worker, backoff.Value, restart);
         return Outcome.Fail(CoreErrorCode.StartFailed, detail, retryable: true);
     }
 
-    private Outcome Abort(Worker worker, IWorkerProcess process, FaultReason reason, string detail)
+    private async Task RestartAfterAsync(Worker worker, TimeSpan backoff, CancellationTokenSource restart)
+    {
+        try
+        {
+            await Task.Delay(backoff, restart.Token).ConfigureAwait(false);
+            await worker.Gate.WaitAsync(restart.Token).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!ReferenceEquals(worker.PendingRestart, restart))
+            {
+                return;
+            }
+
+            worker.PendingRestart = null;
+            restart.Dispose();
+            if (worker.Status.State == PluginState.Faulted)
+            {
+                await StartAsync(worker, _disposing.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (_disposing.IsCancellationRequested)
+        {
+        }
+        catch (Exception e)
+        {
+            _log.Write(LogLevel.Error, "plugins", $"Restarting {worker.Status.PluginId} failed: {e}");
+        }
+        finally
+        {
+            worker.Gate.Release();
+        }
+    }
+
+    /// <summary>Cancels a scheduled restart; returns whether one was pending. Called with the worker's gate held.</summary>
+    private static bool CancelRestart(Worker worker)
+    {
+        if (worker.PendingRestart is not { } restart)
+        {
+            return false;
+        }
+
+        worker.PendingRestart = null;
+        restart.Cancel();
+        restart.Dispose();
+        return true;
+    }
+
+    private async Task<Outcome> AbortAsync(Worker worker, IWorkerProcess process, FaultReason reason, string detail)
+    {
+        await KillAsync(process).ConfigureAwait(false);
+        return Fault(worker, reason, detail);
+    }
+
+    /// <summary>Kills the process and waits for its handle to signal, so no restart overlaps it (I4).</summary>
+    private async Task KillAsync(IWorkerProcess process)
     {
         process.Kill();
+        if (await Task.WhenAny(process.Exited, Task.Delay(ExitWait)).ConfigureAwait(false) != process.Exited)
+        {
+            _log.Write(LogLevel.Error, "plugins", $"Process {process.ProcessId} did not end within {ExitWait.TotalSeconds:0} s of being killed.");
+        }
+
         process.Dispose();
-        return Fault(worker, reason, detail);
     }
 
     private void OnNotification(string pluginId, WorkerNotification notification)
@@ -415,11 +599,15 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         }
     }
 
-    private sealed class Worker(PluginStatus status)
+    private sealed class Worker(PluginStatus status, RestartBudget budget)
     {
         public SemaphoreSlim Gate { get; } = new(1, 1);
 
         public PluginStatus Status { get; set; } = status;
+
+        public RestartBudget Budget { get; } = budget;
+
+        public CancellationTokenSource? PendingRestart { get; set; }
 
         public IWorkerProcess? Process { get; set; }
 

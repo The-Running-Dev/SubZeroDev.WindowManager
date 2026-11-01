@@ -13,21 +13,25 @@ namespace SubZeroDev.WindowManager.Host.Surfaces;
 /// revision rebuilds the tree, and a state change at the same revision updates only the bound props.
 /// Each element is styled from <c>Wm.Element.&lt;Kind&gt;.&lt;class&gt;</c> (classes in order), then
 /// <c>Wm.Element.&lt;Kind&gt;</c>, then the built-in style. Kinds that arrive with later slices render
-/// as nothing. Call on the UI thread.
+/// as nothing. A Faulted or Unavailable placeholder's Retry runs <c>retry</c> with the plugin id, and its
+/// detail shows as the tooltip. Call on the UI thread.
 /// </summary>
 public sealed class ContributionView
 {
     private readonly Func<string, object?> _lookup;
+    private readonly Action<string>? _retry;
     private readonly Orientation _panelAxis;
     private readonly List<Binding> _bindings = [];
     private readonly List<WmText> _texts = [];
     private long _revision = -1;
 
-    public ContributionView(ContributionInstance instance, Orientation panelAxis, Func<string, object?> lookup)
+    public ContributionView(ContributionInstance instance, Orientation panelAxis, Func<string, object?> lookup,
+        Action<string>? retry = null)
     {
         Instance = instance;
         _panelAxis = panelAxis;
         _lookup = lookup;
+        _retry = retry;
         Root = new WmContribution { Style = lookup("Wm.Contribution") as Style };
     }
 
@@ -37,6 +41,9 @@ public sealed class ContributionView
 
     /// <summary>The placeholder reason shown now, or null while a view is shown.</summary>
     public string? Reason { get; private set; }
+
+    /// <summary>The placeholder shown now, or null while a view is shown.</summary>
+    public WmPlaceholder? Placeholder => Root.Content as WmPlaceholder;
 
     /// <summary>The text of every Text element shown now, in tree order.</summary>
     public IReadOnlyList<string> Texts() => _texts.Select(text => text.Text).ToList();
@@ -79,13 +86,24 @@ public sealed class ContributionView
         _texts.Clear();
         _revision = -1;
         Reason = reason.ToString();
-        Root.Content = new WmPlaceholder
+        var placeholder = new WmPlaceholder
         {
             PluginName = Instance.Plugin,
             Reason = Reason,
             Detail = detail ?? string.Empty,
             Style = _lookup("Wm.Placeholder") as Style,
         };
+        if (_retry is not null && reason is PlaceholderReason.Faulted or PlaceholderReason.Unavailable)
+        {
+            placeholder.RetryCommand = new RetryCommand(() => _retry(Instance.Plugin));
+        }
+
+        if (!string.IsNullOrEmpty(detail))
+        {
+            ToolTipService.SetToolTip(placeholder, detail);
+        }
+
+        Root.Content = placeholder;
     }
 
     private FrameworkElement Build(JsonNode? node, IReadOnlyDictionary<string, JsonNode?> state)
@@ -196,6 +214,19 @@ public sealed class ContributionView
     };
 
     private static bool AsBool(JsonNode? value) => value is JsonValue scalar && scalar.TryGetValue<bool>(out var flag) && flag;
+
+    private sealed partial class RetryCommand(Action retry) : System.Windows.Input.ICommand
+    {
+        public event EventHandler? CanExecuteChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public bool CanExecute(object? parameter) => true;
+
+        public void Execute(object? parameter) => retry();
+    }
 
     private sealed class Binding(string key, Action<JsonNode?> apply)
     {

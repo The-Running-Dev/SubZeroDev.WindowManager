@@ -56,7 +56,11 @@
                                 <VisualState x:Name="Missing" />
                                 <VisualState x:Name="Disabled" />
                                 <VisualState x:Name="Starting" />
-                                <VisualState x:Name="Unavailable" />
+                                <VisualState x:Name="Unavailable">
+                                    <VisualState.Setters>
+                                        <Setter Target="Retry.Visibility" Value="Visible" />
+                                    </VisualState.Setters>
+                                </VisualState>
                                 <VisualState x:Name="NotSupportedInMode" />
                                 <VisualState x:Name="Invalid" />
                                 <VisualState x:Name="Incompatible">
@@ -67,11 +71,16 @@
                                 <VisualState x:Name="Faulted">
                                     <VisualState.Setters>
                                         <Setter Target="Root.Background" Value="#FF5A1010" />
+                                        <Setter Target="Retry.Visibility" Value="Visible" />
                                     </VisualState.Setters>
                                 </VisualState>
                             </VisualStateGroup>
                         </VisualStateManager.VisualStateGroups>
-                        <TextBlock Foreground="#FFB0B0B0" FontSize="12" Text="{TemplateBinding PluginName}" />
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock Foreground="#FFB0B0B0" FontSize="12" VerticalAlignment="Center" Text="{TemplateBinding PluginName}" />
+                            <Button x:Name="Retry" Visibility="Collapsed" Padding="6,0" MinHeight="0" FontSize="11" Content="Retry"
+                                    Command="{TemplateBinding RetryCommand}" />
+                        </StackPanel>
                     </Border>
                 </ControlTemplate>
             </Setter.Value>

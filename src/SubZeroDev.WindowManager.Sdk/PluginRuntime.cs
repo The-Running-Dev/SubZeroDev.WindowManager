@@ -12,6 +12,14 @@ public static class PluginRuntime
 {
     public const string SdkVersion = "0.1.0";
 
+    /// <summary>False makes the worker ignore pings, as a hung worker would. Used by the test plugin.</summary>
+    internal static volatile bool AnswerPings = true;
+
+    private static long _lastPingAnswered;
+
+    /// <summary>When the last ping was answered, as UTC Unix milliseconds; 0 before the first. Used by the test plugin.</summary>
+    internal static long LastPingAnswered => Interlocked.Read(ref _lastPingAnswered);
+
     /// <summary>Exit codes a worker returns.</summary>
     public static class ExitCodes
     {
@@ -146,7 +154,12 @@ public static class PluginRuntime
             switch (message.Method)
             {
                 case Methods.Ping when message.Id is { } id:
-                    connection.Respond(id, null);
+                    if (AnswerPings)
+                    {
+                        connection.Respond(id, null);
+                        Interlocked.Exchange(ref _lastPingAnswered, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                    }
+
                     break;
                 case Methods.Initialize:
                     Enqueue(message, () => InitializeAsync(message.ParamsAs<InitializeParams>()!));

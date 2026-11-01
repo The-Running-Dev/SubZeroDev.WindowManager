@@ -6,11 +6,15 @@ namespace SubZeroDev.WindowManager.TestPlugin;
 /// <summary>
 /// Scenarios, chosen by the first argument:
 /// <c>invalid-view</c> shows "ok", then sends a stale patch and four invalid views the host must reject;
-/// <c>ignore-shutdown</c> shows "ok" and never stops, so the host has to kill it.
+/// <c>ignore-shutdown</c> shows "ok" and never stops, so the host has to kill it;
+/// <c>faulty</c> shows "ok", appends a line to <c>created.log</c> in its data folder for each instance
+/// created, and every 50 ms acts on the switch files there (see <see cref="Switches"/>).
 /// </summary>
 public static class Program
 {
     public static string Scenario { get; private set; } = "invalid-view";
+
+    public static string DataDirectory { get; set; } = string.Empty;
 
     public static Task<int> Main(string[] args)
     {
@@ -25,6 +29,13 @@ public static class Program
 
 public sealed class ProbePlugin : Plugin
 {
+    protected internal override Task OnStartAsync(CancellationToken ct)
+    {
+        Program.DataDirectory = Context.DataDirectory;
+        Directory.CreateDirectory(Context.DataDirectory);
+        return Task.CompletedTask;
+    }
+
     protected internal override ContributionInstance CreateInstance(InstanceRequest request) => new ProbeInstance(request);
 
     protected internal override async Task OnStopAsync(CancellationToken ct)
@@ -42,6 +53,14 @@ public sealed class ProbeInstance(InstanceRequest request) : ContributionInstanc
     {
         Surface.SetView(View.Text("t", Prop<string>.State("t")));
         Surface.SetState("t", "ok");
+        if (Program.Scenario == "faulty")
+        {
+            File.AppendAllText(Path.Combine(Program.DataDirectory, "created.log"),
+                $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()} {Environment.ProcessId}{Environment.NewLine}");
+            _ = Task.Run(() => Switches.RunAsync(Surface), CancellationToken.None);
+            return Task.CompletedTask;
+        }
+
         if (Program.Scenario != "invalid-view")
         {
             return Task.CompletedTask;
