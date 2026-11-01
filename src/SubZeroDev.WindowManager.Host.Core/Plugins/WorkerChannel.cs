@@ -17,7 +17,8 @@ public sealed record ChannelClose(FaultReason Reason, string Detail);
 /// frame must be a <c>hello</c> request carrying the launch token, this plugin's id and protocol 1;
 /// anything else is answered with 1010 (1004 for a version mismatch) and the pipe is closed, so no
 /// later message is read. After <see cref="Start"/>, notifications are raised one at a time in the
-/// order they arrived (I12).
+/// order they arrived (I12). Incoming messages are metered: above the rate, events other than views
+/// and patches are dropped, and a worker that stays above it is closed with <see cref="FaultReason.Flood"/>.
 /// </summary>
 public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
 {
@@ -35,14 +36,22 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
     private readonly ConcurrentDictionary<long, TaskCompletionSource<RpcMessage>> _pending = new();
     private readonly CancellationTokenSource _stop = new();
     private readonly TaskCompletionSource<ChannelClose> _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly FloodMeter _meter;
+    private readonly int _messagesPerSecond;
+    private readonly TimeSpan _floodSustain;
     private long _nextId;
     private int _started;
+    private int _dropped;
+    private long _dropReportedAt = long.MinValue;
 
-    private WorkerChannel(Stream stream, string pluginId, int processId)
+    private WorkerChannel(Stream stream, string pluginId, int processId, SupervisorTimings timings)
     {
         _stream = stream;
         PluginId = pluginId;
         ProcessId = processId;
+        _messagesPerSecond = timings.MessagesPerSecond;
+        _floodSustain = timings.FloodSustain;
+        _meter = new FloodMeter(timings.MessagesPerSecond, timings.FloodSustain);
     }
 
     public string PluginId { get; }
@@ -51,6 +60,9 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
 
     public event EventHandler<WorkerNotification>? NotificationReceived;
 
+    /// <summary>Lines for the plugin's log about what the channel dropped.</summary>
+    public event EventHandler<string>? Diagnostic;
+
     /// <summary>Completes once, when the channel stops for any reason.</summary>
     public Task<ChannelClose> Closed => _closed.Task;
 
@@ -58,7 +70,8 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
 
     /// <summary>Reads the first frame and answers it. On failure the stream is disposed.</summary>
     public static async Task<(WorkerChannel? Channel, HandshakeFailure? Failure)> AcceptAsync(
-        Stream stream, string pluginId, int processId, string token, TimeSpan timeout, CancellationToken ct)
+        Stream stream, string pluginId, int processId, string token, TimeSpan timeout, CancellationToken ct,
+        SupervisorTimings? timings = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(timeout);
@@ -133,7 +146,7 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
             return (null, failure);
         }
 
-        return (new WorkerChannel(stream, pluginId, processId), null);
+        return (new WorkerChannel(stream, pluginId, processId, timings ?? SupervisorTimings.Default), null);
     }
 
     /// <summary>Starts reading and writing. Subscribe to <see cref="NotificationReceived"/> first.</summary>
@@ -229,6 +242,19 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
         }
     }
 
+    /// <summary>Counts an event dropped over the rate and reports the count at most once a second.</summary>
+    private void Drop(string method)
+    {
+        _dropped++;
+        var now = Environment.TickCount64;
+        if (now - _dropReportedAt >= 1000)
+        {
+            Diagnostic?.Invoke(this, $"Over {_messagesPerSecond} messages a second: dropped {_dropped} events (latest '{method}').");
+            _dropped = 0;
+            _dropReportedAt = now;
+        }
+    }
+
     private async Task WriteLoopAsync()
     {
         try
@@ -291,6 +317,17 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
                     continue;
                 }
 
+                switch (_meter.Record())
+                {
+                    case FloodVerdict.Flood:
+                        Close(FaultReason.Flood,
+                            $"More than {_messagesPerSecond} messages a second for {_floodSustain.TotalSeconds:0} s.");
+                        return;
+                    case FloodVerdict.Over when method is not (Methods.StatePatch or Methods.ViewSet):
+                        Drop(method);
+                        continue;
+                }
+
                 var parameters = message.Params ?? ProtocolJson.ToElement(new { })!.Value;
                 NotificationReceived?.Invoke(this, new WorkerNotification(method, parameters));
             }
@@ -306,6 +343,11 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
         catch (InvalidDataException e)
         {
             Close(FaultReason.ProtocolViolation, e.Message);
+        }
+        catch (Exception e)
+        {
+            // A failing subscriber must not leave the channel open with nobody reading it.
+            Close(FaultReason.PipeBroken, $"Reading stopped: {e.Message}");
         }
     }
 }

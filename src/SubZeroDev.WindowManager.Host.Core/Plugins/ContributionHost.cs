@@ -36,7 +36,10 @@ public interface IContributionHost
 /// Connects placed instances to their plugin workers. Every change — a new layout, a worker
 /// message, a status or catalog change — runs on one queue, so updates for one surface are applied
 /// in channel order (I12) and never concurrently. A worker may only update surfaces of its own
-/// instances; views are checked before they replace the shown one (I11).
+/// instances; views are checked before they replace the shown one (I11). State patches mark the
+/// instance changed and one publish follows the queued work, so a burst renders latest-wins.
+/// When a worker faults its instances show Faulted, then Unavailable once its restart budget is
+/// spent; each restart replays <c>instance.create</c>.
 /// </summary>
 public sealed class ContributionHost : IContributionHost, IAsyncDisposable
 {
@@ -238,6 +241,7 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
                 CoreErrorCode.PackageInvalid => PlaceholderReason.Invalid,
                 CoreErrorCode.ModeUnsupported => PlaceholderReason.NotSupportedInMode,
                 CoreErrorCode.HostApiMismatch => PlaceholderReason.Incompatible,
+                _ when _supervisor.GetStatus(pluginId).State == PluginState.Unavailable => PlaceholderReason.Unavailable,
                 _ => PlaceholderReason.Faulted,
             };
             foreach (var entry in Waiting(pluginId).Where(entry => entry.Reason != PlaceholderReason.Missing))
@@ -248,9 +252,16 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
             return Task.CompletedTask;
         }
 
+        CreateWaiting(pluginId);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Creates the plugin's instances that are not created yet in its running worker.</summary>
+    private void CreateWaiting(string pluginId)
+    {
         if (_supervisor.GetChannel(pluginId) is not { } channel)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         if (_attached.Add(channel))
@@ -262,8 +273,6 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
         {
             Create(channel, entry);
         }
-
-        return Task.CompletedTask;
     }
 
     private void Create(IWorkerChannel channel, Entry entry)
@@ -301,11 +310,12 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
         }
     }
 
-    /// <summary>A worker with no placed instance left is stopped.</summary>
+    /// <summary>A worker with no placed instance left is stopped, and a pending restart cancelled.</summary>
     private void StopUnused()
     {
         var used = _instances.Values.Select(entry => entry.PluginId).ToHashSet(StringComparer.Ordinal);
-        foreach (var status in _supervisor.All.Where(status => status.State == PluginState.Running && !used.Contains(status.PluginId)))
+        foreach (var status in _supervisor.All.Where(status =>
+            status.State is PluginState.Running or PluginState.Faulted && !used.Contains(status.PluginId)))
         {
             _ = _supervisor.StopAsync(status.PluginId, CancellationToken.None);
         }
@@ -313,24 +323,41 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
 
     private Task OnStatusChanged(PluginStatus status)
     {
-        if (status.State is PluginState.Running or PluginState.Starting)
+        var entries = _instances.Values.Where(entry => entry.PluginId == status.PluginId).ToList();
+        switch (status.State)
         {
-            return Task.CompletedTask;
+            case PluginState.Running:
+                // A restart after a fault replays instance.create for every instance.
+                CreateWaiting(status.PluginId);
+                return Task.CompletedTask;
+            case PluginState.Starting:
+                foreach (var entry in entries.Where(entry => entry.Reason == PlaceholderReason.Unavailable))
+                {
+                    Publish(entry, PlaceholderReason.Starting, null);
+                }
+
+                return Task.CompletedTask;
         }
 
         _attached.RemoveWhere(channel => channel.PluginId == status.PluginId);
-        foreach (var entry in _instances.Values.Where(entry => entry.PluginId == status.PluginId && entry.Created))
+        foreach (var entry in entries.Where(entry => entry.Created))
         {
             entry.Created = false;
             entry.Channel = null;
             entry.Model = new SurfaceModel(SurfaceIdOf(entry.Placement.Instance.Id));
-            if (status.State == PluginState.Faulted)
-            {
-                Publish(entry, PlaceholderReason.Faulted, status.Problems.FirstOrDefault()?.Detail ?? status.LastFault?.ToString());
-            }
-            else if (status.State is PluginState.Stopped or PluginState.Stopping)
+            if (status.State is PluginState.Stopped or PluginState.Stopping)
             {
                 Publish(entry, PlaceholderReason.Starting, null);
+            }
+        }
+
+        if (status.State is PluginState.Faulted or PluginState.Unavailable)
+        {
+            var reason = status.State == PluginState.Faulted ? PlaceholderReason.Faulted : PlaceholderReason.Unavailable;
+            var detail = status.Problems.FirstOrDefault()?.Detail ?? status.LastFault?.ToString();
+            foreach (var entry in entries.Where(entry => entry.Reason != PlaceholderReason.Missing))
+            {
+                Publish(entry, reason, detail);
             }
         }
 
@@ -405,6 +432,9 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
 
         switch (update.Result)
         {
+            case SurfaceUpdateResult.Applied when notification.Method == Methods.StatePatch:
+                PublishLater(entry);
+                break;
             case SurfaceUpdateResult.Applied:
                 Publish(entry, entry.Model.View is null ? PlaceholderReason.Starting : null, null);
                 break;
@@ -422,8 +452,29 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>Publishes the instance once the work queued so far has run, so a burst of patches renders once.</summary>
+    private void PublishLater(Entry entry)
+    {
+        if (entry.PublishPending)
+        {
+            return;
+        }
+
+        entry.PublishPending = true;
+        Enqueue(() =>
+        {
+            if (entry.PublishPending && _instances.TryGetValue(entry.Placement.Instance.Id, out var current) && ReferenceEquals(current, entry))
+            {
+                Publish(entry, entry.Model.View is null ? PlaceholderReason.Starting : null, null);
+            }
+
+            return Task.CompletedTask;
+        });
+    }
+
     private void Publish(Entry entry, PlaceholderReason? reason, string? detail)
     {
+        entry.PublishPending = false;
         entry.Reason = reason;
         var instance = entry.Placement.Instance;
         var snapshot = new InstanceSnapshot(instance.Id, instance.Plugin, reason, detail,
@@ -456,6 +507,8 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
         public PlaceholderReason? Reason { get; set; }
 
         public bool Created { get; set; }
+
+        public bool PublishPending { get; set; }
 
         public IWorkerChannel? Channel { get; set; }
     }

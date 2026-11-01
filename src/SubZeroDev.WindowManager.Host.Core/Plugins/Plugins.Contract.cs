@@ -39,8 +39,8 @@ public sealed record PluginStatus(string PluginId, PluginState State, int? Proce
 public enum FaultReason { Exited, PipeBroken, HeartbeatTimeout, HandshakeTimeout, ProtocolViolation, Flood, StartFailed }
 
 /// <summary>
-/// The S2 part of the contract's <c>IPluginSupervisor</c>: start on demand and stop. Enable, disable,
-/// retry and debug-attach arrive with their slices.
+/// The S3 part of the contract's <c>IPluginSupervisor</c>: start on demand, stop, restart after a
+/// fault and retry. Enable, disable and debug-attach arrive with their slices.
 /// </summary>
 public interface IPluginSupervisor
 {
@@ -51,8 +51,11 @@ public interface IPluginSupervisor
     /// <summary>Starts the plugin's worker unless it is already starting or running (I4, I16).</summary>
     Task<Outcome> EnsureRunningAsync(string pluginId, CancellationToken ct);
 
-    /// <summary>Shuts the worker down, killing it if it has not exited within 3 s.</summary>
+    /// <summary>Shuts the worker down, killing it if it has not exited within 3 s, and cancels a pending restart.</summary>
     Task StopAsync(string pluginId, CancellationToken ct);
+
+    /// <summary>Unavailable or Faulted → Starting, with the restart budget reset; otherwise InvalidState.</summary>
+    Task<Outcome> RetryAsync(string pluginId, CancellationToken ct);
 
     Task StopAllAsync(CancellationToken ct);
 

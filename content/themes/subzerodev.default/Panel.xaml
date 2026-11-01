@@ -51,9 +51,14 @@
                                 <VisualState x:Name="Faulted">
                                     <VisualState.Setters>
                                         <Setter Target="Root.BorderBrush" Value="{ThemeResource Wm.Brush.danger}" />
+                                        <Setter Target="Retry.Visibility" Value="Visible" />
                                     </VisualState.Setters>
                                 </VisualState>
-                                <VisualState x:Name="Unavailable" />
+                                <VisualState x:Name="Unavailable">
+                                    <VisualState.Setters>
+                                        <Setter Target="Retry.Visibility" Value="Visible" />
+                                    </VisualState.Setters>
+                                </VisualState>
                                 <VisualState x:Name="NotSupportedInMode" />
                                 <VisualState x:Name="Missing">
                                     <VisualState.Setters>
@@ -62,7 +67,12 @@
                                 </VisualState>
                             </VisualStateGroup>
                         </VisualStateManager.VisualStateGroups>
-                        <TextBlock Foreground="{ThemeResource Wm.Brush.textMuted}" FontSize="12" Text="{TemplateBinding PluginName}" />
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock Foreground="{ThemeResource Wm.Brush.textMuted}" FontSize="12" VerticalAlignment="Center"
+                                       Text="{TemplateBinding PluginName}" />
+                            <Button x:Name="Retry" Visibility="Collapsed" Padding="6,0" MinHeight="0" FontSize="11" Content="Retry"
+                                    Command="{TemplateBinding RetryCommand}" />
+                        </StackPanel>
                     </Border>
                 </ControlTemplate>
             </Setter.Value>

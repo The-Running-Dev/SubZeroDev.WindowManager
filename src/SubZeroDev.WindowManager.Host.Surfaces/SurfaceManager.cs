@@ -32,12 +32,16 @@ public sealed class SurfaceManager : ISurfaceManager
     private readonly IHostLog _log;
     private readonly IContributionHost _contributions;
     private readonly DispatcherQueue _dispatcher;
+    private readonly Action<string>? _retry;
     private readonly List<PanelWindow> _panels = [];
     private readonly Dictionary<Guid, ContributionView> _views = [];
+    private readonly Lock _pendingGate = new();
+    private readonly HashSet<Guid> _pending = [];
 
     public SurfaceManager(IConfigStore config, IMonitorService monitors, IAppBarService appBars, IThemeEngine theme,
-        IContributionHost contributions, IHostLog log)
+        IContributionHost contributions, IHostLog log, Action<string>? retry = null)
     {
+        _retry = retry;
         _config = config;
         _monitors = monitors;
         _appBars = appBars;
@@ -46,7 +50,7 @@ public sealed class SurfaceManager : ISurfaceManager
         _log = log;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         _theme.AppearanceChanged += (_, _) => Restyle();
-        _contributions.InstanceChanged += (_, snapshot) => _dispatcher.TryEnqueue(() => Render(snapshot.InstanceId));
+        _contributions.InstanceChanged += (_, snapshot) => QueueRender(snapshot.InstanceId);
     }
 
     public IReadOnlyList<PanelWindow> Panels => _panels;
@@ -172,7 +176,7 @@ public sealed class SurfaceManager : ISurfaceManager
             : Microsoft.UI.Xaml.Controls.Orientation.Horizontal;
         foreach (var instance in instances)
         {
-            var view = new ContributionView(instance, axis, Lookup);
+            var view = new ContributionView(instance, axis, Lookup, _retry);
             _views[instance.Id] = view;
             view.Render(_contributions.Describe(instance.Id));
             placements.Add(new InstancePlacement(instance, context));
@@ -205,9 +209,34 @@ public sealed class SurfaceManager : ISurfaceManager
         }
     }
 
+    /// <summary>Queues one render per instance; changes that arrive before it runs fold into it, so the UI thread never falls behind.</summary>
+    private void QueueRender(Guid instanceId)
+    {
+        lock (_pendingGate)
+        {
+            if (!_pending.Add(instanceId))
+            {
+                return;
+            }
+        }
+
+        if (!_dispatcher.TryEnqueue(() => Render(instanceId)))
+        {
+            lock (_pendingGate)
+            {
+                _pending.Remove(instanceId);
+            }
+        }
+    }
+
     /// <summary>Runs from the dispatcher queue, where an escaped exception would end the host without UnhandledException.</summary>
     private void Render(Guid instanceId)
     {
+        lock (_pendingGate)
+        {
+            _pending.Remove(instanceId);
+        }
+
         try
         {
             if (_views.TryGetValue(instanceId, out var view))

@@ -26,6 +26,7 @@ public sealed partial class App : Application
     private ContributionHost? _contributions;
     private string _layoutId = HostSettingsDocument.DefaultPreset;
     private TestHook? _testHook;
+    private DispatcherWatchdog? _watchdog;
     private int _exiting;
 
     public App(HostOptions options)
@@ -110,11 +111,12 @@ public sealed partial class App : Application
         _pluginLogs = new PluginLogs(_locations.LogsDirectory);
         _launcher = new WorkerLauncher();
         var hostVersion = typeof(App).Assembly.GetName().Version is { } version ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.1.0";
-        _supervisor = new PluginSupervisor(_catalog, _launcher, _pluginLogs, _log, _locations, HostMode.Coexistence, hostVersion);
+        _supervisor = new PluginSupervisor(_catalog, _launcher, _pluginLogs, _log, _locations, HostMode.Coexistence, hostVersion,
+            settings.RestartPolicy);
         _contributions = new ContributionHost(_supervisor, _catalog, _pluginLogs, _log);
 
         var monitors = new MonitorService();
-        _surfaces = new SurfaceManager(config, monitors, new AppBarService(monitors), _theme, _contributions, _log);
+        _surfaces = new SurfaceManager(config, monitors, new AppBarService(monitors), _theme, _contributions, _log, Retry);
         _layoutId = preset.Layout;
         await ApplyLayoutAsync();
 
@@ -129,11 +131,47 @@ public sealed partial class App : Application
         config.StartWatching();
 
         var hookDirectory = Environment.GetEnvironmentVariable(TestHook.Variable);
+        var debug = false;
+#if DEBUG
+        debug = true;
+#endif
+        if (debug || !string.IsNullOrWhiteSpace(hookDirectory))
+        {
+            _watchdog = new DispatcherWatchdog(dispatcher, _log);
+        }
+
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
-            _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher);
+            _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
+                _watchdog!);
             _testHook.Start();
         }
+    }
+
+    /// <summary>A placeholder's Retry: runs on the UI thread, so the restart itself goes to the background.</summary>
+    private void Retry(string pluginId)
+    {
+        if (_supervisor is not { } supervisor)
+        {
+            return;
+        }
+
+        _log?.Write(LogLevel.Info, "plugins", $"Retry requested for {pluginId}.");
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var outcome = await supervisor.RetryAsync(pluginId, CancellationToken.None);
+                if (!outcome.Ok)
+                {
+                    _log?.Write(LogLevel.Warning, "plugins", $"Retrying {pluginId} failed: {outcome.Error}");
+                }
+            }
+            catch (Exception e)
+            {
+                _log?.Write(LogLevel.Error, "plugins", $"Retrying {pluginId} failed: {e}");
+            }
+        });
     }
 
     private async Task ApplyLayoutAsync()
@@ -203,6 +241,7 @@ public sealed partial class App : Application
         }
 
         _testHook?.Stop();
+        _watchdog?.Dispose();
         await StopAsync();
         _log?.Write(LogLevel.Info, "host", "Stopped.");
         if (_log is not null)

@@ -41,7 +41,7 @@ Acceptance:
 Out of scope: heartbeats, fault handling and restart; commands and actions; feeds; plugin settings; popups; the PackTool zip format (S11).
 
 ## S3 — A crashed plugin does not take the desktop down
-Status: todo
+Status: done
 Delivers: When a plugin crashes or hangs, Ben's desktop keeps working, shows which piece failed, and brings it back by itself. If it keeps failing, Ben can retry it.
 Touches: Host.Core (`IPluginSupervisor` fault detection, heartbeat, backoff, restart budget, `RetryAsync`; `PluginStatus`; `FaultReason`); Host.Surfaces (`Wm.Placeholder` reasons Starting, Faulted, Unavailable with Retry); Sdk (ping reply off the callback context); a `samples.faulty` test plugin with crash, hang and flood switches
 Depends on: S2

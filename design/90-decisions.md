@@ -13,6 +13,57 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-01 — S3: The message rate is 200 a second, measured over the trailing second
+- **Context:** S3.7 needs a configured rate, and the design names none. A clock or a media widget sends a few patches a second; a drag or a progress bar can send dozens.
+- **Chosen:** `SupervisorTimings.MessagesPerSecond` = 200, counted over the second before each message. Past the rate, events are dropped (with a rate-limited log line) and `state.patch` and `view.set` still pass, because the host coalesces them latest-wins. Ten seconds in which every message is over the rate close the channel with `Flood`, timed from the first; a message within the rate starts the count again.
+- **Rejected:**
+  - Whole-second windows, because a burst late in one second and a flood early in the next counted as one run, and CI saw a flood faulted 9 s after it began.
+  - A token bucket, because it allows a sustained rate over the limit after an idle spell, and the trailing second is easier to reason about in logs and tests.
+  - Dropping patches over the rate, because a dropped patch can leave the wrong final value on screen (S3.7).
+
+## 2026-11-01 — S3: The heartbeat is checked every second
+- **Context:** S3.2 allows 10–15 s from the last reply to the fault. Pings go out every 5 s with a 10 s timeout.
+- **Chosen:** The heartbeat loop wakes every second (a tenth of the timeout when that is shorter), so the fault lands 10–11 s after the last reply. Only one ping is in flight at a time, and the fault needs one to be unanswered. A check that runs more than half the timeout late means the host stalled, so the silence is measured again from then.
+- **Rejected:**
+  - Faulting when a single ping times out, because that measures from the ping, not from the last reply, and could fault up to 15 s plus a ping interval late.
+  - Counting silence across a host stall, because a debugger break or a sleeping laptop would fault every healthy worker.
+
+## 2026-11-01 — S3: Start failures count against the restart budget
+- **Context:** A worker that fails its handshake or `initialize` would otherwise be restarted forever, or never.
+- **Chosen:** Every fault — exit, broken pipe, heartbeat, handshake, protocol violation, flood or failed start — goes through the same budget, backoff and Unavailable path. A start that throws part-way kills the process and closes the pipe, then faults with `StartFailed`; a start cancelled by shutdown cleans up the same way and leaves the plugin Stopped. After the supervisor is disposed, nothing starts.
+- **Rejected:**
+  - Treating start failures as permanent, because a slow virus scan on first launch makes them transient.
+
+## 2026-11-01 — S3: A killed worker is awaited before anything restarts
+- **Context:** I4 allows at most one process per plugin id, and `Kill` returns before the process has ended.
+- **Chosen:** Killing waits up to 5 s for the process handle to signal, and the restart runs only after that, under the worker's gate.
+- **Rejected:**
+  - Starting the replacement straight after `Kill`, because S3.6 samples every 50 ms and would see two processes.
+
+## 2026-11-01 — S3: Renders and published patches coalesce per instance
+- **Context:** A burst of patches would queue one UI-thread render per patch and stall the dispatcher past 50 ms (I9, S3.5).
+- **Chosen:** The contribution host publishes at most one pending change per instance, and the surface manager queues at most one render per instance; each render reads the latest snapshot, so the final value always shows.
+- **Rejected:**
+  - Throttling on a timer, because it adds latency to every single update.
+
+## 2026-11-01 — S3: The UI watchdog runs in debug builds and under the test hook
+- **Context:** I9 calls for a debug-build dispatcher watchdog, but the end-to-end tests run Release builds.
+- **Chosen:** `DispatcherWatchdog` posts a probe every 25 ms and counts waits over 50 ms. It is on in Debug builds and whenever the test hook is set; the hook reports its count.
+- **Rejected:**
+  - Debug builds only, because then S3.5 could not be checked against the build that ships.
+
+## 2026-11-01 — S3: Retry lives in the placeholder template
+- **Context:** S3.4 needs Retry on the placeholder, and themes restyle the placeholder.
+- **Chosen:** Both placeholder templates hold a `Retry` button bound to `RetryCommand`, shown by the Faulted and Unavailable visual states; the fault detail is the placeholder's tooltip. The command calls `RetryAsync` off the UI thread.
+- **Rejected:**
+  - A button added in code, because a theme could then neither place nor hide it.
+
+## 2026-11-01 — S3: The faulty plugin is the test plugin with switch files
+- **Context:** The slice names a `samples.faulty` plugin with crash, hang and flood switches.
+- **Chosen:** The test plugin's `faulty` scenario, installed as `samples.faulty`, reads `crash`, `hang`, `burst` and `flood` files from its data folder every 50 ms and logs each create and exit. The SDK gains internal switches to stop answering pings. The test hook gains a `retry` file, pointer-press times, contribution bounds, fault fields and the watchdog count.
+- **Rejected:**
+  - A separate sample project, because it would duplicate the test plugin's build and copy steps for no extra coverage.
+
 ## 2026-11-01 — S2: Dispatcher callbacks catch their own exceptions
 - **Context:** In WinUI 3 an exception escaping a `DispatcherQueue` callback or timer tick ends the process with 0xC000027B and never reaches `Application.UnhandledException`. CI hit this when the test hook's status replace met the test's open read.
 - **Chosen:** Each dispatcher callback and timer tick catches and logs its own failures; unhandled exceptions are also written to the host log synchronously, and CI keeps host crash dumps.
