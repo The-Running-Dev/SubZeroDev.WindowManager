@@ -1,0 +1,18 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/SubZeroDev.WindowManager.Protocol/SubZeroDev.WindowManager.Protocol.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Host.Core/SubZeroDev.WindowManager.Host.Core.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Host.Platform/SubZeroDev.WindowManager.Host.Platform.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Host.Theming/SubZeroDev.WindowManager.Host.Theming.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Host.Surfaces/SubZeroDev.WindowManager.Host.Surfaces.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Host.App/SubZeroDev.WindowManager.Host.App.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Guardian/SubZeroDev.WindowManager.Guardian.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SubZeroDev.WindowManager.Host.Core.Tests/SubZeroDev.WindowManager.Host.Core.Tests.csproj" />
+    <Project Path="tests/SubZeroDev.WindowManager.EndToEnd.Tests/SubZeroDev.WindowManager.EndToEnd.Tests.csproj" />
+  </Folder>
+</Solution>

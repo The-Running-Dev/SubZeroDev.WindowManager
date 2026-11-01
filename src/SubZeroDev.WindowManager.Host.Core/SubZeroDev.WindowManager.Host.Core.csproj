@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>SubZeroDev.WindowManager.Host.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Protocol\SubZeroDev.WindowManager.Protocol.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SubZeroDev.WindowManager.Host.Core.Tests" />
+  </ItemGroup>
+</Project>

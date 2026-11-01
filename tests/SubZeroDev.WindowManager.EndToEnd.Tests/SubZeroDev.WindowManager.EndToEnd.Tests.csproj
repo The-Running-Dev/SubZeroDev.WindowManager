@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>SubZeroDev.WindowManager.EndToEnd.Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Built first so the executables exist; nothing is referenced at compile time. -->
+    <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Host.App\SubZeroDev.WindowManager.Host.App.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Guardian\SubZeroDev.WindowManager.Guardian.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="HostExe" Value="$(MSBuildThisFileDirectory)..\..\src\SubZeroDev.WindowManager.Host.App\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\SubZeroDev.WindowManager.Host.exe" />
+    <AssemblyMetadata Include="GuardianExe" Value="$(MSBuildThisFileDirectory)..\..\src\SubZeroDev.WindowManager.Guardian\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\SubZeroDev.WindowManager.exe" />
+  </ItemGroup>
+</Project>

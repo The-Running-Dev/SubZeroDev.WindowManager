@@ -23,3 +23,15 @@ jobs:
             echo "Files above have CRLF line endings in the index." >&2
             exit 1
           fi
+
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Build
+        run: dotnet build SubZeroDev.WindowManager.slnx -c Release
+      - name: Test
+        run: dotnet test SubZeroDev.WindowManager.slnx -c Release --no-build --logger "console;verbosity=normal"

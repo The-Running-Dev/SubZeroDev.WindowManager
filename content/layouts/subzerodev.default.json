@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "subzerodev.default",
+  "displayName": "SubZeroDev default",
+  "panels": [
+    {
+      "id": "6f0d3c1e-5a3b-4f0e-9c1d-2b7a8e4f5a01",
+      "monitor": "primary",
+      "placement": { "edge": "bottom" },
+      "thickness": 40,
+      "behaviour": "reserve",
+      "zones": {}
+    }
+  ]
+}

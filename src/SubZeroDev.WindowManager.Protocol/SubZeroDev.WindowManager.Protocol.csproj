@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>SubZeroDev.WindowManager.Protocol</RootNamespace>
+  </PropertyGroup>
+</Project>

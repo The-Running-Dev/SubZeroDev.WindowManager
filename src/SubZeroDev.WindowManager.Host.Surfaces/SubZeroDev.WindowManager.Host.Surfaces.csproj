@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>SubZeroDev.WindowManager.Host.Surfaces</RootNamespace>
+    <UseWinUI>true</UseWinUI>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Core\SubZeroDev.WindowManager.Host.Core.csproj" />
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Theming\SubZeroDev.WindowManager.Host.Theming.csproj" />
+  </ItemGroup>
+</Project>
