@@ -30,7 +30,7 @@
         <Setter Property="ItemsPanel">
             <Setter.Value>
                 <ItemsPanelTemplate>
-                    <StackPanel Orientation="Horizontal" Spacing="4" />
+                    <wm:WmFitPanel Orientation="Horizontal" Spacing="4" />
                 </ItemsPanelTemplate>
             </Setter.Value>
         </Setter>
@@ -107,6 +107,16 @@
             <Setter.Value>
                 <ControlTemplate TargetType="wm:WmIcon">
                     <Image Source="{TemplateBinding Icon}" Stretch="Uniform" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="wm:WmList">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmList">
+                    <wm:WmFitPanel x:Name="PART_Items" Spacing="2" VerticalAlignment="Center" />
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -197,12 +207,18 @@
                                 </VisualState>
                             </VisualStateGroup>
                         </VisualStateManager.VisualStateGroups>
-                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <Grid ColumnSpacing="6" VerticalAlignment="Center">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             <Image Source="{TemplateBinding Icon}" MaxHeight="16" MaxWidth="16" Stretch="Uniform" />
-                            <TextBlock x:Name="Label" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}"
-                                       VerticalAlignment="Center" Text="{TemplateBinding Label}" />
-                            <TextBlock x:Name="Badge" Foreground="#FFE6E6E6" FontSize="10" VerticalAlignment="Top" Text="{TemplateBinding Badge}" />
-                        </StackPanel>
+                            <TextBlock x:Name="Label" Grid.Column="1" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}"
+                                       VerticalAlignment="Center" MaxWidth="200" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                       Text="{TemplateBinding Label}" />
+                            <TextBlock x:Name="Badge" Grid.Column="2" Foreground="#FFE6E6E6" FontSize="10" VerticalAlignment="Top" Text="{TemplateBinding Badge}" />
+                        </Grid>
                         <Rectangle x:Name="Indicator" Visibility="Collapsed" Height="2" VerticalAlignment="Bottom" Fill="#FF6CB8F6" />
                     </Grid>
                 </ControlTemplate>

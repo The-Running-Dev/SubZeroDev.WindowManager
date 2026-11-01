@@ -13,6 +13,7 @@
     <Project Path="src/SubZeroDev.WindowManager.Guardian/SubZeroDev.WindowManager.Guardian.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Sdk/SubZeroDev.WindowManager.Sdk.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Plugins.Clock/SubZeroDev.WindowManager.Plugins.Clock.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Plugins.RunningWindows/SubZeroDev.WindowManager.Plugins.RunningWindows.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SubZeroDev.WindowManager.Host.Core.Tests/SubZeroDev.WindowManager.Host.Core.Tests.csproj" />

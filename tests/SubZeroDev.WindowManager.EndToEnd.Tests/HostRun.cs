@@ -238,7 +238,11 @@ internal sealed class HostRun : IDisposable
     }
 
     /// <summary>Writes <c>&lt;data&gt;\layouts\subzerodev.default.json</c>: one bottom panel whose end zone holds these instances.</summary>
-    public string WriteDefaultLayout(params (Guid Id, string Plugin, string Contribution)[] instances)
+    public string WriteDefaultLayout(params (Guid Id, string Plugin, string Contribution)[] instances) =>
+        WriteDefaultLayout([.. instances.Select(i => (i.Id, i.Plugin, i.Contribution, (JsonObject?)null))]);
+
+    /// <summary>As above, with each instance's <c>settings</c> when not null.</summary>
+    public string WriteDefaultLayout(params (Guid Id, string Plugin, string Contribution, JsonObject? Settings)[] instances)
     {
         var layout = new JsonObject
         {
@@ -254,11 +258,20 @@ internal sealed class HostRun : IDisposable
                 ["behaviour"] = "reserve",
                 ["zones"] = new JsonObject
                 {
-                    ["end"] = new JsonArray(instances.Select(i => (JsonNode?)new JsonObject
+                    ["end"] = new JsonArray(instances.Select(i =>
                     {
-                        ["id"] = i.Id.ToString("D"),
-                        ["plugin"] = i.Plugin,
-                        ["contribution"] = i.Contribution,
+                        var instance = new JsonObject
+                        {
+                            ["id"] = i.Id.ToString("D"),
+                            ["plugin"] = i.Plugin,
+                            ["contribution"] = i.Contribution,
+                        };
+                        if (i.Settings is not null)
+                        {
+                            instance["settings"] = i.Settings.DeepClone();
+                        }
+
+                        return (JsonNode?)instance;
                     }).ToArray()),
                 },
             }),

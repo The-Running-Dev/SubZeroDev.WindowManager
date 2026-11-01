@@ -270,6 +270,97 @@ public sealed partial class WmStack : Control
     }
 }
 
+/// <summary>
+/// A <c>List</c> element: one element per item, in the items' order. Its template must hold a
+/// <see cref="WmFitPanel"/> or <see cref="StackPanel"/> named <c>PART_Items</c>. <see cref="SetItems"/> moves the panel's children
+/// into the given order, so an item element that is kept is not rebuilt.
+/// </summary>
+public sealed partial class WmList : Control
+{
+    public const string ItemsPart = "PART_Items";
+
+    public static readonly DependencyProperty OrientationProperty =
+        DependencyProperty.Register(nameof(Orientation), typeof(Orientation), typeof(WmList),
+            new PropertyMetadata(Orientation.Horizontal, (d, _) => ((WmList)d).UpdateOrientation()));
+
+    private readonly List<UIElement> _children = [];
+    private Panel? _items;
+
+    public WmList()
+    {
+        DefaultStyleKey = typeof(WmList);
+        IsTabStop = false;
+    }
+
+    public Orientation Orientation
+    {
+        get => (Orientation)GetValue(OrientationProperty);
+        set => SetValue(OrientationProperty, value);
+    }
+
+    /// <summary>The item elements, in order.</summary>
+    public IReadOnlyList<UIElement> Children => _children;
+
+    public void SetItems(IReadOnlyList<UIElement> children)
+    {
+        _children.Clear();
+        _children.AddRange(children);
+        Place();
+    }
+
+    protected override void OnApplyTemplate()
+    {
+        base.OnApplyTemplate();
+        _items?.Children.Clear();
+        _items = GetTemplateChild(ItemsPart) as Panel;
+        Place();
+        UpdateOrientation();
+    }
+
+    private void Place()
+    {
+        if (_items is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < _children.Count; i++)
+        {
+            var child = _children[i];
+            var at = _items.Children.IndexOf(child);
+            if (at == i)
+            {
+                continue;
+            }
+
+            if (at >= 0)
+            {
+                _items.Children.RemoveAt(at);
+            }
+
+            _items.Children.Insert(i, child);
+        }
+
+        while (_items.Children.Count > _children.Count)
+        {
+            _items.Children.RemoveAt(_items.Children.Count - 1);
+        }
+    }
+
+    private void UpdateOrientation()
+    {
+        switch (_items)
+        {
+            case WmFitPanel fit:
+                fit.Orientation = Orientation;
+                break;
+            case StackPanel stack:
+                stack.Orientation = Orientation;
+                break;
+        }
+    }
+}
+
 /// <summary>A <c>Spacer</c> element. <see cref="Flex"/> asks the template to take the free space.</summary>
 public sealed partial class WmSpacer : Control
 {

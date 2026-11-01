@@ -63,6 +63,12 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
     /// <summary>Answers requests from a worker, given its plugin id. Set once at startup by the command router's owner.</summary>
     public Func<string, RpcMessage, Task<RpcMessage>>? WorkerRequests { get; set; }
 
+    /// <summary>
+    /// Receives a worker's notifications other than <c>log</c>, given its plugin id, in channel order. Set
+    /// once at startup by the feed broker's owner. Runs from <c>initialize</c> on, before the plugin is Running.
+    /// </summary>
+    public Action<string, WorkerNotification>? WorkerNotifications { get; set; }
+
     public IReadOnlyList<PluginStatus> All
     {
         get
@@ -661,6 +667,7 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
     {
         if (notification.Method != Methods.Log)
         {
+            WorkerNotifications?.Invoke(pluginId, notification);
             return;
         }
 

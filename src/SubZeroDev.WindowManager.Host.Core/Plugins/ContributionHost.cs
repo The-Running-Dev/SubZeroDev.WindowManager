@@ -36,7 +36,8 @@ public interface IContributionHost
     /// order. User input grants the worker foreground rights first (I18). An instance without a running
     /// worker gets <see cref="CoreErrorCode.PluginUnavailable"/>; the event is not sent later (I19).
     /// </summary>
-    Task<Outcome> SendEventAsync(Guid instanceId, string elementId, ElementEventKind kind, JsonNode? value, InvocationSource source);
+    Task<Outcome> SendEventAsync(Guid instanceId, string elementId, ElementEventKind kind, JsonNode? value, InvocationSource source,
+        string? itemKey = null);
 }
 
 /// <summary>
@@ -101,7 +102,8 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
 
     public void SetPlacements(IReadOnlyList<InstancePlacement> placements) => Enqueue(() => Reconcile(placements));
 
-    public Task<Outcome> SendEventAsync(Guid instanceId, string elementId, ElementEventKind kind, JsonNode? value, InvocationSource source)
+    public Task<Outcome> SendEventAsync(Guid instanceId, string elementId, ElementEventKind kind, JsonNode? value, InvocationSource source,
+        string? itemKey = null)
     {
         var done = new TaskCompletionSource<Outcome>(TaskCreationOptions.RunContinuationsAsynchronously);
         Enqueue(() =>
@@ -121,7 +123,7 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
             }
 
             done.TrySetResult(channel.Notify(Methods.ElementEvent,
-                new ElementEventParams(SurfaceIdOf(instanceId), elementId, kind, null, value?.DeepClone(), source)));
+                new ElementEventParams(SurfaceIdOf(instanceId), elementId, kind, itemKey, value?.DeepClone(), source)));
             return Task.CompletedTask;
         });
         return done.Task;

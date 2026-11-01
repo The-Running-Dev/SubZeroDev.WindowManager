@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using SubZeroDev.WindowManager.Protocol;
 
 namespace SubZeroDev.WindowManager.Host.Core;
@@ -194,4 +195,54 @@ public interface IForegroundService
     Task<Outcome> ActivateWindowAsync(nint hwnd, CancellationToken ct);
 
     Task<Outcome> MinimizeWindowAsync(nint hwnd, CancellationToken ct);
+}
+
+/// <summary>
+/// The host's reading of an IconRef from a view (the plugin SDK has its own builder type). Only the
+/// encodings in the contract parse; anything else is null.
+/// </summary>
+public abstract record IconRef
+{
+    public sealed record Named(string Id) : IconRef;
+
+    public sealed record App(string? Exe, string? Aumid) : IconRef;
+
+    public sealed record Window(long Hwnd) : IconRef;
+
+    public sealed record File(string PackagePath) : IconRef;
+
+    public static IconRef? FromJson(JsonNode? node)
+    {
+        if (node is not JsonObject body || body.Count != 1)
+        {
+            return null;
+        }
+
+        return body.First() switch
+        {
+            { Key: "named", Value: JsonValue value } when value.TryGetValue<string>(out var id) => new Named(id),
+            { Key: "window", Value: JsonValue value } when value.TryGetValue<long>(out var hwnd) => new Window(hwnd),
+            { Key: "window", Value: JsonValue value } when value.TryGetValue<double>(out var hwnd) => new Window((long)hwnd),
+            { Key: "file", Value: JsonValue value } when value.TryGetValue<string>(out var path) => new File(path),
+            { Key: "app", Value: JsonObject app } => new App(Text(app["exe"]), Text(app["aumid"])),
+            _ => null,
+        };
+    }
+
+    private static string? Text(JsonNode? node) => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+}
+
+/// <summary>A decoded icon: top-down rows of premultiplied BGRA pixels.</summary>
+public sealed record IconImage(int Width, int Height, ReadOnlyMemory<byte> Bgra32);
+
+public interface IIconService
+{
+    /// <summary>
+    /// Extracts the system icon for a <c>window</c> or <c>app</c> reference, off the calling thread (I9).
+    /// Fails with NotFound when there is none; the caller shows the default icon then.
+    /// </summary>
+    Task<Outcome<IconImage>> ExtractAsync(IconRef reference, int sizePx, CancellationToken ct);
+
+    /// <summary>The system's default application icon.</summary>
+    Task<Outcome<IconImage>> DefaultAsync(int sizePx, CancellationToken ct);
 }

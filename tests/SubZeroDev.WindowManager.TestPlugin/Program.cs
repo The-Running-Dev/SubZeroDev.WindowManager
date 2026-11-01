@@ -14,7 +14,10 @@ namespace SubZeroDev.WindowManager.TestPlugin;
 /// <c>buttons</c> shows the Buttons <c>echo</c> (invokes <c>samples.echo</c>), <c>remote</c> (invokes
 /// <c>samples.remote</c>, which nothing running provides) and <c>ev</c> (event <c>ping</c>), and the Toggle
 /// <c>tog</c>; it appends each <c>samples.echo</c> invocation to <c>invocations.log</c> and each element
-/// event to <c>events.log</c> in its data folder.
+/// event to <c>events.log</c> in its data folder;
+/// <c>subscriber</c> shows "ok" and appends "available &lt;true|false&gt; &lt;items&gt;" to <c>feed.log</c> in its
+/// data folder for each <c>windows.running</c> update (its manifest must subscribe to that feed).
+/// <c>fixture-windows</c> is not a plugin at all: see <see cref="Fixture"/>.
 /// </summary>
 public static class Program
 {
@@ -32,16 +35,33 @@ public static class Program
             Scenario = args[0];
         }
 
+        if (Scenario == "fixture-windows")
+        {
+            return Task.FromResult(Fixture.Run(args.Length > 1 ? args[1] : "fixture"));
+        }
+
         return PluginRuntime.RunAsync<ProbePlugin>(args);
     }
 }
 
 public sealed class ProbePlugin : Plugin
 {
+    private IDisposable? _subscription;
+
     protected internal override Task OnStartAsync(CancellationToken ct)
     {
         Program.DataDirectory = Context.DataDirectory;
         Directory.CreateDirectory(Context.DataDirectory);
+        if (Program.Scenario == "subscriber")
+        {
+            _subscription = Context.Feeds.Subscribe("windows.running", (update, _) =>
+            {
+                var count = (update.Snapshot as JsonArray)?.Count ?? -1;
+                Program.Append("feed.log", $"available {(update.Available ? "true" : "false")} {count}");
+                return Task.CompletedTask;
+            });
+        }
+
         if (Program.Scenario == "buttons")
         {
             Context.Commands.Register("samples.echo", (context, _) =>
@@ -60,6 +80,7 @@ public sealed class ProbePlugin : Plugin
 
     protected internal override async Task OnStopAsync(CancellationToken ct)
     {
+        _subscription?.Dispose();
         if (Program.Scenario == "ignore-shutdown")
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None).ConfigureAwait(false);

@@ -28,6 +28,7 @@ public sealed partial class App : Application
     private WorkerLauncher? _launcher;
     private PluginSupervisor? _supervisor;
     private ContributionHost? _contributions;
+    private FeedBroker? _feeds;
     private CommandRouter? _router;
     private HotkeyService? _hotkeyService;
     private HotkeyBinder? _hotkeys;
@@ -138,6 +139,8 @@ public sealed partial class App : Application
         var hostVersion = typeof(App).Assembly.GetName().Version is { } version ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.1.0";
         _supervisor = new PluginSupervisor(_catalog, _launcher, _pluginLogs, _log, _locations, HostMode.Coexistence, hostVersion,
             settings.RestartPolicy);
+        _feeds = new FeedBroker(_supervisor, _catalog, _pluginLogs);
+        _supervisor.WorkerNotifications = _feeds.OnNotification;
         var foreground = new ForegroundService();
         _contributions = new ContributionHost(_supervisor, _catalog, _pluginLogs, _log, foreground);
         _router = new CommandRouter(_catalog, _supervisor, foreground, config, _log);
@@ -147,7 +150,7 @@ public sealed partial class App : Application
         var monitors = new MonitorService();
         var checkpoint = string.IsNullOrWhiteSpace(hookDirectory) ? null : TestHook.Checkpoint(hookDirectory);
         _surfaces = new SurfaceManager(config, monitors, new AppBarService(monitors, _journal, checkpoint), _theme, _contributions, _log, Retry,
-            new ElementActions(_router, _contributions), foreground);
+            new ElementActions(_router, _contributions), foreground, new IconResolver(new IconService()));
         _layoutId = preset.Layout;
         await ApplyLayoutAsync();
 
@@ -172,7 +175,7 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!, _guardian, _router, _hotkeys);
+                _watchdog!, _guardian, _router, _hotkeys, _feeds);
             _testHook.Start();
         }
     }
