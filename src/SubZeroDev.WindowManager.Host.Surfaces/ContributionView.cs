@@ -2,8 +2,11 @@ using System.Text.Json.Nodes;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using SubZeroDev.WindowManager.Host.Core;
 using SubZeroDev.WindowManager.Host.Surfaces.Controls;
+using SubZeroDev.WindowManager.Protocol;
+using Orientation = Microsoft.UI.Xaml.Controls.Orientation;
 
 namespace SubZeroDev.WindowManager.Host.Surfaces;
 
@@ -14,7 +17,9 @@ namespace SubZeroDev.WindowManager.Host.Surfaces;
 /// Each element is styled from <c>Wm.Element.&lt;Kind&gt;.&lt;class&gt;</c> (classes in order), then
 /// <c>Wm.Element.&lt;Kind&gt;</c>, then the built-in style. Kinds that arrive with later slices render
 /// as nothing. A Faulted or Unavailable placeholder's Retry runs <c>retry</c> with the plugin id, and its
-/// detail shows as the tooltip. Call on the UI thread.
+/// detail shows as the tooltip. A Button or Toggle sends its action through <c>actions</c>; when that
+/// fails, a <see cref="WmNotice"/> shows next to the element for a few seconds and nothing is resent
+/// (I19). Call on the UI thread.
 /// </summary>
 public sealed class ContributionView
 {
@@ -24,15 +29,22 @@ public sealed class ContributionView
     private readonly List<Binding> _bindings = [];
     private readonly List<WmText> _texts = [];
     private readonly Dictionary<FrameworkElement, string?> _styleKeys = [];
+    private readonly IElementActions? _actions;
+    private readonly List<Control> _interactive = [];
+    private readonly List<ElementNotice> _notices = [];
+    private IReadOnlyDictionary<string, JsonNode?> _state = new Dictionary<string, JsonNode?>();
     private long _revision = -1;
 
+    public static readonly TimeSpan NoticeDuration = TimeSpan.FromSeconds(4);
+
     public ContributionView(ContributionInstance instance, Orientation panelAxis, Func<string, object?> lookup,
-        Action<string>? retry = null)
+        Action<string>? retry = null, IElementActions? actions = null)
     {
         Instance = instance;
         _panelAxis = panelAxis;
         _lookup = lookup;
         _retry = retry;
+        _actions = actions;
         Root = new WmContribution { Style = lookup("Wm.Contribution") as Style };
     }
 
@@ -53,6 +65,12 @@ public sealed class ContributionView
     public IReadOnlyList<(WmText Element, string? StyleKey)> TextElements() =>
         _texts.Select(text => (text, _styleKeys.GetValueOrDefault(text))).ToList();
 
+    /// <summary>Every Button and Toggle shown now, in tree order.</summary>
+    public IReadOnlyList<Control> InteractiveElements() => [.. _interactive];
+
+    /// <summary>The notices shown so far, oldest first (the last 20).</summary>
+    public IReadOnlyList<ElementNotice> Notices() => [.. _notices];
+
     /// <summary>Shows <paramref name="snapshot"/>; <paramref name="restyle"/> rebuilds even at the same revision.</summary>
     public void Render(InstanceSnapshot? snapshot, bool restyle = false)
     {
@@ -63,10 +81,12 @@ public sealed class ContributionView
             return;
         }
 
+        _state = snapshot.State;
         if (restyle || Reason is not null || snapshot.ViewRevision != _revision)
         {
             _bindings.Clear();
             _texts.Clear();
+            _interactive.Clear();
             _styleKeys.Clear();
             Reason = null;
             _revision = snapshot.ViewRevision;
@@ -90,6 +110,7 @@ public sealed class ContributionView
     {
         _bindings.Clear();
         _texts.Clear();
+        _interactive.Clear();
         _styleKeys.Clear();
         _revision = -1;
         Reason = reason.ToString();
@@ -166,6 +187,28 @@ public sealed class ContributionView
             case "separator":
                 built = new WmSeparator();
                 break;
+            case "button":
+                var button = new WmButton();
+                _interactive.Add(button);
+                Bind(props["label"], state, value => button.Label = AsString(value));
+                Bind(props["icon"], state, value => button.IconName = IconNameOf(value));
+                Bind(props["active"], state, value => button.Active = AsBool(value));
+                Bind(props["attention"], state, value => button.Attention = AsBool(value));
+                Bind(props["badge"], state, value => button.Badge = AsString(value));
+                var buttonAction = element["action"] as JsonObject;
+                button.Click += (_, _) => Act(button, buttonAction, ElementEventKind.Invoked, null);
+                built = button;
+                break;
+            case "toggle":
+                var toggle = new WmToggle();
+                _interactive.Add(toggle);
+                Bind(props["label"], state, value => toggle.Label = AsString(value));
+                Bind(props["icon"], state, value => toggle.IconName = IconNameOf(value));
+                Bind(props["checked"], state, value => toggle.Checked = AsBool(value));
+                var toggleAction = element["action"] as JsonObject;
+                toggle.Click += (_, _) => Act(toggle, toggleAction, ElementEventKind.Toggled, JsonValue.Create(!toggle.Checked));
+                built = toggle;
+                break;
             default:
                 return Nothing();
         }
@@ -214,6 +257,88 @@ public sealed class ContributionView
         apply(prop);
     }
 
+    /// <summary>
+    /// Runs an element's action. A click arrives as <c>pointer</c> unless the element had keyboard focus,
+    /// as it does after Tab, when Enter or Space produce the click. A Toggle never flips itself: it sends
+    /// the value it asks for and shows whatever the plugin's state says next. Popups arrive with S8.
+    /// </summary>
+    private void Act(Control control, JsonObject? action, ElementEventKind kind, JsonNode? toggled)
+    {
+        if (_actions is null || action is null)
+        {
+            return;
+        }
+
+        var source = control.FocusState == FocusState.Keyboard ? InvocationSource.Keyboard : InvocationSource.Pointer;
+        var elementId = control.Name;
+        Task<Outcome> pending;
+        if (action["invoke"] is JsonObject invoke && invoke["command"] is JsonValue command && command.TryGetValue<string>(out var commandId))
+        {
+            pending = InvokeAsync(commandId, Resolve(invoke["args"]) as JsonObject, source);
+        }
+        else if (action["event"] is JsonValue name && name.TryGetValue<string>(out var eventName))
+        {
+            pending = _actions.SendEventAsync(Instance.Id, elementId, kind,
+                kind == ElementEventKind.Toggled ? toggled : JsonValue.Create(eventName), source);
+        }
+        else
+        {
+            return;
+        }
+
+        _ = ReportAsync(control, elementId, pending);
+    }
+
+    private async Task<Outcome> InvokeAsync(string commandId, JsonObject? args, InvocationSource source)
+    {
+        var result = await _actions!.InvokeCommandAsync(commandId, args, source);
+        return result.Ok ? Outcome.Success : new Outcome(result.Error);
+    }
+
+    private async Task ReportAsync(Control control, string elementId, Task<Outcome> pending)
+    {
+        Outcome outcome;
+        try
+        {
+            outcome = await pending;
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            outcome = Outcome.Fail(CoreErrorCode.CommandFailed, e.Message);
+        }
+
+        if (outcome.Ok || control.XamlRoot is null)
+        {
+            return;
+        }
+
+        var notice = new WmNotice { Message = outcome.Error!.Detail, Style = _lookup("Wm.Notice") as Style };
+        var flyout = new Flyout { Content = notice, ShouldConstrainToRootBounds = false, ShowMode = FlyoutShowMode.Transient };
+        flyout.ShowAt(control);
+        var timer = control.DispatcherQueue.CreateTimer();
+        timer.Interval = NoticeDuration;
+        timer.IsRepeating = false;
+        timer.Tick += (_, _) => flyout.Hide();
+        timer.Start();
+        _notices.Add(new ElementNotice(elementId, outcome.Error.Code, outcome.Error.Detail));
+        if (_notices.Count > 20)
+        {
+            _notices.RemoveAt(0);
+        }
+    }
+
+    /// <summary>Copies command args, replacing each <c>{"$state":"key"}</c> with the state's current value.</summary>
+    private JsonNode? Resolve(JsonNode? node) => node switch
+    {
+        JsonObject binding when binding.Count == 1 && binding["$state"] is JsonValue keyValue && keyValue.TryGetValue<string>(out var key) =>
+            _state.TryGetValue(key, out var value) ? value?.DeepClone() : null,
+        JsonObject body => new JsonObject(body.Select(p => KeyValuePair.Create(p.Key, Resolve(p.Value)))),
+        JsonArray items => new JsonArray([.. items.Select(Resolve)]),
+        _ => node?.DeepClone(),
+    };
+
+    private static string IconNameOf(JsonNode? value) => value?["named"] is JsonValue named && named.TryGetValue<string>(out var name) ? name : string.Empty;
+
     private static FrameworkElement Nothing() => new Border { Visibility = Visibility.Collapsed };
 
     private static string AsString(JsonNode? value) => value switch
@@ -247,3 +372,6 @@ public sealed class ContributionView
         public string? Last { get; set; }
     }
 }
+
+/// <summary>A notice shown because an element's action failed.</summary>
+public sealed record ElementNotice(string ElementId, CoreErrorCode Code, string Message);

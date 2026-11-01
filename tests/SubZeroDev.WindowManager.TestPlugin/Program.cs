@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using SubZeroDev.WindowManager.Protocol;
 using SubZeroDev.WindowManager.Sdk;
 
 namespace SubZeroDev.WindowManager.TestPlugin;
@@ -9,13 +10,20 @@ namespace SubZeroDev.WindowManager.TestPlugin;
 /// <c>ignore-shutdown</c> shows "ok" and never stops, so the host has to kill it;
 /// <c>styled</c> shows "ok" with the classes <c>primary</c> and <c>compact</c>, for theme restyling;
 /// <c>faulty</c> shows "ok", appends a line to <c>created.log</c> in its data folder for each instance
-/// created, and every 50 ms acts on the switch files there (see <see cref="Switches"/>).
+/// created, and every 50 ms acts on the switch files there (see <see cref="Switches"/>);
+/// <c>buttons</c> shows the Buttons <c>echo</c> (invokes <c>samples.echo</c>), <c>remote</c> (invokes
+/// <c>samples.remote</c>, which nothing running provides) and <c>ev</c> (event <c>ping</c>), and the Toggle
+/// <c>tog</c>; it appends each <c>samples.echo</c> invocation to <c>invocations.log</c> and each element
+/// event to <c>events.log</c> in its data folder.
 /// </summary>
 public static class Program
 {
     public static string Scenario { get; private set; } = "invalid-view";
 
     public static string DataDirectory { get; set; } = string.Empty;
+
+    public static void Append(string file, string line) =>
+        File.AppendAllText(Path.Combine(DataDirectory, file), line + Environment.NewLine);
 
     public static Task<int> Main(string[] args)
     {
@@ -34,8 +42,19 @@ public sealed class ProbePlugin : Plugin
     {
         Program.DataDirectory = Context.DataDirectory;
         Directory.CreateDirectory(Context.DataDirectory);
+        if (Program.Scenario == "buttons")
+        {
+            Context.Commands.Register("samples.echo", (context, _) =>
+            {
+                Program.Append("invocations.log", $"command samples.echo {Lower(context.Source)} {Environment.ProcessId}");
+                return Task.FromResult(new CommandResult(JsonValue.Create("echo")));
+            });
+        }
+
         return Task.CompletedTask;
     }
+
+    private static string Lower(InvocationSource source) => source.ToString().ToLowerInvariant();
 
     protected internal override ContributionInstance CreateInstance(InstanceRequest request) => new ProbeInstance(request);
 
@@ -52,6 +71,17 @@ public sealed class ProbeInstance(InstanceRequest request) : ContributionInstanc
 {
     protected internal override Task OnCreatedAsync(CancellationToken ct)
     {
+        if (Program.Scenario == "buttons")
+        {
+            Surface.SetView(View.Stack("root", StackOrientation.Horizontal,
+                View.Button("echo", "Echo", View.Invoke("samples.echo", new JsonObject { ["n"] = 1 }), label: "Echo"),
+                View.Button("remote", "Remote", View.Invoke("samples.remote"), label: "Remote"),
+                View.Button("ev", "Event", View.Event("ping"), label: "Event"),
+                View.Toggle("tog", "Toggle", Prop<bool>.State("checked"), View.Event("toggled"), label: "Toggle")));
+            Surface.SetState("checked", false);
+            return Task.CompletedTask;
+        }
+
         Surface.SetView(Program.Scenario == "styled"
             ? View.Text("t", Prop<string>.State("t"), "primary", "compact")
             : View.Text("t", Prop<string>.State("t")));
@@ -75,6 +105,17 @@ public sealed class ProbeInstance(InstanceRequest request) : ContributionInstanc
         Surface.SendView(new JsonObject { ["id"] = "x", ["kind"] = "hologram" });
         Surface.SendView(TextWith("background", "#FFFF0000"));
         Surface.SendView(TextWith("fontSize", 40));
+        return Task.CompletedTask;
+    }
+
+    protected internal override Task OnEventAsync(ElementEvent e, CancellationToken ct)
+    {
+        Program.Append("events.log", $"event {e.ElementId} {e.Kind} {e.Value?.ToJsonString()} {e.Source}");
+        if (e.Kind == ElementEventKind.Toggled && e.Value is JsonValue value && value.TryGetValue<bool>(out var isChecked))
+        {
+            Surface.SetState("checked", isChecked);
+        }
+
         return Task.CompletedTask;
     }
 

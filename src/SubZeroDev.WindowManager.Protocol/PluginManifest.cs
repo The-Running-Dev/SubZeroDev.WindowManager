@@ -7,6 +7,8 @@ public sealed record PluginEntry(string Path, IReadOnlyList<string> Args);
 
 public sealed record ContributionDeclaration(string Id, string Kind, string DisplayName, bool MultiInstance);
 
+public sealed record CommandDeclaration(string Id, string Title, string? DefaultHotkey);
+
 /// <summary>A parsed <c>plugin.json</c>. <see cref="Raw"/> keeps the whole document for fields later slices read.</summary>
 public sealed record PluginManifest(
     int ManifestVersion, string Id, SemVersion Version, string DisplayName, string Publisher, string Description,
@@ -14,6 +16,15 @@ public sealed record PluginManifest(
     IReadOnlyList<ContributionDeclaration> Contributions, JsonObject Raw)
 {
     public bool Supports(HostMode mode) => Modes.Contains(mode);
+
+    /// <summary>The <c>commands</c> the plugin provides, in manifest order.</summary>
+    public IReadOnlyList<CommandDeclaration> Commands =>
+        [.. (Raw["commands"] as JsonArray ?? []).OfType<JsonObject>().Select(command => new CommandDeclaration(
+            Text(command, "id") ?? string.Empty, Text(command, "title") ?? Text(command, "id") ?? string.Empty,
+            Text(command, "defaultHotkey")))];
+
+    private static string? Text(JsonObject json, string name) =>
+        json[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 }
 
 public static partial class PluginManifestReader
@@ -121,6 +132,14 @@ public static partial class PluginManifestReader
         if (Ids(document, "commands").Any(command => command.StartsWith("host.", StringComparison.Ordinal)))
         {
             problems.Add("command ids may not start with 'host.'.");
+        }
+
+        foreach (var command in (document["commands"] as JsonArray ?? []).OfType<JsonObject>())
+        {
+            if (command["defaultHotkey"] is { } hotkey && !(hotkey is JsonValue value && value.TryGetValue<string>(out _)))
+            {
+                problems.Add($"command '{Text(command, "id")}' has a defaultHotkey that is not a string.");
+            }
         }
 
         if (document["dependencies"] is JsonArray dependencies

@@ -58,6 +58,30 @@ public static class PluginRuntime
         return await worker.RunAsync().ConfigureAwait(false);
     }
 
+    /// <summary>The command ids under <c>commands</c> in plugin.json; empty when it cannot be read.</summary>
+    private static HashSet<string> ReadDeclaredCommands()
+    {
+        var declared = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            if (JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "plugin.json")))?["commands"] is JsonArray commands)
+            {
+                foreach (var command in commands)
+                {
+                    if (command?["id"] is JsonValue id && id.TryGetValue<string>(out var text))
+                    {
+                        declared.Add(text);
+                    }
+                }
+            }
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException)
+        {
+        }
+
+        return declared;
+    }
+
     private static string? ReadPluginId()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "plugin.json");
@@ -179,6 +203,12 @@ public static class PluginRuntime
                 case Methods.Shutdown:
                     Enqueue(message, () => ShutdownAsync(message.ParamsAs<ShutdownParams>()!));
                     break;
+                case Methods.CommandInvoke when message.Id is { } id:
+                    var invoke = message.ParamsAs<CommandInvokeParams>()!;
+                    _callbacks.Writer.TryWrite(() => plugin.Context is { } context
+                        ? context.CommandTable.ServeAsync(id, invoke, e => LogError(e, $"{invoke.CommandId} failed."))
+                        : Task.Run(() => connection.Fail(id, WireErrorCodes.CommandNotFound, "The plugin is not initialised.")));
+                    break;
                 default:
                     if (message.Id is { } unknown)
                     {
@@ -220,7 +250,8 @@ public static class PluginRuntime
 
         private async Task InitializeAsync(InitializeParams parameters)
         {
-            plugin.Context = new PluginContext(connection, pluginId, parameters.Mode, parameters.DataDirectory, parameters.PluginSettings);
+            plugin.Context = new PluginContext(connection, pluginId, parameters.Mode, parameters.DataDirectory, parameters.PluginSettings,
+                ReadDeclaredCommands());
             await plugin.OnStartAsync(CancellationToken.None).ConfigureAwait(false);
         }
 

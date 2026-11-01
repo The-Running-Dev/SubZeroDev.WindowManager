@@ -60,6 +60,9 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
 
     public event EventHandler<PluginStatus>? StatusChanged;
 
+    /// <summary>Answers requests from a worker, given its plugin id. Set once at startup by the command router's owner.</summary>
+    public Func<string, RpcMessage, Task<RpcMessage>>? WorkerRequests { get; set; }
+
     public IReadOnlyList<PluginStatus> All
     {
         get
@@ -403,6 +406,9 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         }
 
         channel.NotificationReceived += (_, notification) => OnNotification(pluginId, notification);
+        channel.RequestHandler = (_, request) => WorkerRequests is { } serve
+            ? serve(pluginId, request)
+            : Task.FromResult(RpcMessage.Failure(request.Id, WireErrorCodes.MethodNotFound, $"'{request.Method}' is not served by this host yet."));
         channel.Diagnostic += (_, text) => _pluginLogs.Write(pluginId, "host", text);
         channel.Start();
         var initialize = await channel.RequestAsync<InitializeParams, JsonElement?>(Methods.Initialize,

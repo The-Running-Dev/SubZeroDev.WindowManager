@@ -27,7 +27,13 @@ public sealed partial class WmPanel : Control
     public static readonly DependencyProperty EndProperty =
         DependencyProperty.Register(nameof(End), typeof(object), typeof(WmPanel), new PropertyMetadata(null));
 
-    public WmPanel() => DefaultStyleKey = typeof(WmPanel);
+    public WmPanel()
+    {
+        DefaultStyleKey = typeof(WmPanel);
+        IsTabStop = false;
+        TabFocusNavigation = Microsoft.UI.Xaml.Input.KeyboardNavigationMode.Cycle;
+        XYFocusKeyboardNavigation = Microsoft.UI.Xaml.Input.XYFocusKeyboardNavigationMode.Enabled;
+    }
 
     public string Edge
     {
@@ -63,13 +69,21 @@ public sealed partial class WmPanel : Control
 /// <summary>One zone of a panel (<c>start</c>, <c>center</c> or <c>end</c>); its items are contributions.</summary>
 public sealed partial class WmZone : ItemsControl
 {
-    public WmZone() => DefaultStyleKey = typeof(WmZone);
+    public WmZone()
+    {
+        DefaultStyleKey = typeof(WmZone);
+        IsTabStop = false;
+    }
 }
 
 /// <summary>The host frame around one placed contribution instance.</summary>
 public sealed partial class WmContribution : ContentControl
 {
-    public WmContribution() => DefaultStyleKey = typeof(WmContribution);
+    public WmContribution()
+    {
+        DefaultStyleKey = typeof(WmContribution);
+        IsTabStop = false;
+    }
 }
 
 /// <summary>
@@ -94,7 +108,11 @@ public sealed partial class WmPlaceholder : Control
     public static readonly DependencyProperty RetryCommandProperty =
         DependencyProperty.Register(nameof(RetryCommand), typeof(ICommand), typeof(WmPlaceholder), new PropertyMetadata(null));
 
-    public WmPlaceholder() => DefaultStyleKey = typeof(WmPlaceholder);
+    public WmPlaceholder()
+    {
+        DefaultStyleKey = typeof(WmPlaceholder);
+        IsTabStop = false;
+    }
 
     public string PluginName
     {
@@ -138,7 +156,11 @@ public sealed partial class WmText : Control
     public static readonly DependencyProperty WrapProperty =
         DependencyProperty.Register(nameof(Wrap), typeof(bool), typeof(WmText), new PropertyMetadata(false));
 
-    public WmText() => DefaultStyleKey = typeof(WmText);
+    public WmText()
+    {
+        DefaultStyleKey = typeof(WmText);
+        IsTabStop = false;
+    }
 
     public string Text
     {
@@ -168,7 +190,11 @@ public sealed partial class WmIcon : Control
     public static readonly DependencyProperty SizeProperty =
         DependencyProperty.Register(nameof(Size), typeof(string), typeof(WmIcon), new PropertyMetadata("medium"));
 
-    public WmIcon() => DefaultStyleKey = typeof(WmIcon);
+    public WmIcon()
+    {
+        DefaultStyleKey = typeof(WmIcon);
+        IsTabStop = false;
+    }
 
     public Microsoft.UI.Xaml.Media.ImageSource? Icon
     {
@@ -203,7 +229,11 @@ public sealed partial class WmStack : Control
 
     private StackPanel? _items;
 
-    public WmStack() => DefaultStyleKey = typeof(WmStack);
+    public WmStack()
+    {
+        DefaultStyleKey = typeof(WmStack);
+        IsTabStop = false;
+    }
 
     public Orientation Orientation
     {
@@ -246,7 +276,11 @@ public sealed partial class WmSpacer : Control
     public static readonly DependencyProperty FlexProperty =
         DependencyProperty.Register(nameof(Flex), typeof(bool), typeof(WmSpacer), new PropertyMetadata(false));
 
-    public WmSpacer() => DefaultStyleKey = typeof(WmSpacer);
+    public WmSpacer()
+    {
+        DefaultStyleKey = typeof(WmSpacer);
+        IsTabStop = false;
+    }
 
     public bool Flex
     {
@@ -258,5 +292,164 @@ public sealed partial class WmSpacer : Control
 /// <summary>A <c>Separator</c> element.</summary>
 public sealed partial class WmSeparator : Control
 {
-    public WmSeparator() => DefaultStyleKey = typeof(WmSeparator);
+    public WmSeparator()
+    {
+        DefaultStyleKey = typeof(WmSeparator);
+        IsTabStop = false;
+    }
+}
+
+/// <summary>
+/// A <c>Button</c> element. Besides <c>CommonStates</c> and <c>FocusStates</c>, the template gets
+/// <c>ActiveStates</c> (<c>Inactive</c>, <c>Active</c>) and <c>AttentionStates</c> (<c>Calm</c>,
+/// <c>Attention</c>). Restyled through <c>Wm.Element.Button</c>.
+/// </summary>
+public sealed partial class WmButton : Button
+{
+    public static readonly DependencyProperty LabelProperty =
+        DependencyProperty.Register(nameof(Label), typeof(string), typeof(WmButton), new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty IconProperty =
+        DependencyProperty.Register(nameof(Icon), typeof(Microsoft.UI.Xaml.Media.ImageSource), typeof(WmButton), new PropertyMetadata(null));
+
+    public static readonly DependencyProperty IconNameProperty =
+        DependencyProperty.Register(nameof(IconName), typeof(string), typeof(WmButton), new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty ActiveProperty =
+        DependencyProperty.Register(nameof(Active), typeof(bool), typeof(WmButton),
+            new PropertyMetadata(false, (d, _) => ((WmButton)d).UpdateStates()));
+
+    public static readonly DependencyProperty AttentionProperty =
+        DependencyProperty.Register(nameof(Attention), typeof(bool), typeof(WmButton),
+            new PropertyMetadata(false, (d, _) => ((WmButton)d).UpdateStates()));
+
+    public static readonly DependencyProperty BadgeProperty =
+        DependencyProperty.Register(nameof(Badge), typeof(string), typeof(WmButton), new PropertyMetadata(string.Empty));
+
+    public WmButton() => DefaultStyleKey = typeof(WmButton);
+
+    public string Label
+    {
+        get => (string)GetValue(LabelProperty);
+        set => SetValue(LabelProperty, value);
+    }
+
+    public Microsoft.UI.Xaml.Media.ImageSource? Icon
+    {
+        get => (Microsoft.UI.Xaml.Media.ImageSource?)GetValue(IconProperty);
+        set => SetValue(IconProperty, value);
+    }
+
+    public string IconName
+    {
+        get => (string)GetValue(IconNameProperty);
+        set => SetValue(IconNameProperty, value);
+    }
+
+    public bool Active
+    {
+        get => (bool)GetValue(ActiveProperty);
+        set => SetValue(ActiveProperty, value);
+    }
+
+    public bool Attention
+    {
+        get => (bool)GetValue(AttentionProperty);
+        set => SetValue(AttentionProperty, value);
+    }
+
+    public string Badge
+    {
+        get => (string)GetValue(BadgeProperty);
+        set => SetValue(BadgeProperty, value);
+    }
+
+    protected override void OnApplyTemplate()
+    {
+        base.OnApplyTemplate();
+        UpdateStates();
+    }
+
+    private void UpdateStates()
+    {
+        VisualStateManager.GoToState(this, Active ? "Active" : "Inactive", useTransitions: false);
+        VisualStateManager.GoToState(this, Attention ? "Attention" : "Calm", useTransitions: false);
+    }
+}
+
+/// <summary>
+/// A <c>Toggle</c> element: a button whose <see cref="Checked"/> shows as the <c>Active</c> state. It
+/// never flips itself; the plugin's state decides. Restyled through <c>Wm.Element.Toggle</c>.
+/// </summary>
+public sealed partial class WmToggle : Button
+{
+    public static readonly DependencyProperty LabelProperty =
+        DependencyProperty.Register(nameof(Label), typeof(string), typeof(WmToggle), new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty IconProperty =
+        DependencyProperty.Register(nameof(Icon), typeof(Microsoft.UI.Xaml.Media.ImageSource), typeof(WmToggle), new PropertyMetadata(null));
+
+    public static readonly DependencyProperty IconNameProperty =
+        DependencyProperty.Register(nameof(IconName), typeof(string), typeof(WmToggle), new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty CheckedProperty =
+        DependencyProperty.Register(nameof(Checked), typeof(bool), typeof(WmToggle),
+            new PropertyMetadata(false, (d, _) => ((WmToggle)d).UpdateStates()));
+
+    public WmToggle() => DefaultStyleKey = typeof(WmToggle);
+
+    public string Label
+    {
+        get => (string)GetValue(LabelProperty);
+        set => SetValue(LabelProperty, value);
+    }
+
+    public Microsoft.UI.Xaml.Media.ImageSource? Icon
+    {
+        get => (Microsoft.UI.Xaml.Media.ImageSource?)GetValue(IconProperty);
+        set => SetValue(IconProperty, value);
+    }
+
+    public string IconName
+    {
+        get => (string)GetValue(IconNameProperty);
+        set => SetValue(IconNameProperty, value);
+    }
+
+    public bool Checked
+    {
+        get => (bool)GetValue(CheckedProperty);
+        set => SetValue(CheckedProperty, value);
+    }
+
+    protected override void OnApplyTemplate()
+    {
+        base.OnApplyTemplate();
+        UpdateStates();
+    }
+
+    private void UpdateStates()
+    {
+        VisualStateManager.GoToState(this, Checked ? "Active" : "Inactive", useTransitions: false);
+        VisualStateManager.GoToState(this, "Calm", useTransitions: false);
+    }
+}
+
+/// <summary>A short message shown next to an element when its action fails. Restyled through <c>Wm.Notice</c>.</summary>
+public sealed partial class WmNotice : Control
+{
+    public static readonly DependencyProperty MessageProperty =
+        DependencyProperty.Register(nameof(Message), typeof(string), typeof(WmNotice), new PropertyMetadata(string.Empty));
+
+    public WmNotice()
+    {
+        DefaultStyleKey = typeof(WmNotice);
+        IsTabStop = false;
+    }
+
+    public string Message
+    {
+        get => (string)GetValue(MessageProperty);
+        set => SetValue(MessageProperty, value);
+    }
 }

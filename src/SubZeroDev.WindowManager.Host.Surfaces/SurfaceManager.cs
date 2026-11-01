@@ -1,5 +1,6 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Input;
 using SubZeroDev.WindowManager.Host.Core;
 using SubZeroDev.WindowManager.Host.Core.Diagnostics;
 using SubZeroDev.WindowManager.Host.Surfaces.Controls;
@@ -33,15 +34,20 @@ public sealed class SurfaceManager : ISurfaceManager
     private readonly IContributionHost _contributions;
     private readonly DispatcherQueue _dispatcher;
     private readonly Action<string>? _retry;
+    private readonly IElementActions? _actions;
+    private readonly IForegroundService? _foreground;
     private readonly List<PanelWindow> _panels = [];
     private readonly Dictionary<Guid, ContributionView> _views = [];
     private readonly Lock _pendingGate = new();
     private readonly HashSet<Guid> _pending = [];
 
     public SurfaceManager(IConfigStore config, IMonitorService monitors, IAppBarService appBars, IThemeEngine theme,
-        IContributionHost contributions, IHostLog log, Action<string>? retry = null)
+        IContributionHost contributions, IHostLog log, Action<string>? retry = null, IElementActions? actions = null,
+        IForegroundService? foreground = null)
     {
         _retry = retry;
+        _actions = actions;
+        _foreground = foreground;
         _config = config;
         _monitors = monitors;
         _appBars = appBars;
@@ -134,7 +140,31 @@ public sealed class SurfaceManager : ISurfaceManager
     public void FocusPanel(string panelId)
     {
         var window = _panels.FirstOrDefault(p => p.Definition.Id.ToString() == panelId);
-        window?.Panel.Focus(FocusState.Programmatic);
+        if (window is not null)
+        {
+            _ = FocusAsync(window);
+        }
+    }
+
+    /// <summary>Activates the panel's window, then puts keyboard focus on its first Button or Toggle.</summary>
+    private async Task FocusAsync(PanelWindow window)
+    {
+        if (_foreground is not null)
+        {
+            var activated = await _foreground.ActivateWindowAsync(window.Handle, CancellationToken.None).ConfigureAwait(false);
+            if (!activated.Ok)
+            {
+                _log.Write(LogLevel.Warning, "surfaces", $"Focusing panel {window.Definition.Id}: {activated.Error!.Detail}");
+            }
+        }
+
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (FocusManager.FindFirstFocusableElement(window.Panel) is Microsoft.UI.Xaml.Controls.Control first)
+            {
+                first.Focus(FocusState.Keyboard);
+            }
+        });
     }
 
     /// <summary>Gives back reserved space and closes every panel.</summary>
@@ -178,7 +208,7 @@ public sealed class SurfaceManager : ISurfaceManager
             : Microsoft.UI.Xaml.Controls.Orientation.Horizontal;
         foreach (var instance in instances)
         {
-            var view = new ContributionView(instance, axis, Lookup, _retry);
+            var view = new ContributionView(instance, axis, Lookup, _retry, _actions);
             _views[instance.Id] = view;
             view.Render(_contributions.Describe(instance.Id));
             placements.Add(new InstancePlacement(instance, context));

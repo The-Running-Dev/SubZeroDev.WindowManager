@@ -14,6 +14,14 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-01 — S6: a command whose provider is not running fails, it never starts the worker
+- **Context:** Workers start only for placed instances, so a plugin that only declares commands, or one the layout does not use, is never `Running` when its command is invoked.
+- **Chosen:** The router returns `1001 PluginUnavailable` and the element shows a `Wm.Notice`; nothing is resent (I19). A click counts as `pointer` unless the element had keyboard focus, when Enter or Space produce it as `keyboard`. A Toggle never flips itself: it asks for the new value and shows whatever the plugin's state says next.
+- **Rejected:**
+  - Starting the provider on demand and then sending the invocation, because the user's action would run seconds later or twice after a restart, which I19 rules out.
+  - Starting every command-providing plugin at boot, because a disabled or unused plugin would cost a process. Left for S9, where plugins gain an enabled switch.
+  - Flipping the Toggle before the plugin answers, because a worker that refuses or fails would leave the panel showing a state nobody holds.
+
 ## 2026-11-01 — Replacement mode: the Windows key goes through a host hook
 - **Context:** Without Explorer, nothing handles a lone Windows-key press or Win+R, Win+E, Win+D and Win+M.
 - **Chosen:** A low-level keyboard hook in the host, on its own thread, installed only in replacement mode.

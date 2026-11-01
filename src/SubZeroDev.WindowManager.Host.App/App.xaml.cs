@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -9,6 +10,7 @@ using SubZeroDev.WindowManager.Host.Surfaces;
 using SubZeroDev.WindowManager.Host.Theming;
 using SubZeroDev.WindowManager.Protocol;
 using SubZeroDev.WindowManager.Recovery;
+using CommandOutcome = SubZeroDev.WindowManager.Host.Core.Outcome<SubZeroDev.WindowManager.Protocol.CommandResult>;
 using LogLevel = SubZeroDev.WindowManager.Host.Core.Diagnostics.LogLevel;
 
 namespace SubZeroDev.WindowManager.Host.App;
@@ -26,6 +28,9 @@ public sealed partial class App : Application
     private WorkerLauncher? _launcher;
     private PluginSupervisor? _supervisor;
     private ContributionHost? _contributions;
+    private CommandRouter? _router;
+    private HotkeyService? _hotkeyService;
+    private HotkeyBinder? _hotkeys;
     private string _layoutId = HostSettingsDocument.DefaultPreset;
     private TestHook? _testHook;
     private DispatcherWatchdog? _watchdog;
@@ -133,13 +138,22 @@ public sealed partial class App : Application
         var hostVersion = typeof(App).Assembly.GetName().Version is { } version ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.1.0";
         _supervisor = new PluginSupervisor(_catalog, _launcher, _pluginLogs, _log, _locations, HostMode.Coexistence, hostVersion,
             settings.RestartPolicy);
-        _contributions = new ContributionHost(_supervisor, _catalog, _pluginLogs, _log);
+        var foreground = new ForegroundService();
+        _contributions = new ContributionHost(_supervisor, _catalog, _pluginLogs, _log, foreground);
+        _router = new CommandRouter(_catalog, _supervisor, foreground, config, _log);
+        _supervisor.WorkerRequests = _router.ServeWorkerAsync;
+        AddBuiltIns(_router, foreground, dispatcher);
 
         var monitors = new MonitorService();
         var checkpoint = string.IsNullOrWhiteSpace(hookDirectory) ? null : TestHook.Checkpoint(hookDirectory);
-        _surfaces = new SurfaceManager(config, monitors, new AppBarService(monitors, _journal, checkpoint), _theme, _contributions, _log, Retry);
+        _surfaces = new SurfaceManager(config, monitors, new AppBarService(monitors, _journal, checkpoint), _theme, _contributions, _log, Retry,
+            new ElementActions(_router, _contributions), foreground);
         _layoutId = preset.Layout;
         await ApplyLayoutAsync();
+
+        _hotkeyService = new HotkeyService();
+        _hotkeys = new HotkeyBinder(_router, _hotkeyService, config, _log);
+        _hotkeys.Refresh();
 
         // Settings, the active preset and the active layout apply as soon as an edit settles.
         config.Changed += (_, e) => dispatcher.TryEnqueue(() => OnConfigChanged(e));
@@ -158,9 +172,43 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!, _guardian);
+                _watchdog!, _guardian, _router, _hotkeys);
             _testHook.Start();
         }
+    }
+
+    /// <summary>The host's own commands that S6 serves; the others arrive with the slices that need them.</summary>
+    private void AddBuiltIns(CommandRouter router, ForegroundService foreground, DispatcherQueue dispatcher)
+    {
+        router.AddBuiltIn("host.exit", "Exit", (_, _) =>
+        {
+            dispatcher.TryEnqueue(() => _ = ShutdownAsync());
+            return Task.FromResult(CommandOutcome.Success(new CommandResult(null)));
+        });
+        router.AddBuiltIn("host.window.activate", "Activate window", (args, ct) => WindowCommandAsync(args, foreground.ActivateWindowAsync, ct));
+        router.AddBuiltIn("host.window.minimize", "Minimise window", (args, ct) => WindowCommandAsync(args, foreground.MinimizeWindowAsync, ct));
+        router.AddBuiltIn("host.preset.apply", "Apply preset", async (args, ct) =>
+        {
+            if (args?["id"] is not JsonValue value || !value.TryGetValue<string>(out var id))
+            {
+                return CommandOutcome.Fail(CoreErrorCode.CommandFailed, "host.preset.apply needs { id: string }.");
+            }
+
+            var applied = await ApplyPresetAsync(id, ct);
+            return applied.Ok ? CommandOutcome.Success(new CommandResult(null)) : CommandOutcome.Fail(applied.Error!);
+        });
+    }
+
+    private static async Task<CommandOutcome> WindowCommandAsync(JsonObject? args, Func<nint, CancellationToken, Task<Core.Outcome>> act,
+        CancellationToken ct)
+    {
+        if (args?["hwnd"] is not JsonValue value || !value.TryGetValue<long>(out var hwnd))
+        {
+            return CommandOutcome.Fail(CoreErrorCode.CommandFailed, "Needs { hwnd: number }.");
+        }
+
+        var outcome = await act((nint)hwnd, ct).ConfigureAwait(false);
+        return outcome.Ok ? CommandOutcome.Success(new CommandResult(null)) : CommandOutcome.Fail(outcome.Error!);
     }
 
     /// <summary>A placeholder's Retry: runs on the UI thread, so the restart itself goes to the background.</summary>
@@ -224,6 +272,8 @@ public sealed partial class App : Application
     private async Task StopAsync()
     {
         StopAppearanceWatching();
+        _hotkeys?.Dispose();
+        _hotkeyService?.Dispose();
         _config?.Dispose();
         _catalog?.Dispose();
         if (_contributions is not null)

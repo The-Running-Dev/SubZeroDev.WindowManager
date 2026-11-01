@@ -143,4 +143,148 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <Style TargetType="wm:WmButton">
+        <Setter Property="Foreground" Value="#FFE6E6E6" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="8,2" />
+        <Setter Property="MinHeight" Value="24" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmButton">
+                    <Grid x:Name="Root" CornerRadius="4" Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="#FF2E2E2E" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="#FF3A3A3A" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Opacity" Value="0.5" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="FocusStates">
+                                <VisualState x:Name="Focused" />
+                                <VisualState x:Name="Unfocused" />
+                                <VisualState x:Name="PointerFocused" />
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="ActiveStates">
+                                <VisualState x:Name="Inactive" />
+                                <VisualState x:Name="Active">
+                                    <VisualState.Setters>
+                                        <Setter Target="Indicator.Visibility" Value="Visible" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="AttentionStates">
+                                <VisualState x:Name="Calm" />
+                                <VisualState x:Name="Attention">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="#FF5A4A00" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Image Source="{TemplateBinding Icon}" MaxHeight="16" MaxWidth="16" Stretch="Uniform" />
+                            <TextBlock x:Name="Label" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}"
+                                       VerticalAlignment="Center" Text="{TemplateBinding Label}" />
+                            <TextBlock x:Name="Badge" Foreground="#FFE6E6E6" FontSize="10" VerticalAlignment="Top" Text="{TemplateBinding Badge}" />
+                        </StackPanel>
+                        <Rectangle x:Name="Indicator" Visibility="Collapsed" Height="2" VerticalAlignment="Bottom" Fill="#FF6CB8F6" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="wm:WmToggle">
+        <Setter Property="Foreground" Value="#FFE6E6E6" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="8,2" />
+        <Setter Property="MinHeight" Value="24" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmToggle">
+                    <Grid x:Name="Root" CornerRadius="4" Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="#FF2E2E2E" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="#FF3A3A3A" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Opacity" Value="0.5" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="FocusStates">
+                                <VisualState x:Name="Focused" />
+                                <VisualState x:Name="Unfocused" />
+                                <VisualState x:Name="PointerFocused" />
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="ActiveStates">
+                                <VisualState x:Name="Inactive" />
+                                <VisualState x:Name="Active">
+                                    <VisualState.Setters>
+                                        <Setter Target="Indicator.Visibility" Value="Visible" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="AttentionStates">
+                                <VisualState x:Name="Calm" />
+                                <VisualState x:Name="Attention">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="#FF5A4A00" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Image Source="{TemplateBinding Icon}" MaxHeight="16" MaxWidth="16" Stretch="Uniform" />
+                            <TextBlock x:Name="Label" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}"
+                                       VerticalAlignment="Center" Text="{TemplateBinding Label}" />
+                        </StackPanel>
+                        <Rectangle x:Name="Indicator" Visibility="Collapsed" Height="2" VerticalAlignment="Bottom" Fill="#FF6CB8F6" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="wm:WmNotice">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmNotice">
+                    <Border Padding="8,4" CornerRadius="4" Background="#FF5A1010" BorderBrush="#FF3A3A3A" BorderThickness="1">
+                        <TextBlock x:Name="Message" Foreground="#FFE6E6E6" FontSize="12" TextWrapping="Wrap" MaxWidth="320"
+                                   Text="{TemplateBinding Message}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

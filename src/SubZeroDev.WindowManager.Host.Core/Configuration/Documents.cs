@@ -40,13 +40,19 @@ public sealed record HostSettingsDocument(string ActivePreset, bool StartAtSignI
 
     public static HostSettingsDocument Default { get; } = new(DefaultPreset, false, RestartPolicy.Default);
 
+    /// <summary>Command id → the plugin chosen to provide it when more than one declares it.</summary>
+    public IReadOnlyDictionary<string, string> CommandProviders { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Command id → key chord, or null for unbound. Overrides the manifest's <c>defaultHotkey</c>.</summary>
+    public IReadOnlyDictionary<string, string?> Hotkeys { get; init; } = new Dictionary<string, string?>(StringComparer.Ordinal);
+
     public JsonObject ToJson() => new()
     {
         ["schemaVersion"] = ConfigStore.SupportedSchemaVersion,
         ["activePreset"] = ActivePreset,
         ["plugins"] = new JsonObject(),
-        ["commandProviders"] = new JsonObject(),
-        ["hotkeys"] = new JsonObject(),
+        ["commandProviders"] = new JsonObject(CommandProviders.Select(p => KeyValuePair.Create(p.Key, (JsonNode?)p.Value))),
+        ["hotkeys"] = new JsonObject(Hotkeys.Select(h => KeyValuePair.Create(h.Key, h.Value is null ? null : (JsonNode?)h.Value))),
         ["startAtSignIn"] = StartAtSignIn,
         ["restartPolicy"] = new JsonObject
         {
@@ -105,7 +111,53 @@ public static partial class Documents
             problems.Add("restartPolicy: must be an object.");
         }
 
-        return problems.Count > start ? null : new HostSettingsDocument(preset!, startAtSignIn, policy);
+        var providers = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (json["commandProviders"] is JsonObject providerMap)
+        {
+            foreach (var (command, value) in providerMap)
+            {
+                if (value is JsonValue v && v.TryGetValue<string>(out var plugin) && IsPackageId(plugin))
+                {
+                    providers[command] = plugin;
+                }
+                else
+                {
+                    problems.Add($"commandProviders.{command}: must be a plugin id.");
+                }
+            }
+        }
+        else if (json["commandProviders"] is not null)
+        {
+            problems.Add("commandProviders: must be an object.");
+        }
+
+        var hotkeys = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (json["hotkeys"] is JsonObject hotkeyMap)
+        {
+            foreach (var (command, value) in hotkeyMap)
+            {
+                if (value is null)
+                {
+                    hotkeys[command] = null;
+                }
+                else if (value is JsonValue v && v.TryGetValue<string>(out var chord) && KeyChord.Parse(chord).Ok)
+                {
+                    hotkeys[command] = chord;
+                }
+                else
+                {
+                    problems.Add($"hotkeys.{command}: must be a key chord or null.");
+                }
+            }
+        }
+        else if (json["hotkeys"] is not null)
+        {
+            problems.Add("hotkeys: must be an object.");
+        }
+
+        return problems.Count > start
+            ? null
+            : new HostSettingsDocument(preset!, startAtSignIn, policy) { CommandProviders = providers, Hotkeys = hotkeys };
     }
 
     public static PresetDocument? ParsePreset(JsonObject json, string expectedId, List<string> problems)

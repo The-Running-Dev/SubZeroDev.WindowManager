@@ -89,7 +89,7 @@ Acceptance:
 Out of scope: asset packs and icons (S13), the appearance picker UI (S10), the two sample configurations (S14).
 
 ## S6 — Clicks and hotkeys run commands
-Status: todo
+Status: done
 Delivers: Plugin items become interactive: clicking a button or pressing a global shortcut runs a command in the right plugin, and a window the plugin brings forward actually comes to the front.
 Touches: Protocol (`command.invoke`, `element.event`, actions); Sdk (`ICommands`, `OnEventAsync`); Host.Core (`ICommandRouter`, `commandProviders`, `hotkeys`); Host.Platform (`IHotkeyService`, `KeyChord`, `IForegroundService`); Host.Surfaces (Button and Toggle; action dispatch; notices via `Wm.Notice`; keyboard focus and navigation inside a panel); built-in `host.*` commands except `host.settings.open`, `host.plugin.debugAttach` and `host.preset.apply`
 Depends on: S3

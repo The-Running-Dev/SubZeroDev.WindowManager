@@ -21,7 +21,8 @@ public sealed class PluginContext
 {
     private readonly Connection _connection;
 
-    internal PluginContext(Connection connection, string pluginId, HostMode mode, string dataDirectory, JsonObject settings)
+    internal PluginContext(Connection connection, string pluginId, HostMode mode, string dataDirectory, JsonObject settings,
+        IReadOnlySet<string> declaredCommands)
     {
         _connection = connection;
         PluginId = pluginId;
@@ -29,6 +30,7 @@ public sealed class PluginContext
         DataDirectory = dataDirectory;
         Settings = settings;
         Log = new HostLogger(connection);
+        CommandTable = new Commands(connection, declaredCommands);
     }
 
     public string PluginId { get; }
@@ -41,6 +43,11 @@ public sealed class PluginContext
 
     /// <summary>Forwarded to the host as <c>log</c> notifications, into the plugin's log file.</summary>
     public ILogger Log { get; }
+
+    /// <summary>Register handlers for the commands in plugin.json, and invoke any command through the host.</summary>
+    public ICommands Commands => CommandTable;
+
+    internal Commands CommandTable { get; }
 
     internal Connection Connection => _connection;
 }
