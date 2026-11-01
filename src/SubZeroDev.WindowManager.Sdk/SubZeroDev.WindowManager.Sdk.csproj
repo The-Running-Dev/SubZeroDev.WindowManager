@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <TargetPlatformMinVersion></TargetPlatformMinVersion>
+    <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
+    <RootNamespace>SubZeroDev.WindowManager.Sdk</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Protocol\SubZeroDev.WindowManager.Protocol.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SubZeroDev.WindowManager.TestPlugin" />
+  </ItemGroup>
+</Project>

@@ -25,7 +25,7 @@ Acceptance:
 Out of scope: plugin processes, palettes and asset packs, theme switching at runtime, the recovery journal and crash recovery, multiple monitors, settings UI.
 
 ## S2 — A separately built plugin draws on the panel
-Status: todo
+Status: done
 Delivers: A plugin author can build a small clock as its own program, drop it into the plugins folder, and see it live on Ben's panel, without the host being rebuilt.
 Touches: Protocol (messages, `ViewNode`, `ViewValidator`, manifest model); Sdk (`PluginRuntime`, `Plugin`, `ContributionInstance`, `Surface`, `View`, `Prop<T>`); Host.Core (`IPackageCatalog` discovery of built-in and user plugins, manifest validation, `IPluginSupervisor` start and stop, `IWorkerChannel`, plugin logs); Host.Platform (`IWorkerLauncher` with job object, pipe creation); Host.Surfaces (rendering Text, Stack, Icon (named only), Spacer, Separator; bindings; revisions); plugin `subzerodev.clock` (time only, no settings yet)
 Depends on: S1

@@ -181,7 +181,10 @@ public sealed class ThemedPanelTests
             """);
         run.Start(HostRun.HostExe);
 
-        var status = await run.WaitForStatusAsync();
+        await run.WaitForStatusAsync();
+        // Every placed instance shows Starting first; the catalog lookup then settles it on Missing.
+        var status = await run.WaitForAsync(s => (bool?)s["ready"] == true
+            && s["panels"]![0]!["placeholders"]!.AsArray().Any(p => (string?)p!["reason"] == "Missing"), TimeSpan.FromSeconds(5));
 
         var placeholder = Assert.Single(status["panels"]![0]!["placeholders"]!.AsArray())!;
         Assert.Equal("test.nonexistent", (string?)placeholder["plugin"]);

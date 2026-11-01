@@ -33,11 +33,26 @@ public sealed class HostLog : IHostLog, IAsyncDisposable
     public string PathFor(DateTimeOffset day) =>
         Path.Combine(_directory, $"host-{day.ToString("yyyyMMdd", CultureInfo.InvariantCulture)}.log");
 
-    public void Write(LogLevel level, string area, string message)
+    public void Write(LogLevel level, string area, string message) => _lines.Writer.TryWrite(Line(level, area, message));
+
+    /// <summary>Appends on the calling thread, for a process that is about to end and cannot wait for the writer.</summary>
+    public void WriteNow(LogLevel level, string area, string message)
     {
-        var now = _clock();
+        try
+        {
+            Directory.CreateDirectory(_directory);
+            File.AppendAllText(PathFor(_clock()), Line(level, area, message) + "\n", Utf8NoBom);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Best effort, as for the writer.
+        }
+    }
+
+    private string Line(LogLevel level, string area, string message)
+    {
         var flat = message.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
-        _lines.Writer.TryWrite($"{now.ToString("O", CultureInfo.InvariantCulture)} {level} [{area}] {flat}");
+        return $"{_clock().ToString("O", CultureInfo.InvariantCulture)} {level} [{area}] {flat}";
     }
 
     public async ValueTask DisposeAsync()

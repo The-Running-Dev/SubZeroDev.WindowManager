@@ -30,10 +30,17 @@ internal sealed class TestHook
     private readonly Locations _locations;
     private readonly ThemeEngine _theme;
     private readonly SurfaceManager _surfaces;
+    private readonly IPluginSupervisor _supervisor;
+    private readonly WorkerLauncher _launcher;
+    private readonly IPackageCatalog _catalog;
     private readonly DispatcherQueueTimer _timer;
 
-    public TestHook(string directory, App app, HostOptions options, Locations locations, ThemeEngine theme, SurfaceManager surfaces, DispatcherQueue dispatcher)
+    public TestHook(string directory, App app, HostOptions options, Locations locations, ThemeEngine theme, SurfaceManager surfaces,
+        IPluginSupervisor supervisor, WorkerLauncher launcher, IPackageCatalog catalog, DispatcherQueue dispatcher)
     {
+        _supervisor = supervisor;
+        _launcher = launcher;
+        _catalog = catalog;
         _directory = directory;
         _app = app;
         _options = options;
@@ -63,9 +70,17 @@ internal sealed class TestHook
             return;
         }
 
-        var temp = Path.Combine(_directory, "status.json.tmp");
-        File.WriteAllText(temp, Snapshot().ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Utf8NoBom);
-        File.Move(temp, Path.Combine(_directory, "status.json"), overwrite: true);
+        // The test reads status.json while this replaces it; a refused replace waits for the next tick.
+        // An exception escaping a dispatcher callback ends a WinUI process without UnhandledException.
+        try
+        {
+            var temp = Path.Combine(_directory, "status.json.tmp");
+            File.WriteAllText(temp, Snapshot().ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Utf8NoBom);
+            File.Move(temp, Path.Combine(_directory, "status.json"), overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     private JsonObject Snapshot()
@@ -81,7 +96,8 @@ internal sealed class TestHook
                 foreach (var placeholder in zone.Items.OfType<WmContribution>().Select(c => c.Content).OfType<WmPlaceholder>())
                 {
                     var state = CurrentState(placeholder, WmPlaceholder.ReasonStatesGroup);
-                    ready &= state is not null;
+                    // Reason names the visual state; until the state catches up the tree is half-built.
+                    ready &= state is not null && state == placeholder.Reason;
                     placeholders.Add(new JsonObject
                     {
                         ["plugin"] = placeholder.PluginName,
@@ -132,6 +148,26 @@ internal sealed class TestHook
                 }).ToArray()),
             },
             ["panels"] = panels,
+            ["contributions"] = new JsonArray(_surfaces.Views.Select(view => (JsonNode?)new JsonObject
+            {
+                ["instanceId"] = view.Instance.Id.ToString("D"),
+                ["plugin"] = view.Instance.Plugin,
+                ["reason"] = view.Reason,
+                ["texts"] = new JsonArray(view.Texts().Select(text => (JsonNode?)text).ToArray()),
+            }).ToArray()),
+            ["plugins"] = new JsonArray(_supervisor.All.Select(status => (JsonNode?)new JsonObject
+            {
+                ["id"] = status.PluginId,
+                ["state"] = status.State.ToString(),
+                ["pid"] = status.ProcessId,
+            }).ToArray()),
+            ["jobPids"] = new JsonArray(_launcher.JobProcessIds().Select(pid => (JsonNode?)pid).ToArray()),
+            ["catalog"] = new JsonArray(_catalog.All(PackageKind.Plugin).Select(record => (JsonNode?)new JsonObject
+            {
+                ["id"] = record.Id,
+                ["source"] = record.Source.ToString(),
+                ["health"] = record.Health.ToString(),
+            }).ToArray()),
         };
     }
 

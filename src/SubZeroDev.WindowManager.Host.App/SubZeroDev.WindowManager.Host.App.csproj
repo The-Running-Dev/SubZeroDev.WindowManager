@@ -18,9 +18,18 @@
     <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Platform\SubZeroDev.WindowManager.Host.Platform.csproj" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Theming\SubZeroDev.WindowManager.Host.Theming.csproj" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Surfaces\SubZeroDev.WindowManager.Host.Surfaces.csproj" />
+    <!-- Built first so its output can ship as a built-in plugin; the host never loads it. -->
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Clock\SubZeroDev.WindowManager.Plugins.Clock.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
   <ItemGroup>
     <!-- Built-in themes, layouts and presets ship beside the host. -->
     <Content Include="..\..\content\**\*" LinkBase="content" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <!-- Built-in plugins run as workers from <content>\plugins\<id>. -->
+  <Target Name="CopyBuiltInPlugins" AfterTargets="Build">
+    <ItemGroup>
+      <ClockFiles Include="..\SubZeroDev.WindowManager.Plugins.Clock\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ClockFiles)" DestinationFiles="@(ClockFiles->'$(OutDir)content\plugins\subzerodev.clock\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
