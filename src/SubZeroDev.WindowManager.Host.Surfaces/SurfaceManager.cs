@@ -35,6 +35,7 @@ public sealed class SurfaceManager : ISurfaceManager
     private readonly DispatcherQueue _dispatcher;
     private readonly Action<string>? _retry;
     private readonly IElementActions? _actions;
+    private readonly IconResolver? _icons;
     private readonly IForegroundService? _foreground;
     private readonly List<PanelWindow> _panels = [];
     private readonly Dictionary<Guid, ContributionView> _views = [];
@@ -43,9 +44,10 @@ public sealed class SurfaceManager : ISurfaceManager
 
     public SurfaceManager(IConfigStore config, IMonitorService monitors, IAppBarService appBars, IThemeEngine theme,
         IContributionHost contributions, IHostLog log, Action<string>? retry = null, IElementActions? actions = null,
-        IForegroundService? foreground = null)
+        IForegroundService? foreground = null, IconResolver? icons = null)
     {
         _retry = retry;
+        _icons = icons;
         _actions = actions;
         _foreground = foreground;
         _config = config;
@@ -208,7 +210,7 @@ public sealed class SurfaceManager : ISurfaceManager
             : Microsoft.UI.Xaml.Controls.Orientation.Horizontal;
         foreach (var instance in instances)
         {
-            var view = new ContributionView(instance, axis, Lookup, _retry, _actions);
+            var view = new ContributionView(instance, axis, Lookup, _retry, _actions, _icons);
             _views[instance.Id] = view;
             view.Render(_contributions.Describe(instance.Id));
             placements.Add(new InstancePlacement(instance, context));

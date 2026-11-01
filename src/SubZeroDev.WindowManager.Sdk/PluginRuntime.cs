@@ -58,17 +58,20 @@ public static class PluginRuntime
         return await worker.RunAsync().ConfigureAwait(false);
     }
 
-    /// <summary>The command ids under <c>commands</c> in plugin.json; empty when it cannot be read.</summary>
-    private static HashSet<string> ReadDeclaredCommands()
+    /// <summary>
+    /// The ids in a list of plugin.json: <c>{ id }</c> objects for <c>commands</c> and <c>feeds</c>, plain
+    /// strings for <c>subscribes</c>. Empty when it cannot be read.
+    /// </summary>
+    private static HashSet<string> ReadDeclared(string list)
     {
         var declared = new HashSet<string>(StringComparer.Ordinal);
         try
         {
-            if (JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "plugin.json")))?["commands"] is JsonArray commands)
+            if (JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "plugin.json")))?[list] is JsonArray items)
             {
-                foreach (var command in commands)
+                foreach (var item in items)
                 {
-                    if (command?["id"] is JsonValue id && id.TryGetValue<string>(out var text))
+                    if ((item is JsonObject ? item["id"] : item) is JsonValue id && id.TryGetValue<string>(out var text))
                     {
                         declared.Add(text);
                     }
@@ -203,6 +206,10 @@ public static class PluginRuntime
                 case Methods.Shutdown:
                     Enqueue(message, () => ShutdownAsync(message.ParamsAs<ShutdownParams>()!));
                     break;
+                case Methods.FeedUpdate:
+                    var update = message.ParamsAs<FeedUpdateParams>()!;
+                    _callbacks.Writer.TryWrite(() => plugin.Context is { } feeds ? feeds.FeedTable.DeliverAsync(update) : Task.CompletedTask);
+                    break;
                 case Methods.CommandInvoke when message.Id is { } id:
                     var invoke = message.ParamsAs<CommandInvokeParams>()!;
                     _callbacks.Writer.TryWrite(() => plugin.Context is { } context
@@ -251,7 +258,7 @@ public static class PluginRuntime
         private async Task InitializeAsync(InitializeParams parameters)
         {
             plugin.Context = new PluginContext(connection, pluginId, parameters.Mode, parameters.DataDirectory, parameters.PluginSettings,
-                ReadDeclaredCommands());
+                ReadDeclared("commands"), ReadDeclared("feeds"), ReadDeclared("subscribes"), callback => _callbacks.Writer.TryWrite(callback));
             await plugin.OnStartAsync(CancellationToken.None).ConfigureAwait(false);
         }
 

@@ -46,16 +46,21 @@ internal sealed class TestHook
     private readonly GuardianLink? _guardian;
     private readonly CommandRouter _router;
     private readonly HotkeyBinder _hotkeys;
+    private readonly FeedBroker _feeds;
     private JsonObject? _lastInvoke;
     private readonly HashSet<WmPanel> _watched = [];
     private long _lastPointerPress;
     private int _writing;
+    private int _reading;
+    private readonly DispatcherQueue _dispatcher;
     private JsonObject? _lastPresetApply;
 
     public TestHook(string directory, App app, HostOptions options, Locations locations, ThemeEngine theme, SurfaceManager surfaces,
         IPluginSupervisor supervisor, WorkerLauncher launcher, IPackageCatalog catalog, DispatcherQueue dispatcher,
-        DispatcherWatchdog watchdog, GuardianLink? guardian, CommandRouter router, HotkeyBinder hotkeys)
+        DispatcherWatchdog watchdog, GuardianLink? guardian, CommandRouter router, HotkeyBinder hotkeys,
+        FeedBroker feeds)
     {
+        _feeds = feeds;
         _router = router;
         _hotkeys = hotkeys;
         _watchdog = watchdog;
@@ -69,6 +74,7 @@ internal sealed class TestHook
         _locations = locations;
         _theme = theme;
         _surfaces = surfaces;
+        _dispatcher = dispatcher;
         _timer = dispatcher.CreateTimer();
         _timer.Interval = TimeSpan.FromMilliseconds(250);
         _timer.Tick += (_, _) => Tick();
@@ -105,32 +111,14 @@ internal sealed class TestHook
 
     private void Tick()
     {
-        if (File.Exists(Path.Combine(_directory, "exit")))
+        // Request files are read off the UI thread: a file the test has just written may be held by an
+        // antivirus scan, and that wait must not count as a UI stall. Only the action runs on the UI thread.
+        if (Interlocked.Exchange(ref _reading, 1) == 0)
         {
-            _timer.Stop();
-            _ = _app.ShutdownAsync();
-            return;
+            _ = Task.Run(ReadRequests);
         }
 
-        var hang = Path.Combine(_directory, "hang");
-        if (File.Exists(hang))
-        {
-            File.Delete(hang);
-            Thread.Sleep(TimeSpan.FromMinutes(2));
-        }
-
-        // An exception escaping a dispatcher callback ends a WinUI process without UnhandledException.
-        try
-        {
-            WatchPointers();
-            RunRetry();
-            RunPresetApply();
-            RunInvoke();
-            RunFocusPanel();
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-        }
+        WatchPointers();
 
         // The snapshot reads UI objects here; the file is written off the UI thread so a slow disk
         // (an antivirus scan of the temp folder) is not counted as a UI stall. A tick that finds the
@@ -160,6 +148,80 @@ internal sealed class TestHook
         });
     }
 
+    private void ReadRequests()
+    {
+        try
+        {
+            if (File.Exists(Path.Combine(_directory, "exit")))
+            {
+                Post(() =>
+                {
+                    _timer.Stop();
+                    _ = _app.ShutdownAsync();
+                });
+                return;
+            }
+
+            if (Take("hang") is not null)
+            {
+                Post(() => Thread.Sleep(TimeSpan.FromMinutes(2)));
+            }
+
+            if (Take("retry") is { Length: > 0 } retry)
+            {
+                Post(() => RunRetry(retry[0].Trim()));
+            }
+
+            if (Take("preset") is { Length: > 0 } preset)
+            {
+                Post(() => _ = ApplyPresetAsync(preset[0].Trim()));
+            }
+
+            if (Take("invoke") is { Length: > 0 } invoke)
+            {
+                Post(() => RunInvoke(invoke));
+            }
+
+            if (Take("focus-panel") is { Length: > 0 } focus)
+            {
+                Post(() => _surfaces.FocusPanel(focus[0].Trim()));
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+        }
+        finally
+        {
+            Volatile.Write(ref _reading, 0);
+        }
+    }
+
+    /// <summary>Reads and deletes a request file, or returns null when there is none.</summary>
+    private string[]? Take(string name)
+    {
+        var file = Path.Combine(_directory, name);
+        if (!File.Exists(file))
+        {
+            return null;
+        }
+
+        var lines = File.ReadAllLines(file);
+        File.Delete(file);
+        return lines;
+    }
+
+    // An exception escaping a dispatcher callback ends a WinUI process without UnhandledException.
+    private void Post(Action action) => _dispatcher.TryEnqueue(() =>
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+        }
+    });
+
     /// <summary>Time-stamps pointer presses on each panel, handled or not, as UTC milliseconds.</summary>
     private void WatchPointers()
     {
@@ -172,16 +234,8 @@ internal sealed class TestHook
         }
     }
 
-    private void RunRetry()
+    private void RunRetry(string pluginId)
     {
-        var file = Path.Combine(_directory, "retry");
-        if (!File.Exists(file))
-        {
-            return;
-        }
-
-        var pluginId = File.ReadAllText(file).Trim();
-        File.Delete(file);
         var command = _surfaces.Views.Where(view => view.Instance.Plugin == pluginId)
             .Select(view => view.Placeholder?.RetryCommand).FirstOrDefault(command => command is not null);
         if (command?.CanExecute(null) == true)
@@ -190,34 +244,8 @@ internal sealed class TestHook
         }
     }
 
-    private void RunPresetApply()
+    private void RunInvoke(string[] lines)
     {
-        var file = Path.Combine(_directory, "preset");
-        if (!File.Exists(file))
-        {
-            return;
-        }
-
-        var presetId = File.ReadAllText(file).Trim();
-        File.Delete(file);
-        _ = ApplyPresetAsync(presetId);
-    }
-
-    private void RunInvoke()
-    {
-        var file = Path.Combine(_directory, "invoke");
-        if (!File.Exists(file))
-        {
-            return;
-        }
-
-        var lines = File.ReadAllLines(file);
-        File.Delete(file);
-        if (lines.Length == 0)
-        {
-            return;
-        }
-
         var commandId = lines[0].Trim();
         var source = lines.Length > 1 && Enum.TryParse<InvocationSource>(lines[1].Trim(), ignoreCase: true, out var parsed)
             ? parsed
@@ -237,19 +265,6 @@ internal sealed class TestHook
         {
             _lastInvoke = new JsonObject { ["command"] = commandId, ["ok"] = false, ["code"] = e.GetType().Name };
         }
-    }
-
-    private void RunFocusPanel()
-    {
-        var file = Path.Combine(_directory, "focus-panel");
-        if (!File.Exists(file))
-        {
-            return;
-        }
-
-        var panelId = File.ReadAllText(file).Trim();
-        File.Delete(file);
-        _surfaces.FocusPanel(panelId);
     }
 
     private async Task ApplyPresetAsync(string presetId)
@@ -351,6 +366,12 @@ internal sealed class TestHook
                 ["chord"] = binding.Chord,
                 ["state"] = binding.State,
             }).ToArray()),
+            ["feeds"] = new JsonArray(_feeds.Feeds.Select(feed => (JsonNode?)new JsonObject
+            {
+                ["id"] = feed.FeedId,
+                ["provider"] = feed.Provider,
+                ["available"] = feed.Available,
+            }).ToArray()),
             ["workerMessages"] = WorkerChannel.MessagesSent,
             ["panels"] = panels,
             ["contributions"] = new JsonArray(_surfaces.Views.Select(view => (JsonNode?)new JsonObject
@@ -374,6 +395,11 @@ internal sealed class TestHook
                     ["kind"] = element is WmToggle ? "toggle" : "button",
                     ["label"] = element switch { WmButton b => b.Label, WmToggle t => t.Label, _ => null },
                     ["checked"] = (element as WmToggle)?.Checked,
+                    ["active"] = (element as WmButton)?.Active,
+                    ["activeState"] = element is WmButton ? CurrentState(element, "ActiveStates") : null,
+                    ["itemKey"] = view.InfoOf(element)?.ItemKey,
+                    ["iconSource"] = view.InfoOf(element)?.IconSource,
+                    ["hasIcon"] = element switch { WmButton b => b.Icon is not null, WmToggle t => t.Icon is not null, _ => false },
                     ["bounds"] = ScreenBounds(element),
                 }).ToArray()),
                 ["notices"] = new JsonArray(view.Notices().Select(notice => (JsonNode?)new JsonObject

@@ -23,6 +23,14 @@ public sealed record PluginManifest(
             Text(command, "id") ?? string.Empty, Text(command, "title") ?? Text(command, "id") ?? string.Empty,
             Text(command, "defaultHotkey")))];
 
+    /// <summary>The ids under <c>feeds</c>: the feeds the plugin publishes.</summary>
+    public IReadOnlyList<string> Feeds =>
+        [.. (Raw["feeds"] as JsonArray ?? []).OfType<JsonObject>().Select(feed => Text(feed, "id") ?? string.Empty)];
+
+    /// <summary>The feed ids under <c>subscribes</c>: the feeds the plugin consumes.</summary>
+    public IReadOnlyList<string> Subscribes =>
+        [.. (Raw["subscribes"] as JsonArray ?? []).Select(item => item is JsonValue value && value.TryGetValue<string>(out var id) ? id : string.Empty)];
+
     private static string? Text(JsonObject json, string name) =>
         json[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 }
@@ -129,6 +137,19 @@ public static partial class PluginManifestReader
         CheckIds("commands", Ids(document, "commands"), problems);
         CheckIds("feeds", Ids(document, "feeds"), problems);
         CheckIds("popups", Ids(document, "popups"), problems);
+        if (document["subscribes"] is { } subscribes)
+        {
+            if (subscribes is JsonArray subscribeArray
+                && subscribeArray.All(item => item is JsonValue value && value.TryGetValue<string>(out _)))
+            {
+                CheckIds("subscribes", subscribeArray.Select(item => item!.GetValue<string>()), problems);
+            }
+            else
+            {
+                problems.Add("subscribes must be a list of feed ids.");
+            }
+        }
+
         if (Ids(document, "commands").Any(command => command.StartsWith("host.", StringComparison.Ordinal)))
         {
             problems.Add("command ids may not start with 'host.'.");

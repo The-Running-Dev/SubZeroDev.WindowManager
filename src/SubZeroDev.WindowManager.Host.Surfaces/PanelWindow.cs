@@ -39,7 +39,12 @@ public sealed class PanelWindow
         _window.AppWindow.Closing += (_, e) => e.Cancel = !_closeRequested;
         _window.Closed += (_, _) => Closed?.Invoke(this, EventArgs.Empty);
         Handle = WinRT.Interop.WindowNative.GetWindowHandle(_window);
+        // A tool window is left out of window lists, so a panel never lists itself or takes "active" from the app.
+        SetWindowLongPtrW(Handle, GwlExStyle, GetWindowLongPtrW(Handle, GwlExStyle) | WsExToolWindow);
     }
+
+    private const int GwlExStyle = -20;
+    private const nint WsExToolWindow = 0x80;
 
     /// <summary>Raised while the window closes, before its handle is destroyed.</summary>
     public event EventHandler? Closed;
@@ -94,4 +99,10 @@ public sealed class PanelWindow
         PanelBackdrop.Acrylic => new DesktopAcrylicBackdrop(),
         _ => null,
     };
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint GetWindowLongPtrW(nint hwnd, int index);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint SetWindowLongPtrW(nint hwnd, int index, nint value);
 }

@@ -14,6 +14,21 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-01 — S7: the running-windows strip
+- **Context:** The first feed and the first list of plugin items. The list must match what a taskbar shows, mark the window in front, survive many windows, and say why an icon is missing.
+- **Chosen:**
+  - A window is listed when it is visible, not cloaked, titled, and either `WS_EX_APPWINDOW` or unowned and neither a tool nor a no-activate window. WinEvent hooks mark the list dirty, a rescan follows within 30 ms, and a 2 s timer rescans regardless.
+  - Panels are `WS_EX_TOOLWINDOW`, so they are never listed. While a tool window has the foreground, the last active window stays active, so a click on its button minimises it as a taskbar does.
+  - Icons resolve in Host.Theming's `IconResolver` through Host.Platform's `IIconService`: `WM_GETICON`, then the class icon, then the executable's first icon, then the host default. Each element reports where its icon came from.
+  - `WmFitPanel` lays out zones and lists: when items do not fit, the smallest keep their size and the rest share what is left, and labels trim with an ellipsis.
+  - The acceptance tests open their own windows from the test plugin's `fixture-windows` mode, one of each excluded kind, instead of Notepad, whose window and process differ between Windows builds.
+  - `aumid` is always `null` for now; packaged-app identity arrives with grouping.
+- **Rejected:**
+  - Polling alone, because a 1 s budget would need a scan several times a second.
+  - Clearing the active window whenever the foreground is not listed, because clicking the panel would then always activate instead of minimise.
+  - A scrolling or overflow-menu strip, because it hides the newest windows; grouping and overflow menus stay out of scope.
+  - Notepad in the tests, because on current Windows it is a packaged app that may reuse one process for several windows and restores tabs.
+
 ## 2026-11-01 — S6: a command whose provider is not running fails, it never starts the worker
 - **Context:** Workers start only for placed instances, so a plugin that only declares commands, or one the layout does not use, is never `Running` when its command is invoked.
 - **Chosen:** The router returns `1001 PluginUnavailable` and the element shows a `Wm.Notice`; nothing is resent (I19). A click counts as `pointer` unless the element had keyboard focus, when Enter or Space produce it as `keyboard`. A Toggle never flips itself: it asks for the new value and shows whatever the plugin's state says next.

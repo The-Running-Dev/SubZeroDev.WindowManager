@@ -22,7 +22,8 @@ public sealed class PluginContext
     private readonly Connection _connection;
 
     internal PluginContext(Connection connection, string pluginId, HostMode mode, string dataDirectory, JsonObject settings,
-        IReadOnlySet<string> declaredCommands)
+        IReadOnlySet<string> declaredCommands, IReadOnlySet<string> declaredFeeds, IReadOnlySet<string> declaredSubscriptions,
+        Action<Func<Task>> enqueue)
     {
         _connection = connection;
         PluginId = pluginId;
@@ -31,6 +32,8 @@ public sealed class PluginContext
         Settings = settings;
         Log = new HostLogger(connection);
         CommandTable = new Commands(connection, declaredCommands);
+        FeedTable = new Feeds(connection, declaredFeeds, declaredSubscriptions, enqueue,
+            (exception, message) => Log.LogError(exception, "{Message}", message));
     }
 
     public string PluginId { get; }
@@ -48,6 +51,11 @@ public sealed class PluginContext
     public ICommands Commands => CommandTable;
 
     internal Commands CommandTable { get; }
+
+    /// <summary>Publish the feeds in plugin.json, and subscribe to the feeds it lists under <c>subscribes</c>.</summary>
+    public IFeeds Feeds => FeedTable;
+
+    internal Feeds FeedTable { get; }
 
     internal Connection Connection => _connection;
 }

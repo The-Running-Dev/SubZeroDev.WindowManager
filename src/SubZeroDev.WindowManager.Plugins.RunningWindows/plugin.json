@@ -1,0 +1,39 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.running-windows",
+  "version": "0.1.0",
+  "displayName": "Running windows",
+  "publisher": "SubZeroDev",
+  "description": "Lists open application windows on a panel and switches between them.",
+  "hostApi": "^1.0",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.RunningWindows.exe", "args": [] },
+  "capabilities": [ "windows.read", "windows.activate" ],
+  "modes": [ "coexistence", "replacement" ],
+  "requiresExplorer": false,
+  "contributions": [
+    {
+      "id": "windows",
+      "kind": "panelItem",
+      "displayName": "Running windows",
+      "multiInstance": true,
+      "settingsSchema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [ "allMonitors", "thisMonitor" ],
+            "default": "allMonitors",
+            "title": "Windows to show",
+            "description": "Every window, or only the windows on this panel's monitor."
+          }
+        }
+      }
+    }
+  ],
+  "commands": [
+    { "id": "windows.activate", "title": "Switch to window", "argsSchema": { "type": "object", "properties": { "hwnd": { "type": "integer" } } } },
+    { "id": "windows.minimize", "title": "Minimise window", "argsSchema": { "type": "object", "properties": { "hwnd": { "type": "integer" } } } }
+  ],
+  "feeds": [ { "id": "windows.running", "schema": {} } ],
+  "settingsVersion": 1
+}

@@ -105,12 +105,12 @@ Acceptance:
 Out of scope: popups and text input (S8), the settings window (S10), feeds (S7).
 
 ## S7 — See and switch running windows
-Status: todo
+Status: done
 Delivers: Ben gets a running-windows strip on the panel that lists open application windows with their icons and switches to one when it is clicked.
-Touches: Protocol (`feed.publish`, `feed.update`); Sdk (`IFeeds`); Host.Core (`IFeedBroker`); Host.Platform (`IIconService`); Host.Theming (`ResolveIconAsync` for `app` and `window` icon refs, system fallback); Host.Surfaces (List with item templates, `$item` bindings, Button `active` and `attention` states); plugin `subzerodev.running-windows` (feed `windows.running`, commands `windows.activate`, `windows.minimize`, contribution `windows` with `scope`)
+Touches: Protocol (`feed.publish`, `feed.update`); Sdk (`IFeeds`); Host.Core (`IFeedBroker`); Host.Platform (`IIconService`); Host.Theming (`IconResolver` for `app` and `window` icon refs, host default fallback); Host.Surfaces (List with item templates, `WmFitPanel`, `$item` bindings, Button `active` and `attention` states); plugin `subzerodev.running-windows` (feed `windows.running`, commands `windows.activate`, `windows.minimize`, contribution `windows` with `scope`)
 Depends on: S6
 Acceptance:
-  - S7.1 Opening Notepad adds an item titled with Notepad's window title within 1 s. Closing it removes the item within 1 s.
+  - S7.1 Opening a top-level test window adds an item titled with its window title within 1 s. Closing it removes the item within 1 s.
   - S7.2 The list contains only windows that are visible, unowned, not tool windows, not cloaked, and have a non-empty title. A test fixture with one window of each excluded type shows none of them.
   - S7.3 Clicking an item brings that window to the foreground, restoring it when minimised. Clicking the item of the current foreground window minimises it.
   - S7.4 The item for the foreground window has `active: true`, and its Button is in the `Active` visual state.
