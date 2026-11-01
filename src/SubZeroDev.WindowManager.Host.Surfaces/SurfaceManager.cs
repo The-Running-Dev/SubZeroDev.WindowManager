@@ -1,13 +1,13 @@
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using SubZeroDev.WindowManager.Host.Core;
 using SubZeroDev.WindowManager.Host.Core.Diagnostics;
 using SubZeroDev.WindowManager.Host.Surfaces.Controls;
 using SubZeroDev.WindowManager.Host.Theming;
 using SubZeroDev.WindowManager.Protocol;
+using LogLevel = SubZeroDev.WindowManager.Host.Core.Diagnostics.LogLevel;
 
 namespace SubZeroDev.WindowManager.Host.Surfaces;
-
-public enum PlaceholderReason { Starting, Disabled, Incompatible, Invalid, Faulted, Unavailable, NotSupportedInMode, Missing }
 
 /// <summary>The S1 part of the contract's <c>ISurfaceManager</c>; popups arrive with their slice.</summary>
 public interface ISurfaceManager
@@ -18,9 +18,10 @@ public interface ISurfaceManager
 }
 
 /// <summary>
-/// Creates one <see cref="PanelWindow"/> per panel in the active layout and places it. S1 places on
-/// the primary monitor only, treats every behaviour other than <c>reserve</c> as an overlay, and shows
-/// a <c>Missing</c> placeholder for every contribution because no plugin can run yet. Call on the UI thread.
+/// Creates one <see cref="PanelWindow"/> per panel in the active layout and places it. Places on the
+/// primary monitor only and treats every behaviour other than <c>reserve</c> as an overlay. Each
+/// contribution gets a <see cref="ContributionView"/>; the placements go to the contribution host, and
+/// its instance changes are rendered on the UI thread. Call on the UI thread.
 /// </summary>
 public sealed class SurfaceManager : ISurfaceManager
 {
@@ -29,19 +30,28 @@ public sealed class SurfaceManager : ISurfaceManager
     private readonly IAppBarService _appBars;
     private readonly IThemeEngine _theme;
     private readonly IHostLog _log;
+    private readonly IContributionHost _contributions;
+    private readonly DispatcherQueue _dispatcher;
     private readonly List<PanelWindow> _panels = [];
+    private readonly Dictionary<Guid, ContributionView> _views = [];
 
-    public SurfaceManager(IConfigStore config, IMonitorService monitors, IAppBarService appBars, IThemeEngine theme, IHostLog log)
+    public SurfaceManager(IConfigStore config, IMonitorService monitors, IAppBarService appBars, IThemeEngine theme,
+        IContributionHost contributions, IHostLog log)
     {
         _config = config;
         _monitors = monitors;
         _appBars = appBars;
         _theme = theme;
+        _contributions = contributions;
         _log = log;
+        _dispatcher = DispatcherQueue.GetForCurrentThread();
         _theme.AppearanceChanged += (_, _) => Restyle();
+        _contributions.InstanceChanged += (_, snapshot) => _dispatcher.TryEnqueue(() => Render(snapshot.InstanceId));
     }
 
     public IReadOnlyList<PanelWindow> Panels => _panels;
+
+    public IReadOnlyCollection<ContributionView> Views => _views.Values;
 
     public async Task ApplyLayoutAsync(string layoutId, CancellationToken ct)
     {
@@ -69,16 +79,19 @@ public sealed class SurfaceManager : ISurfaceManager
             return;
         }
 
+        var placements = new List<InstancePlacement>();
         foreach (var definition in layout.Panels)
         {
             var edge = definition.Placement.Edge ?? PanelEdge.Bottom;
+            var axis = edge is PanelEdge.Left or PanelEdge.Right ? Orientation.Vertical : Orientation.Horizontal;
+            var context = new SurfaceContext(primary.StableId, primary.Scale, axis, edge);
             var panel = new WmPanel
             {
                 Edge = edge.ToString().ToLowerInvariant(),
                 Behaviour = definition.Behaviour.ToString().ToLowerInvariant(),
-                Start = BuildZone(definition, "start"),
-                Center = BuildZone(definition, "center"),
-                End = BuildZone(definition, "end"),
+                Start = BuildZone(definition, "start", context, placements),
+                Center = BuildZone(definition, "center", context, placements),
+                End = BuildZone(definition, "end", context, placements),
             };
 
             var window = new PanelWindow(definition, primary, edge, panel);
@@ -108,6 +121,8 @@ public sealed class SurfaceManager : ISurfaceManager
 
             window.Show();
         }
+
+        _contributions.SetPlacements(placements);
     }
 
     public void FocusPanel(string panelId)
@@ -131,6 +146,7 @@ public sealed class SurfaceManager : ISurfaceManager
         }
 
         _panels.Clear();
+        _views.Clear();
     }
 
     /// <summary>A panel closed by any path other than <see cref="ShutdownAsync"/> still gives its space back.</summary>
@@ -143,7 +159,7 @@ public sealed class SurfaceManager : ISurfaceManager
         }
     }
 
-    private static WmZone? BuildZone(PanelDefinition definition, string key)
+    private WmZone? BuildZone(PanelDefinition definition, string key, SurfaceContext context, List<InstancePlacement> placements)
     {
         if (!definition.Zones.TryGetValue(key, out var instances) || instances.Count == 0)
         {
@@ -151,15 +167,16 @@ public sealed class SurfaceManager : ISurfaceManager
         }
 
         var zone = new WmZone();
+        var axis = context.PanelAxis == Orientation.Vertical
+            ? Microsoft.UI.Xaml.Controls.Orientation.Vertical
+            : Microsoft.UI.Xaml.Controls.Orientation.Horizontal;
         foreach (var instance in instances)
         {
-            var placeholder = new WmPlaceholder { PluginName = instance.Plugin, Reason = nameof(PlaceholderReason.Missing) };
-            if (Lookup("Wm.Placeholder") is Style placeholderStyle)
-            {
-                placeholder.Style = placeholderStyle;
-            }
-
-            zone.Items.Add(new WmContribution { Content = placeholder, Style = Lookup("Wm.Contribution") as Style });
+            var view = new ContributionView(instance, axis, Lookup);
+            _views[instance.Id] = view;
+            view.Render(_contributions.Describe(instance.Id));
+            placements.Add(new InstancePlacement(instance, context));
+            zone.Items.Add(view.Root);
         }
 
         if (Lookup("Wm.Zone") is Style zoneStyle)
@@ -179,15 +196,20 @@ public sealed class SurfaceManager : ISurfaceManager
             foreach (var zone in new[] { window.Panel.Start, window.Panel.Center, window.Panel.End }.OfType<WmZone>())
             {
                 zone.Style = Lookup("Wm.Zone") as Style;
-                foreach (var contribution in zone.Items.OfType<WmContribution>())
-                {
-                    contribution.Style = Lookup("Wm.Contribution") as Style;
-                    if (contribution.Content is WmPlaceholder placeholder)
-                    {
-                        placeholder.Style = Lookup("Wm.Placeholder") as Style;
-                    }
-                }
             }
+        }
+
+        foreach (var view in _views.Values)
+        {
+            view.Render(_contributions.Describe(view.Instance.Id), restyle: true);
+        }
+    }
+
+    private void Render(Guid instanceId)
+    {
+        if (_views.TryGetValue(instanceId, out var view))
+        {
+            view.Render(_contributions.Describe(instanceId));
         }
     }
 

@@ -13,6 +13,92 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-01 — S2: Plugin-facing projects target plain net10.0
+- **Context:** Protocol, Sdk and plugin projects are built by third parties, and the host projects target `net10.0-windows10.0.26100.0`.
+- **Chosen:** Protocol, Sdk, the clock and the test plugin target `net10.0` with `win-x64`, so a plugin needs no Windows SDK projection and the host can still reference Protocol.
+- **Rejected:**
+  - Windows-specific targets on the plugin side, because nothing in the wire contract needs them and they would force every plugin author onto the projection.
+
+## 2026-11-01 — S2: The bundled clock is copied into the host's content output
+- **Context:** S2.2 needs the clock at `content\plugins\subzerodev.clock\` beside the host, but the clock must stay a separately built project (I2).
+- **Chosen:** Host.App builds the clock project with `ReferenceOutputAssembly=false` and copies its build output into `content\plugins\subzerodev.clock\` after build.
+- **Rejected:**
+  - A project reference, because the host would then load the plugin assembly (I1).
+  - A manual copy step, because tests would run against a stale clock.
+
+## 2026-11-01 — S2: The worker reads its id from plugin.json
+- **Context:** The design's handshake carries the plugin id, but the launch arguments list only pipe, token, data folder and mode.
+- **Chosen:** The Sdk reads `id` from `plugin.json` next to the entry exe, so one built clock serves as both `subzerodev.clock` and `example.clock` (S2.7).
+- **Rejected:**
+  - A `--wm-id` argument, because it would change the launch contract and could disagree with the manifest.
+
+## 2026-11-01 — S2: S2.5, S2.6 and S2.8 use a test plugin
+- **Context:** S2.5 names the clock's log, but the clock never sends an invalid view or a stale patch, and S2.8 needs a worker that ignores `shutdown`.
+- **Chosen:** A `subzerodev.testplugin` project under `tests/` sends a valid view, then invalid views and a stale patch, or ignores `shutdown`, by switch. The E2E tests read `logs\plugins\subzerodev.testplugin-<date>.log`, which uses the same per-plugin log writer as the clock.
+- **Rejected:**
+  - Test switches inside the clock, because shipped code would carry them.
+
+## 2026-11-01 — S2: IPluginSupervisor carries only the S2 subset
+- **Context:** The contract lists fault detection, heartbeat, backoff and `RetryAsync`, which belong to S3.
+- **Chosen:** S2 implements start, handshake, initialize, render, stop and status; the remaining members arrive with S3.
+- **Rejected:**
+  - Stub members that throw, because they would compile but lie about capability.
+
+## 2026-11-01 — S2: IWorkerProcess and the job's process ids
+- **Context:** S2.8 needs to prove that no worker outlives the host, and the launcher must be faked in unit tests.
+- **Chosen:** Host.Platform exposes `IWorkerProcess` (pid, stderr, exit task, kill) from `WorkerLauncher`, which creates workers suspended in a kill-on-close job; the test hook reports the job's process ids.
+- **Rejected:**
+  - `System.Diagnostics.Process`, because it cannot start a process suspended inside a job before it runs.
+
+## 2026-11-01 — S2: PlaceholderReason lives in Host.Core
+- **Context:** The contract placed placeholder reasons in Host.Surfaces, but the supervisor sets them.
+- **Chosen:** `PlaceholderReason` moved to Host.Core so the supervisor can report it without a dependency on Surfaces.
+- **Rejected:**
+  - A mapping layer in Surfaces, because it would duplicate the enum for no gain.
+
+## 2026-11-01 — S2: Worker pipes use CurrentUserOnly
+- **Context:** The design asks that only the current user can open a worker pipe.
+- **Chosen:** `PipeOptions.CurrentUserOnly` on a single-instance pipe with a per-launch random name and token.
+- **Rejected:**
+  - A hand-built ACL, because .NET's option gives the same protection with less code.
+
+## 2026-11-01 — S2: Contribution kinds beyond S2 render empty
+- **Context:** The view model defines kinds that later slices implement.
+- **Chosen:** `ContributionView` renders text, the clock's only need, and leaves other kinds empty until their slice.
+- **Rejected:**
+  - Rejecting unknown kinds as protocol violations, because later slices would have to undo it.
+
+## 2026-11-01 — S2: Config file watching is opt-in
+- **Context:** S2.7 needs the layout reloaded when the file changes, but unit tests construct many stores.
+- **Chosen:** `ConfigStore` watches only when asked; the host turns it on. A save whose content is identical raises no change.
+- **Rejected:**
+  - Always-on watching, because tests would leak watchers.
+  - Raising a change on every write, because the host's own saves would reload the layout.
+
+## 2026-11-01 — S2: Icons show the named id only
+- **Context:** The view model allows an icon reference, but icon resolution is a theme concern for a later slice.
+- **Chosen:** An icon renders its id as text for now.
+- **Rejected:**
+  - Loading icon files, because the source and fallback rules are not designed yet.
+
+## 2026-11-01 — S2: The Sdk reads before it says hello
+- **Context:** Named pipes here have no buffer, so a write blocks until the other side reads; the first E2E runs deadlocked in the handshake.
+- **Chosen:** The Sdk starts its read loop before it sends hello, and the host does the same before initialize.
+- **Rejected:**
+  - Pipe buffers, because they hide the ordering bug instead of fixing it.
+
+## 2026-11-01 — S2: The host shuts down only on explicit exit
+- **Context:** A layout edit closes every panel before it opens the new ones; WinUI's default shutdown on last window close ended the dispatcher and crashed the host.
+- **Chosen:** `DispatcherShutdownMode.OnExplicitShutdown`; the host ends only through `Exit()`.
+- **Rejected:**
+  - Opening the new panels before closing the old ones, because app-bar space would be claimed twice.
+
+## 2026-11-01 — S2: End-to-end timing waits carry 5 s of slack
+- **Context:** The first run of a newly written worker exe waits on the virus scanner, which pushed S2.2 and S2.7 past their 3 s and 5 s budgets on a cold build.
+- **Chosen:** E2E waits use the criterion's time plus 5 s; the real budgets are measured in S16.
+- **Rejected:**
+  - Exact budgets in E2E tests, because they fail on scanner timing outside the product.
+
 ## 2026-11-01 — S1: Pin Windows App SDK 1.8.260317003
 - **Context:** The platform baseline left the exact Windows App SDK release to the first slice, and the prototype checks had to pass on it.
 - **Chosen:** Windows App SDK 1.8.260317003 with SDK.BuildTools 10.0.26100.4654, pinned in `Directory.Packages.props`. Runtime-loaded templates with visual states, an acrylic backdrop behind a translucent panel, and app bars all work on it unpackaged and self-contained.

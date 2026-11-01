@@ -10,9 +10,12 @@
     <Project Path="src/SubZeroDev.WindowManager.Host.Surfaces/SubZeroDev.WindowManager.Host.Surfaces.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Host.App/SubZeroDev.WindowManager.Host.App.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Guardian/SubZeroDev.WindowManager.Guardian.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Sdk/SubZeroDev.WindowManager.Sdk.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Plugins.Clock/SubZeroDev.WindowManager.Plugins.Clock.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SubZeroDev.WindowManager.Host.Core.Tests/SubZeroDev.WindowManager.Host.Core.Tests.csproj" />
     <Project Path="tests/SubZeroDev.WindowManager.EndToEnd.Tests/SubZeroDev.WindowManager.EndToEnd.Tests.csproj" />
+    <Project Path="tests/SubZeroDev.WindowManager.TestPlugin/SubZeroDev.WindowManager.TestPlugin.csproj" />
   </Folder>
 </Solution>

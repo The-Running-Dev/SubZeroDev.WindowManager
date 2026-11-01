@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <TargetPlatformMinVersion></TargetPlatformMinVersion>
+    <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
+    <RootNamespace>SubZeroDev.WindowManager.TestPlugin</RootNamespace>
+    <SelfContained>false</SelfContained>
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Sdk\SubZeroDev.WindowManager.Sdk.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

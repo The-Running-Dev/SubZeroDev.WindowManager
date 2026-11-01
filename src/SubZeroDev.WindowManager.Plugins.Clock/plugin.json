@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.clock",
+  "version": "0.1.0",
+  "displayName": "Clock",
+  "publisher": "SubZeroDev",
+  "description": "Shows the time on a panel.",
+  "hostApi": "^1.0",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.Clock.exe", "args": [] },
+  "capabilities": [ "time.read" ],
+  "modes": [ "coexistence", "replacement" ],
+  "requiresExplorer": false,
+  "contributions": [
+    { "id": "clock", "kind": "panelItem", "displayName": "Clock", "multiInstance": true, "settingsSchema": {} }
+  ],
+  "settingsVersion": 1
+}

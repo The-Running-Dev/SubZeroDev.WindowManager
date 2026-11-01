@@ -132,6 +132,102 @@ internal sealed class HostRun : IDisposable
         throw new TimeoutException($"No status.json in {HookDirectory} after {StartTimeout}.");
     }
 
+    /// <summary>Polls <c>status.json</c> until <paramref name="condition"/> holds; the last status is in the timeout message.</summary>
+    public async Task<JsonObject> WaitForAsync(Func<JsonObject, bool> condition, TimeSpan timeout)
+    {
+        var path = Path.Combine(HookDirectory, "status.json");
+        var deadline = DateTime.UtcNow + timeout;
+        JsonObject? last = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                last = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+                if (condition(last))
+                {
+                    return last;
+                }
+            }
+            catch (Exception e) when (e is IOException or System.Text.Json.JsonException)
+            {
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException($"Condition not met within {timeout}. Last status: {last?.ToJsonString()}");
+    }
+
+    /// <summary>Texts shown by each contribution of <paramref name="plugin"/>, one list per instance.</summary>
+    public static List<string[]> Texts(JsonObject status, string plugin) =>
+        status["contributions"]!.AsArray()
+            .Where(c => (string?)c!["plugin"] == plugin && c["reason"] is null)
+            .Select(c => c!["texts"]!.AsArray().Select(t => (string)t!).ToArray())
+            .ToList();
+
+    /// <summary>
+    /// Copies a built plugin folder into <c>&lt;data&gt;\plugins\&lt;id&gt;</c>, setting the manifest id
+    /// (and the entry arguments, when given).
+    /// </summary>
+    public string CopyPlugin(string sourceDirectory, string id, string[]? entryArgs = null)
+    {
+        var target = Path.Combine(DataRoot, "plugins", id);
+        foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            if (Path.GetFileName(file) == "plugin.json")
+            {
+                continue;
+            }
+
+            var destination = Path.Combine(target, Path.GetRelativePath(sourceDirectory, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination);
+        }
+
+        var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(sourceDirectory, "plugin.json")))!.AsObject();
+        manifest["id"] = id;
+        if (entryArgs is not null)
+        {
+            manifest["entry"]!["args"] = new JsonArray(entryArgs.Select(a => (JsonNode?)a).ToArray());
+        }
+
+        File.WriteAllText(Path.Combine(target, "plugin.json"), manifest.ToJsonString());
+        return target;
+    }
+
+    /// <summary>Writes <c>&lt;data&gt;\layouts\subzerodev.default.json</c>: one bottom panel whose end zone holds these instances.</summary>
+    public string WriteDefaultLayout(params (Guid Id, string Plugin, string Contribution)[] instances)
+    {
+        var layout = new JsonObject
+        {
+            ["schemaVersion"] = 1,
+            ["id"] = "subzerodev.default",
+            ["displayName"] = "Test layout",
+            ["panels"] = new JsonArray(new JsonObject
+            {
+                ["id"] = "6f0d3c1e-5a3b-4f0e-9c1d-2b7a8e4f5a01",
+                ["monitor"] = "primary",
+                ["placement"] = new JsonObject { ["edge"] = "bottom" },
+                ["thickness"] = 40,
+                ["behaviour"] = "reserve",
+                ["zones"] = new JsonObject
+                {
+                    ["end"] = new JsonArray(instances.Select(i => (JsonNode?)new JsonObject
+                    {
+                        ["id"] = i.Id.ToString("D"),
+                        ["plugin"] = i.Plugin,
+                        ["contribution"] = i.Contribution,
+                    }).ToArray()),
+                },
+            }),
+        };
+        return WriteDataFile(Path.Combine("layouts", "subzerodev.default.json"), layout.ToJsonString());
+    }
+
+    public static string ContentDirectory => Path.Combine(Path.GetDirectoryName(HostExe)!, "content");
+
+    public static string TestPluginDirectory => Metadata("TestPluginDir");
+
     public async Task<int> StopAsync()
     {
         await File.WriteAllTextAsync(Path.Combine(HookDirectory, "exit"), string.Empty);

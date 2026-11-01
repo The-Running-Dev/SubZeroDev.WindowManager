@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <!-- Plugin-facing: plain net10.0, so plugins need no Windows target framework (decision 2026-11-01, S2). -->
+    <TargetFramework>net10.0</TargetFramework>
+    <TargetPlatformMinVersion></TargetPlatformMinVersion>
+    <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
     <RootNamespace>SubZeroDev.WindowManager.Protocol</RootNamespace>
   </PropertyGroup>
 </Project>

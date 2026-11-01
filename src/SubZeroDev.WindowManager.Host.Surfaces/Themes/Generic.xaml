@@ -77,4 +77,58 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <Style TargetType="wm:WmText">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmText">
+                    <TextBlock x:Name="Text" Foreground="#FFE6E6E6" FontSize="13" VerticalAlignment="Center" Text="{TemplateBinding Text}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="wm:WmIcon">
+        <Setter Property="Width" Value="20" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmIcon">
+                    <Image Source="{TemplateBinding Icon}" Stretch="Uniform" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="wm:WmStack">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmStack">
+                    <StackPanel x:Name="PART_Items" Spacing="4" VerticalAlignment="Center" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="wm:WmSpacer">
+        <Setter Property="Width" Value="8" />
+        <Setter Property="Height" Value="8" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmSpacer">
+                    <Border />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="wm:WmSeparator">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmSeparator">
+                    <Rectangle Width="1" MinHeight="16" Margin="4,0" Fill="#FF3A3A3A" VerticalAlignment="Stretch" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

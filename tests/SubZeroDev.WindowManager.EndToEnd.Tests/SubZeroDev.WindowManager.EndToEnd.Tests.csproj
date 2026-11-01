@@ -15,9 +15,11 @@
     <!-- Built first so the executables exist; nothing is referenced at compile time. -->
     <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Host.App\SubZeroDev.WindowManager.Host.App.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Guardian\SubZeroDev.WindowManager.Guardian.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\SubZeroDev.WindowManager.TestPlugin\SubZeroDev.WindowManager.TestPlugin.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
   <ItemGroup>
     <AssemblyMetadata Include="HostExe" Value="$(MSBuildThisFileDirectory)..\..\src\SubZeroDev.WindowManager.Host.App\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\SubZeroDev.WindowManager.Host.exe" />
     <AssemblyMetadata Include="GuardianExe" Value="$(MSBuildThisFileDirectory)..\..\src\SubZeroDev.WindowManager.Guardian\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\SubZeroDev.WindowManager.exe" />
+    <AssemblyMetadata Include="TestPluginDir" Value="$(MSBuildThisFileDirectory)..\SubZeroDev.WindowManager.TestPlugin\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)" />
   </ItemGroup>
 </Project>

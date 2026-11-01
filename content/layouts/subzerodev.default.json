@@ -9,7 +9,11 @@
       "placement": { "edge": "bottom" },
       "thickness": 40,
       "behaviour": "reserve",
-      "zones": {}
+      "zones": {
+        "end": [
+          { "id": "3b8e6c2a-9d41-4f7e-a5c0-1e2d3f4a5b60", "plugin": "subzerodev.clock", "contribution": "clock" }
+        ]
+      }
     }
   ]
 }

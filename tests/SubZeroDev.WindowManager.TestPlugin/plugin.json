@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.testplugin",
+  "version": "0.1.0",
+  "displayName": "Test plugin",
+  "publisher": "SubZeroDev",
+  "description": "Misbehaves on purpose for end-to-end tests. The first entry argument names the scenario.",
+  "hostApi": "^1.0",
+  "entry": { "path": "SubZeroDev.WindowManager.TestPlugin.exe", "args": [ "invalid-view" ] },
+  "modes": [ "coexistence", "replacement" ],
+  "contributions": [
+    { "id": "probe", "kind": "panelItem", "displayName": "Probe", "multiInstance": true }
+  ],
+  "settingsVersion": 1
+}

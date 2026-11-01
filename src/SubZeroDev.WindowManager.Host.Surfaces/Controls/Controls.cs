@@ -128,3 +128,135 @@ public sealed partial class WmPlaceholder : Control
 
     private void UpdateState() => VisualStateManager.GoToState(this, Reason, useTransitions: false);
 }
+
+/// <summary>A <c>Text</c> element. Restyled through <c>Wm.Element.Text</c> and <c>Wm.Element.Text.&lt;class&gt;</c>.</summary>
+public sealed partial class WmText : Control
+{
+    public static readonly DependencyProperty TextProperty =
+        DependencyProperty.Register(nameof(Text), typeof(string), typeof(WmText), new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty WrapProperty =
+        DependencyProperty.Register(nameof(Wrap), typeof(bool), typeof(WmText), new PropertyMetadata(false));
+
+    public WmText() => DefaultStyleKey = typeof(WmText);
+
+    public string Text
+    {
+        get => (string)GetValue(TextProperty);
+        set => SetValue(TextProperty, value);
+    }
+
+    public bool Wrap
+    {
+        get => (bool)GetValue(WrapProperty);
+        set => SetValue(WrapProperty, value);
+    }
+}
+
+/// <summary>
+/// An <c>Icon</c> element. <see cref="Icon"/> carries the resolved image; until icon resolution
+/// arrives with asset packs, <see cref="IconName"/> carries the named id so a theme can map it.
+/// </summary>
+public sealed partial class WmIcon : Control
+{
+    public static readonly DependencyProperty IconProperty =
+        DependencyProperty.Register(nameof(Icon), typeof(Microsoft.UI.Xaml.Media.ImageSource), typeof(WmIcon), new PropertyMetadata(null));
+
+    public static readonly DependencyProperty IconNameProperty =
+        DependencyProperty.Register(nameof(IconName), typeof(string), typeof(WmIcon), new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty SizeProperty =
+        DependencyProperty.Register(nameof(Size), typeof(string), typeof(WmIcon), new PropertyMetadata("medium"));
+
+    public WmIcon() => DefaultStyleKey = typeof(WmIcon);
+
+    public Microsoft.UI.Xaml.Media.ImageSource? Icon
+    {
+        get => (Microsoft.UI.Xaml.Media.ImageSource?)GetValue(IconProperty);
+        set => SetValue(IconProperty, value);
+    }
+
+    public string IconName
+    {
+        get => (string)GetValue(IconNameProperty);
+        set => SetValue(IconNameProperty, value);
+    }
+
+    public string Size
+    {
+        get => (string)GetValue(SizeProperty);
+        set => SetValue(SizeProperty, value);
+    }
+}
+
+/// <summary>
+/// A <c>Stack</c> element. Its template must hold a <see cref="StackPanel"/> named <c>PART_Items</c>;
+/// the children are placed there whenever the template is applied.
+/// </summary>
+public sealed partial class WmStack : Control
+{
+    public const string ItemsPart = "PART_Items";
+
+    public static readonly DependencyProperty OrientationProperty =
+        DependencyProperty.Register(nameof(Orientation), typeof(Orientation), typeof(WmStack),
+            new PropertyMetadata(Orientation.Horizontal, (d, _) => ((WmStack)d).UpdateOrientation()));
+
+    private StackPanel? _items;
+
+    public WmStack() => DefaultStyleKey = typeof(WmStack);
+
+    public Orientation Orientation
+    {
+        get => (Orientation)GetValue(OrientationProperty);
+        set => SetValue(OrientationProperty, value);
+    }
+
+    public IList<UIElement> Children { get; } = [];
+
+    protected override void OnApplyTemplate()
+    {
+        base.OnApplyTemplate();
+        _items?.Children.Clear();
+        _items = GetTemplateChild(ItemsPart) as StackPanel;
+        if (_items is null)
+        {
+            return;
+        }
+
+        foreach (var child in Children)
+        {
+            _items.Children.Add(child);
+        }
+
+        UpdateOrientation();
+    }
+
+    private void UpdateOrientation()
+    {
+        if (_items is not null)
+        {
+            _items.Orientation = Orientation;
+        }
+    }
+}
+
+/// <summary>A <c>Spacer</c> element. <see cref="Flex"/> asks the template to take the free space.</summary>
+public sealed partial class WmSpacer : Control
+{
+    public static readonly DependencyProperty FlexProperty =
+        DependencyProperty.Register(nameof(Flex), typeof(bool), typeof(WmSpacer), new PropertyMetadata(false));
+
+    public WmSpacer() => DefaultStyleKey = typeof(WmSpacer);
+
+    public bool Flex
+    {
+        get => (bool)GetValue(FlexProperty);
+        set => SetValue(FlexProperty, value);
+    }
+}
+
+/// <summary>A <c>Separator</c> element.</summary>
+public sealed partial class WmSeparator : Control
+{
+    public WmSeparator() => DefaultStyleKey = typeof(WmSeparator);
+}

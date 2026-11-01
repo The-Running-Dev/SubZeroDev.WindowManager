@@ -8,9 +8,13 @@ namespace SubZeroDev.WindowManager.Host.Core;
 /// <summary>
 /// JSON documents under the data root, with built-in layouts and presets under the content root as a
 /// read-only fallback. Writes go to the data root only, through a temp file in the same directory (I14).
+/// After <see cref="StartWatching"/>, a hand edit under the data root raises <see cref="Changed"/> with
+/// <see cref="ChangeOrigin.External"/> once the file has been quiet for 300 ms; the host's own writes do not.
 /// </summary>
-public sealed class ConfigStore : IConfigStore
+public sealed class ConfigStore : IConfigStore, IDisposable
 {
+    public static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(300);
+
     public const int SupportedSchemaVersion = 1;
 
     private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
@@ -19,6 +23,11 @@ public sealed class ConfigStore : IConfigStore
 
     private readonly Locations _locations;
     private readonly SemaphoreSlim _writer = new(1, 1);
+    private readonly Lock _watchGate = new();
+    private readonly Dictionary<DocumentId, string?> _knownHashes = [];
+    private readonly HashSet<DocumentId> _dirty = [];
+    private FileSystemWatcher? _watcher;
+    private Timer? _settle;
 
     public ConfigStore(Locations locations) => _locations = locations;
 
@@ -59,6 +68,7 @@ public sealed class ConfigStore : IConfigStore
         var result = await WriteLockedAsync(id, basedOnHash, content, ct).ConfigureAwait(false);
         if (result.Ok)
         {
+            Remember(id, result.Value!.ContentHash);
             Changed?.Invoke(this, new DocumentChangedEventArgs(id, result.Value!, ChangeOrigin.Host));
         }
 
@@ -70,10 +80,61 @@ public sealed class ConfigStore : IConfigStore
         var result = await DeleteLockedAsync(id, basedOnHash, ct).ConfigureAwait(false);
         if (result.Ok)
         {
-            Changed?.Invoke(this, new DocumentChangedEventArgs(id, Get(id), ChangeOrigin.Host));
+            var state = Get(id);
+            Remember(id, state.ContentHash);
+            Changed?.Invoke(this, new DocumentChangedEventArgs(id, state, ChangeOrigin.Host));
         }
 
         return result;
+    }
+
+    /// <summary>Starts reporting edits made outside the host. Idempotent.</summary>
+    public void StartWatching()
+    {
+        lock (_watchGate)
+        {
+            if (_watcher is not null)
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(_locations.DataRoot);
+            foreach (var kind in Enum.GetValues<DocumentKind>())
+            {
+                foreach (var id in List(kind))
+                {
+                    _knownHashes[id] = Get(id).ContentHash;
+                }
+            }
+
+            _settle = new Timer(_ => RaiseExternal(), null, Timeout.Infinite, Timeout.Infinite);
+            _watcher = new FileSystemWatcher(_locations.DataRoot, "*.json")
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            };
+            _watcher.Changed += (_, e) => Touch(e.FullPath);
+            _watcher.Created += (_, e) => Touch(e.FullPath);
+            _watcher.Deleted += (_, e) => Touch(e.FullPath);
+            _watcher.Renamed += (_, e) =>
+            {
+                Touch(e.OldFullPath);
+                Touch(e.FullPath);
+            };
+            _watcher.EnableRaisingEvents = true;
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_watchGate)
+        {
+            _watcher?.Dispose();
+            _settle?.Dispose();
+            _watcher = null;
+        }
+
+        _writer.Dispose();
     }
 
     // Changed is raised by the two methods above once the writer is released, so handlers may write.
@@ -151,6 +212,76 @@ public sealed class ConfigStore : IConfigStore
         finally
         {
             _writer.Release();
+        }
+    }
+
+    /// <summary>Maps a file under the data root back to the document it holds, or null.</summary>
+    internal DocumentId? IdForPath(string path)
+    {
+        var full = Path.GetFullPath(path);
+        if (string.Equals(full, UserPath(DocumentId.HostSettings), StringComparison.OrdinalIgnoreCase))
+        {
+            return DocumentId.HostSettings;
+        }
+
+        var directory = Path.GetDirectoryName(full);
+        foreach (var kind in new[] { DocumentKind.Layout, DocumentKind.Preset, DocumentKind.PluginSettings })
+        {
+            if (string.Equals(directory, UserDirectory(kind), StringComparison.OrdinalIgnoreCase))
+            {
+                var name = Path.GetFileNameWithoutExtension(full);
+                return name.StartsWith('.') ? null : new DocumentId(kind, name);
+            }
+        }
+
+        return null;
+    }
+
+    private void Remember(DocumentId id, string? hash)
+    {
+        lock (_watchGate)
+        {
+            _knownHashes[id] = hash;
+        }
+    }
+
+    private void Touch(string path)
+    {
+        if (IdForPath(path) is not { } id)
+        {
+            return;
+        }
+
+        lock (_watchGate)
+        {
+            _dirty.Add(id);
+            _settle?.Change(Debounce, Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    private void RaiseExternal()
+    {
+        List<DocumentChangedEventArgs> changes = [];
+        lock (_watchGate)
+        {
+            foreach (var id in _dirty)
+            {
+                var state = Get(id);
+                if (_knownHashes.TryGetValue(id, out var known) && known == state.ContentHash)
+                {
+                    continue;
+                }
+
+                _knownHashes[id] = state.ContentHash;
+                changes.Add(new DocumentChangedEventArgs(id, state, ChangeOrigin.External));
+            }
+
+            _dirty.Clear();
+        }
+
+        foreach (var change in changes)
+        {
+            Changed?.Invoke(this, change);
         }
     }
 

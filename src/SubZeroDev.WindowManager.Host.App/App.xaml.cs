@@ -7,6 +7,7 @@ using SubZeroDev.WindowManager.Host.Platform;
 using SubZeroDev.WindowManager.Host.Surfaces;
 using SubZeroDev.WindowManager.Host.Theming;
 using SubZeroDev.WindowManager.Protocol;
+using LogLevel = SubZeroDev.WindowManager.Host.Core.Diagnostics.LogLevel;
 
 namespace SubZeroDev.WindowManager.Host.App;
 
@@ -17,6 +18,13 @@ public sealed partial class App : Application
     private HostLog? _log;
     private ThemeEngine? _theme;
     private SurfaceManager? _surfaces;
+    private ConfigStore? _config;
+    private PackageCatalog? _catalog;
+    private PluginLogs? _pluginLogs;
+    private WorkerLauncher? _launcher;
+    private PluginSupervisor? _supervisor;
+    private ContributionHost? _contributions;
+    private string _layoutId = HostSettingsDocument.DefaultPreset;
     private TestHook? _testHook;
     private int _exiting;
 
@@ -24,6 +32,9 @@ public sealed partial class App : Application
     {
         _options = options;
         InitializeComponent();
+
+        // A layout edit closes every panel before opening the new ones; the host ends only through Exit().
+        DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
         UnhandledException += (_, e) =>
         {
             _log?.Write(LogLevel.Error, "host", $"Unhandled: {e.Exception}");
@@ -47,16 +58,13 @@ public sealed partial class App : Application
             _log?.Write(LogLevel.Error, "host", $"Startup failed: {e}");
             ExitCode = ExitCodes.StartupFailed;
             _testHook?.Stop();
-            if (_surfaces is not null)
+            try
             {
-                try
-                {
-                    await _surfaces.ShutdownAsync(CancellationToken.None);
-                }
-                catch (Exception cleanup)
-                {
-                    _log?.Write(LogLevel.Error, "host", $"Cleanup after the failed start failed: {cleanup}");
-                }
+                await StopAsync();
+            }
+            catch (Exception cleanup)
+            {
+                _log?.Write(LogLevel.Error, "host", $"Cleanup after the failed start failed: {cleanup}");
             }
 
             if (_log is not null)
@@ -74,7 +82,9 @@ public sealed partial class App : Application
         _log = new HostLog(_locations.LogsDirectory);
         _log.Write(LogLevel.Info, "host", $"Starting pid {Environment.ProcessId}, guardian {_options.GuardianPid?.ToString() ?? "none"}.");
 
-        var config = new ConfigStore(_locations);
+        Directory.CreateDirectory(Path.Combine(_locations.DataRoot, "layouts"));
+        Directory.CreateDirectory(Path.Combine(_locations.DataRoot, "plugins"));
+        var config = _config = new ConfigStore(_locations);
         var settings = await LoadSettingsAsync(config, _log);
         var preset = LoadPreset(config, settings.ActivePreset, _log);
 
@@ -94,9 +104,39 @@ public sealed partial class App : Application
             await _theme.ApplyFallbackAsync(CancellationToken.None);
         }
 
+        _catalog = new PackageCatalog(_locations, _log);
+        _pluginLogs = new PluginLogs(_locations.LogsDirectory);
+        _launcher = new WorkerLauncher();
+        var hostVersion = typeof(App).Assembly.GetName().Version is { } version ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.1.0";
+        _supervisor = new PluginSupervisor(_catalog, _launcher, _pluginLogs, _log, _locations, HostMode.Coexistence, hostVersion);
+        _contributions = new ContributionHost(_supervisor, _catalog, _pluginLogs, _log);
+
         var monitors = new MonitorService();
-        _surfaces = new SurfaceManager(config, monitors, new AppBarService(monitors), _theme, _log);
-        await _surfaces.ApplyLayoutAsync(LoadLayout(config, preset.Layout, _log), CancellationToken.None);
+        _surfaces = new SurfaceManager(config, monitors, new AppBarService(monitors), _theme, _contributions, _log);
+        _layoutId = preset.Layout;
+        await ApplyLayoutAsync();
+
+        // A hand edit to the active layout is applied as soon as the file settles.
+        config.Changed += (_, e) =>
+        {
+            if (e.Origin == ChangeOrigin.External && e.Id == new DocumentId(DocumentKind.Layout, _layoutId))
+            {
+                dispatcher.TryEnqueue(() => _ = ReapplyLayoutAsync());
+            }
+        };
+        config.StartWatching();
+
+        var hookDirectory = Environment.GetEnvironmentVariable(TestHook.Variable);
+        if (!string.IsNullOrWhiteSpace(hookDirectory))
+        {
+            _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher);
+            _testHook.Start();
+        }
+    }
+
+    private async Task ApplyLayoutAsync()
+    {
+        await _surfaces!.ApplyLayoutAsync(LoadLayout(_config!, _layoutId, _log!), CancellationToken.None);
         foreach (var panel in _surfaces.Panels)
         {
             var exit = new MenuFlyoutItem { Text = "Exit SubZeroDev.WindowManager" };
@@ -105,13 +145,52 @@ public sealed partial class App : Application
             menu.Items.Add(exit);
             panel.Panel.ContextFlyout = menu;
         }
+    }
 
-        var hookDirectory = Environment.GetEnvironmentVariable(TestHook.Variable);
-        if (!string.IsNullOrWhiteSpace(hookDirectory))
+    private async Task ReapplyLayoutAsync()
+    {
+        if (Volatile.Read(ref _exiting) == 1)
         {
-            _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, dispatcher);
-            _testHook.Start();
+            return;
         }
+
+        try
+        {
+            _log?.Write(LogLevel.Info, "host", $"Layout '{_layoutId}' changed on disk; applying it.");
+            await ApplyLayoutAsync();
+        }
+        catch (Exception e)
+        {
+            _log?.Write(LogLevel.Error, "host", $"Applying the changed layout failed: {e}");
+        }
+    }
+
+    /// <summary>Stops the workers first so none outlives the surfaces it drew on, then closes the panels.</summary>
+    private async Task StopAsync()
+    {
+        _config?.Dispose();
+        _catalog?.Dispose();
+        if (_contributions is not null)
+        {
+            await _contributions.DisposeAsync();
+        }
+
+        if (_supervisor is not null)
+        {
+            await _supervisor.StopAllAsync(CancellationToken.None);
+        }
+
+        if (_surfaces is not null)
+        {
+            await _surfaces.ShutdownAsync(CancellationToken.None);
+        }
+
+        if (_pluginLogs is not null)
+        {
+            await _pluginLogs.DisposeAsync();
+        }
+
+        _launcher?.Dispose();
     }
 
     public async Task ShutdownAsync()
@@ -122,11 +201,7 @@ public sealed partial class App : Application
         }
 
         _testHook?.Stop();
-        if (_surfaces is not null)
-        {
-            await _surfaces.ShutdownAsync(CancellationToken.None);
-        }
-
+        await StopAsync();
         _log?.Write(LogLevel.Info, "host", "Stopped.");
         if (_log is not null)
         {
