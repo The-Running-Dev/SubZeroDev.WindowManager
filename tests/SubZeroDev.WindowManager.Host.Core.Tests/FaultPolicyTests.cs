@@ -87,12 +87,35 @@ public sealed class FaultPolicyTests
             }
         }
 
-        // Second 0 goes over at 700 ms, so the flood is 10 s after that, not 10 s after the second began.
+        // The 201st message, at 700 ms, is the first over the rate; the flood is 10 s after it.
         Assert.Equal(10_700, first);
     }
 
     [Fact]
-    public void S3_7_a_quiet_second_ends_the_run()
+    public void S3_7_a_burst_then_a_flood_a_second_later_is_timed_from_the_flood()
+    {
+        long now = 900;
+        var meter = new FloodMeter(200, TimeSpan.FromSeconds(10), () => now);
+        for (var i = 0; i < 1000; i++)
+        {
+            meter.Record();
+        }
+
+        // The flood starts in the next whole second, but more than a second after the burst.
+        var first = long.MaxValue;
+        for (now = 1_950; now < 14_000 && first == long.MaxValue; now += 2)
+        {
+            if (meter.Record() == FloodVerdict.Flood)
+            {
+                first = now;
+            }
+        }
+
+        Assert.InRange(first - 1_950, 10_000, 11_000);
+    }
+
+    [Fact]
+    public void S3_7_traffic_back_within_the_rate_ends_the_run()
     {
         long now = 0;
         var meter = new FloodMeter(200, TimeSpan.FromSeconds(10), () => now);
@@ -101,12 +124,15 @@ public sealed class FaultPolicyTests
             Assert.NotEqual(FloodVerdict.Flood, meter.Record());
         }
 
-        // Second 9 stays within the rate, so the run over it starts again at second 10.
+        // A second at 100 messages ends within the rate, so the run starts again with the next flood.
+        var last = FloodVerdict.Over;
         for (now = 9_000; now < 10_000; now += 10)
         {
-            Assert.Equal(FloodVerdict.Within, meter.Record());
+            last = meter.Record();
+            Assert.NotEqual(FloodVerdict.Flood, last);
         }
 
+        Assert.Equal(FloodVerdict.Within, last);
         for (now = 10_000; now < 19_000; now += 2)
         {
             Assert.NotEqual(FloodVerdict.Flood, meter.Record());

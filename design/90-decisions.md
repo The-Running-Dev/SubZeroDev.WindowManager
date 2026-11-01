@@ -13,22 +13,24 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
-## 2026-11-01 — S3: The message rate is 200 a second, measured in one-second windows
+## 2026-11-01 — S3: The message rate is 200 a second, measured over the trailing second
 - **Context:** S3.7 needs a configured rate, and the design names none. A clock or a media widget sends a few patches a second; a drag or a progress bar can send dozens.
-- **Chosen:** `SupervisorTimings.MessagesPerSecond` = 200, counted per whole second. Past the rate, events are dropped (with a rate-limited log line) and `state.patch` and `view.set` still pass, because the host coalesces them latest-wins. Once a message goes over the rate, ten seconds in which every whole second stays over close the channel with `Flood`, timed from that first message; a second within the rate, or with no messages, starts the count again.
+- **Chosen:** `SupervisorTimings.MessagesPerSecond` = 200, counted over the second before each message. Past the rate, events are dropped (with a rate-limited log line) and `state.patch` and `view.set` still pass, because the host coalesces them latest-wins. Ten seconds in which every message is over the rate close the channel with `Flood`, timed from the first; a message within the rate starts the count again.
 - **Rejected:**
-  - A token bucket, because whole-second windows are easier to reason about in logs and tests and the difference does not matter at this rate.
+  - Whole-second windows, because a burst late in one second and a flood early in the next counted as one run, and CI saw a flood faulted 9 s after it began.
+  - A token bucket, because it allows a sustained rate over the limit after an idle spell, and the trailing second is easier to reason about in logs and tests.
   - Dropping patches over the rate, because a dropped patch can leave the wrong final value on screen (S3.7).
 
 ## 2026-11-01 — S3: The heartbeat is checked every second
 - **Context:** S3.2 allows 10–15 s from the last reply to the fault. Pings go out every 5 s with a 10 s timeout.
-- **Chosen:** The heartbeat loop wakes every second (a tenth of the timeout when that is shorter), so the fault lands 10–11 s after the last reply. Only one ping is in flight at a time.
+- **Chosen:** The heartbeat loop wakes every second (a tenth of the timeout when that is shorter), so the fault lands 10–11 s after the last reply. Only one ping is in flight at a time, and the fault needs one to be unanswered. A check that runs more than half the timeout late means the host stalled, so the silence is measured again from then.
 - **Rejected:**
   - Faulting when a single ping times out, because that measures from the ping, not from the last reply, and could fault up to 15 s plus a ping interval late.
+  - Counting silence across a host stall, because a debugger break or a sleeping laptop would fault every healthy worker.
 
 ## 2026-11-01 — S3: Start failures count against the restart budget
 - **Context:** A worker that fails its handshake or `initialize` would otherwise be restarted forever, or never.
-- **Chosen:** Every fault — exit, broken pipe, heartbeat, handshake, protocol violation, flood or failed start — goes through the same budget, backoff and Unavailable path.
+- **Chosen:** Every fault — exit, broken pipe, heartbeat, handshake, protocol violation, flood or failed start — goes through the same budget, backoff and Unavailable path. A start that throws part-way kills the process and closes the pipe, then faults with `StartFailed`; a start cancelled by shutdown cleans up the same way and leaves the plugin Stopped. After the supervisor is disposed, nothing starts.
 - **Rejected:**
   - Treating start failures as permanent, because a slow virus scan on first launch makes them transient.
 

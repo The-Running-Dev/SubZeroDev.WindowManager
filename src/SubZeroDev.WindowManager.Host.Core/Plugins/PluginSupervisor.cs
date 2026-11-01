@@ -249,7 +249,37 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
             return new Outcome(problem);
         }
 
+        if (_disposing.IsCancellationRequested)
+        {
+            return Outcome.Fail(CoreErrorCode.InvalidState, $"{pluginId} cannot start; the supervisor is shut down.");
+        }
+
         SetStatus(worker, PluginState.Starting);
+        using var starting = CancellationTokenSource.CreateLinkedTokenSource(ct, _disposing.Token);
+        try
+        {
+            return await LaunchAsync(worker, manifest, starting.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (starting.IsCancellationRequested)
+        {
+            _pluginLogs.Write(pluginId, "host", "Start cancelled.");
+            SetStatus(worker, PluginState.Stopped);
+            ct.ThrowIfCancellationRequested();
+            return Outcome.Fail(CoreErrorCode.InvalidState, $"{pluginId} did not start; the supervisor is shutting down.");
+        }
+        catch (Exception e)
+        {
+            return Fault(worker, FaultReason.StartFailed, e.Message);
+        }
+    }
+
+    /// <summary>
+    /// Launches the worker, completes the handshake and <c>initialize</c>, and starts watching it.
+    /// Whatever fails or is cancelled part-way kills the process and closes the pipe before it propagates.
+    /// </summary>
+    private async Task<Outcome> LaunchAsync(Worker worker, PluginManifest manifest, CancellationToken ct)
+    {
+        var pluginId = worker.Status.PluginId;
         var root = _catalog.All(PackageKind.Plugin).First(package => package.Id == pluginId).RootPath;
         var dataDirectory = Path.Combine(_locations.DataRoot, "plugin-data", pluginId);
         Directory.CreateDirectory(dataDirectory);
@@ -264,15 +294,58 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
 
         var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-        var started = await _launcher.StartAsync(
-            new WorkerStartInfo(Path.GetFullPath(Path.Combine(root, manifest.Entry.Path)), arguments, root), ct).ConfigureAwait(false);
-        if (!started.Ok)
+        IWorkerProcess? process = null;
+        WorkerChannel? channel = null;
+        try
         {
+            var started = await _launcher.StartAsync(
+                new WorkerStartInfo(Path.GetFullPath(Path.Combine(root, manifest.Entry.Path)), arguments, root), ct).ConfigureAwait(false);
+            if (!started.Ok)
+            {
+                await pipe.DisposeAsync().ConfigureAwait(false);
+                return Fault(worker, FaultReason.StartFailed, started.Error!.Detail);
+            }
+
+            process = started.Value!;
+            (channel, var outcome) = await ConnectAsync(worker, pipe, process, token, dataDirectory, ct).ConfigureAwait(false);
+            if (channel is null)
+            {
+                return outcome;
+            }
+        }
+        catch
+        {
+            if (channel is not null)
+            {
+                await channel.DisposeAsync().ConfigureAwait(false);
+            }
+
             await pipe.DisposeAsync().ConfigureAwait(false);
-            return Fault(worker, FaultReason.StartFailed, started.Error!.Detail);
+            if (process is not null)
+            {
+                await KillAsync(process).ConfigureAwait(false);
+            }
+
+            throw;
         }
 
-        var process = started.Value!;
+        worker.Process = process;
+        worker.Channel = channel;
+        worker.Stopping = false;
+        SetStatus(worker, PluginState.Running, process.ProcessId);
+        _log.Write(LogLevel.Info, "plugins", $"{pluginId} running as process {process.ProcessId}.");
+        _ = WatchAsync(worker, process, channel);
+        return Outcome.Success;
+    }
+
+    /// <summary>
+    /// Waits for the worker to connect, then completes the handshake and <c>initialize</c>. Returns the open
+    /// channel, or no channel and the outcome once the process has been dealt with.
+    /// </summary>
+    private async Task<(WorkerChannel? Channel, Outcome Outcome)> ConnectAsync(Worker worker, NamedPipeServerStream pipe,
+        IWorkerProcess process, string token, string dataDirectory, CancellationToken ct)
+    {
+        var pluginId = worker.Status.PluginId;
         _ = PumpStandardErrorAsync(pluginId, process.StandardError);
         _pluginLogs.Write(pluginId, "host", $"Started process {process.ProcessId}.");
 
@@ -297,8 +370,8 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             await pipe.DisposeAsync().ConfigureAwait(false);
-            return await AbortAsync(worker, process, process.Exited.IsCompleted ? FaultReason.Exited : FaultReason.HandshakeTimeout,
-                process.Exited.IsCompleted ? $"Exited with code {process.Exited.Result} before connecting." : "Did not connect within 10 s.");
+            return (null, await AbortAsync(worker, process, process.Exited.IsCompleted ? FaultReason.Exited : FaultReason.HandshakeTimeout,
+                process.Exited.IsCompleted ? $"Exited with code {process.Exited.Result} before connecting." : "Did not connect within 10 s."));
         }
 
         WorkerChannel? channel;
@@ -311,8 +384,8 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             await pipe.DisposeAsync().ConfigureAwait(false);
-            return await AbortAsync(worker, process, process.Exited.IsCompleted ? FaultReason.Exited : FaultReason.HandshakeTimeout,
-                process.Exited.IsCompleted ? $"Exited with code {process.Exited.Result} during the handshake." : "No hello answered within 10 s.");
+            return (null, await AbortAsync(worker, process, process.Exited.IsCompleted ? FaultReason.Exited : FaultReason.HandshakeTimeout,
+                process.Exited.IsCompleted ? $"Exited with code {process.Exited.Result} during the handshake." : "No hello answered within 10 s."));
         }
 
         if (channel is null)
@@ -323,10 +396,10 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
                 await KillAsync(process).ConfigureAwait(false);
                 var problem = new CoreError(CoreErrorCode.HostApiMismatch, failure.Detail, false);
                 SetStatus(worker, PluginState.Incompatible, problems: [problem]);
-                return new Outcome(problem);
+                return (null, new Outcome(problem));
             }
 
-            return await AbortAsync(worker, process, failure.Reason, $"{WireErrorCodes.Unauthorised} {failure.Detail}");
+            return (null, await AbortAsync(worker, process, failure.Reason, $"{WireErrorCodes.Unauthorised} {failure.Detail}"));
         }
 
         channel.NotificationReceived += (_, notification) => OnNotification(pluginId, notification);
@@ -339,16 +412,10 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         if (!initialize.Ok)
         {
             await channel.DisposeAsync().ConfigureAwait(false);
-            return await AbortAsync(worker, process, FaultReason.ProtocolViolation, $"initialize failed: {initialize.Error!.Detail}");
+            return (null, await AbortAsync(worker, process, FaultReason.ProtocolViolation, $"initialize failed: {initialize.Error!.Detail}"));
         }
 
-        worker.Process = process;
-        worker.Channel = channel;
-        worker.Stopping = false;
-        SetStatus(worker, PluginState.Running, process.ProcessId);
-        _log.Write(LogLevel.Info, "plugins", $"{pluginId} running as process {process.ProcessId}.");
-        _ = WatchAsync(worker, process, channel);
-        return Outcome.Success;
+        return (channel, Outcome.Success);
     }
 
     private async Task WatchAsync(Worker worker, IWorkerProcess process, WorkerChannel channel)
@@ -358,6 +425,7 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         var ended = await Task.WhenAny(process.Exited, channel.Closed, heartbeat).ConfigureAwait(false);
         await beat.CancelAsync().ConfigureAwait(false);
         await worker.Gate.WaitAsync().ConfigureAwait(false);
+        var (reason, detail) = (FaultReason.Exited, "The worker ended.");
         try
         {
             if (worker.Stopping || !ReferenceEquals(worker.Channel, channel))
@@ -365,7 +433,7 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
                 return;
             }
 
-            var (reason, detail) = ended == process.Exited ? (FaultReason.Exited, $"Exited with code {process.Exited.Result}.")
+            (reason, detail) = ended == process.Exited ? (FaultReason.Exited, $"Exited with code {process.Exited.Result}.")
                 : ended == heartbeat ? (FaultReason.HeartbeatTimeout, heartbeat.Result ?? "No ping reply.")
                 : (channel.Closed.Result.Reason, channel.Closed.Result.Detail);
             worker.Channel = null;
@@ -376,6 +444,11 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         catch (Exception e)
         {
             _log.Write(LogLevel.Error, "plugins", $"Watching {worker.Status.PluginId} failed: {e}");
+            if (worker.Status.State == PluginState.Running && worker.Channel is null)
+            {
+                // The channel is gone, so the worker must not stay Running whatever failed on the way.
+                Fault(worker, reason, detail);
+            }
         }
         finally
         {
@@ -385,14 +458,18 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
 
     /// <summary>
     /// Pings the worker every <see cref="SupervisorTimings.PingInterval"/>; completes with the fault
-    /// detail once no reply has arrived for <see cref="SupervisorTimings.PingTimeout"/>, or with null
-    /// when cancelled.
+    /// detail once a ping is unanswered and no reply has arrived for <see cref="SupervisorTimings.PingTimeout"/>,
+    /// or with null when cancelled. A check more than half the timeout late means the host itself stalled,
+    /// so the silence is measured again from then rather than blamed on the worker.
     /// </summary>
     private async Task<string?> HeartbeatAsync(WorkerChannel channel, CancellationToken ct)
     {
         var check = TimeSpan.FromMilliseconds(Math.Min(1000, _timings.PingTimeout.TotalMilliseconds / 10));
+        var stall = _timings.PingTimeout.TotalMilliseconds / 2;
         var lastReply = Environment.TickCount64;
         var lastPing = lastReply;
+        var lastCheck = lastReply;
+        long unanswered = 0;
         Task? ping = null;
         try
         {
@@ -400,8 +477,17 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
             {
                 await Task.Delay(check, ct).ConfigureAwait(false);
                 var now = Environment.TickCount64;
+                if (now - lastCheck > stall)
+                {
+                    _log.Write(LogLevel.Warning, "plugins", $"The heartbeat check ran {now - lastCheck} ms after the last; the ping timeout restarts.");
+                    Interlocked.Exchange(ref lastReply, now);
+                    Interlocked.Exchange(ref unanswered, 0);
+                    lastPing = now - (long)_timings.PingInterval.TotalMilliseconds;
+                }
+
+                lastCheck = now;
                 var silent = TimeSpan.FromMilliseconds(now - Interlocked.Read(ref lastReply));
-                if (silent >= _timings.PingTimeout)
+                if (Interlocked.Read(ref unanswered) != 0 && silent >= _timings.PingTimeout)
                 {
                     return $"No ping reply for {silent.TotalSeconds:0.0} s.";
                 }
@@ -409,12 +495,14 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
                 if (ping is not { IsCompleted: false } && now - lastPing >= _timings.PingInterval.TotalMilliseconds)
                 {
                     lastPing = now;
+                    Interlocked.CompareExchange(ref unanswered, now, 0);
                     ping = channel.RequestAsync<object?, JsonElement?>(Methods.Ping, null, _timings.PingTimeout, ct)
                         .ContinueWith(reply =>
                         {
                             if (reply.IsCompletedSuccessfully && reply.Result.Ok)
                             {
                                 Interlocked.Exchange(ref lastReply, Environment.TickCount64);
+                                Interlocked.Exchange(ref unanswered, 0);
                             }
                         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                 }
