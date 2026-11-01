@@ -392,8 +392,9 @@ public sealed partial class WmSeparator : Control
 
 /// <summary>
 /// A <c>Button</c> element. Besides <c>CommonStates</c> and <c>FocusStates</c>, the template gets
-/// <c>ActiveStates</c> (<c>Inactive</c>, <c>Active</c>) and <c>AttentionStates</c> (<c>Calm</c>,
-/// <c>Attention</c>). Restyled through <c>Wm.Element.Button</c>.
+/// <c>ActiveStates</c> (<c>Inactive</c>, <c>Active</c>), <c>AttentionStates</c> (<c>Calm</c>,
+/// <c>Attention</c>) and, as an item of a single-selection List, <c>SelectionStates</c>
+/// (<c>Unselected</c>, <c>Selected</c>). Restyled through <c>Wm.Element.Button</c>.
 /// </summary>
 public sealed partial class WmButton : Button
 {
@@ -416,6 +417,10 @@ public sealed partial class WmButton : Button
 
     public static readonly DependencyProperty BadgeProperty =
         DependencyProperty.Register(nameof(Badge), typeof(string), typeof(WmButton), new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty SelectedProperty =
+        DependencyProperty.Register(nameof(Selected), typeof(bool), typeof(WmButton),
+            new PropertyMetadata(false, (d, _) => ((WmButton)d).UpdateStates()));
 
     public WmButton() => DefaultStyleKey = typeof(WmButton);
 
@@ -455,6 +460,13 @@ public sealed partial class WmButton : Button
         set => SetValue(BadgeProperty, value);
     }
 
+    /// <summary>Whether this is the selected item of a single-selection List.</summary>
+    public bool Selected
+    {
+        get => (bool)GetValue(SelectedProperty);
+        set => SetValue(SelectedProperty, value);
+    }
+
     protected override void OnApplyTemplate()
     {
         base.OnApplyTemplate();
@@ -465,6 +477,7 @@ public sealed partial class WmButton : Button
     {
         VisualStateManager.GoToState(this, Active ? "Active" : "Inactive", useTransitions: false);
         VisualStateManager.GoToState(this, Attention ? "Attention" : "Calm", useTransitions: false);
+        VisualStateManager.GoToState(this, Selected ? "Selected" : "Unselected", useTransitions: false);
     }
 }
 
@@ -523,6 +536,125 @@ public sealed partial class WmToggle : Button
     {
         VisualStateManager.GoToState(this, Checked ? "Active" : "Inactive", useTransitions: false);
         VisualStateManager.GoToState(this, "Calm", useTransitions: false);
+    }
+}
+
+/// <summary>
+/// A <c>TextInput</c> element. An edit is reported through <see cref="Edited"/> once typing pauses for
+/// <see cref="Debounce"/>. A value from the plugin's state is shown through <see cref="Apply"/> only
+/// while no edit is pending, so it never overwrites what is being typed. Up and Down raise
+/// <see cref="Navigate"/>; Enter raises <see cref="Submit"/>. Uses the platform text box template unless
+/// <c>Wm.Element.TextInput</c> restyles it.
+/// </summary>
+public sealed partial class WmTextInput : TextBox
+{
+    public static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(150);
+
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _timer;
+    private string _known = string.Empty;
+
+    public WmTextInput()
+    {
+        TextChanged += (_, _) => OnTextChanged();
+        PreviewKeyDown += OnPreviewKeyDown;
+    }
+
+    /// <summary>Raised with the text once typing pauses.</summary>
+    public event EventHandler<string>? Edited;
+
+    /// <summary>Raised with -1 for Up and +1 for Down.</summary>
+    public event EventHandler<int>? Navigate;
+
+    public event EventHandler? Submit;
+
+    /// <summary>When <see cref="Edited"/> last fired, in Unix milliseconds; for timing checks.</summary>
+    public long EditedAtUtcMs { get; private set; }
+
+    /// <summary>Shows <paramref name="text"/> unless an edit is still pending or the text is already shown.</summary>
+    public void Apply(string text)
+    {
+        if (_timer?.IsRunning == true || text == Text)
+        {
+            _known = Text;
+            return;
+        }
+
+        _known = text;
+        Text = text;
+        SelectionStart = text.Length;
+    }
+
+    private void OnTextChanged()
+    {
+        // TextChanged arrives after the fact, so a value set through Apply is recognised by its text.
+        if (Text == _known && _timer?.IsRunning != true)
+        {
+            return;
+        }
+
+        _timer ??= CreateTimer();
+        _timer.Stop();
+        _timer.Start();
+    }
+
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer CreateTimer()
+    {
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = Debounce;
+        timer.IsRepeating = false;
+        timer.Tick += (_, _) => Flush();
+        return timer;
+    }
+
+    private void Flush()
+    {
+        _timer?.Stop();
+        if (Text == _known)
+        {
+            return;
+        }
+
+        _known = Text;
+        EditedAtUtcMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        Edited?.Invoke(this, Text);
+    }
+
+    private void OnPreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Windows.System.VirtualKey.Up:
+                Navigate?.Invoke(this, -1);
+                e.Handled = true;
+                break;
+            case Windows.System.VirtualKey.Down:
+                Navigate?.Invoke(this, 1);
+                e.Handled = true;
+                break;
+            case Windows.System.VirtualKey.Enter:
+                Submit?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
+                break;
+        }
+    }
+}
+
+/// <summary>
+/// The frame of a popup window around a plugin's popup view. <c>OpenStates</c>: <c>Opening</c>,
+/// <c>Open</c>, <c>Closing</c>. Restyled through <c>Wm.Popup</c>.
+/// </summary>
+public sealed partial class WmPopup : ContentControl
+{
+    public WmPopup()
+    {
+        DefaultStyleKey = typeof(WmPopup);
+        IsTabStop = false;
+    }
+
+    protected override void OnApplyTemplate()
+    {
+        base.OnApplyTemplate();
+        VisualStateManager.GoToState(this, "Open", useTransitions: false);
     }
 }
 

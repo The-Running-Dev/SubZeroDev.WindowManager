@@ -144,7 +144,9 @@ public sealed partial class App : Application
         var foreground = new ForegroundService();
         _contributions = new ContributionHost(_supervisor, _catalog, _pluginLogs, _log, foreground);
         _router = new CommandRouter(_catalog, _supervisor, foreground, config, _log);
-        _supervisor.WorkerRequests = _router.ServeWorkerAsync;
+        _supervisor.WorkerRequests = (pluginId, request) => request.Method is Methods.PopupOpen or Methods.PopupClose
+            ? _surfaces!.ServeWorkerAsync(pluginId, request)
+            : _router.ServeWorkerAsync(pluginId, request);
         AddBuiltIns(_router, foreground, dispatcher);
 
         var monitors = new MonitorService();

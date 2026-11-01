@@ -10,6 +10,9 @@
       "thickness": 40,
       "behaviour": "reserve",
       "zones": {
+        "start": [
+          { "id": "9a4c2e71-3d5b-4c8f-b1e6-7f0a2d9c4e18", "plugin": "subzerodev.launcher", "contribution": "launcher" }
+        ],
         "end": [
           { "id": "3b8e6c2a-9d41-4f7e-a5c0-1e2d3f4a5b60", "plugin": "subzerodev.clock", "contribution": "clock" }
         ]

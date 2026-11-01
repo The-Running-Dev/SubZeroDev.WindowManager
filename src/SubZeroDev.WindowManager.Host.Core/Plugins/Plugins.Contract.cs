@@ -62,6 +62,9 @@ public interface IPluginSupervisor
     IWorkerChannel? GetChannel(string pluginId);                         // null unless Running
 
     event EventHandler<PluginStatus> StatusChanged;
+
+    /// <summary>A worker's channel, after the handshake and before it reads its first message.</summary>
+    event EventHandler<IWorkerChannel> ChannelOpened { add { } remove { } }
 }
 
 public interface IWorkerChannel

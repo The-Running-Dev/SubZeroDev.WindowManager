@@ -26,18 +26,26 @@ namespace SubZeroDev.WindowManager.Host.Surfaces;
 /// <c>IconName</c>. A Faulted or Unavailable placeholder's Retry runs <c>retry</c> with the plugin id,
 /// and its detail shows as the tooltip. A Button or Toggle sends its action through <c>actions</c>, with
 /// <c>$item</c> args taken from its item and its events carrying the item key; when that fails, a
-/// <see cref="WmNotice"/> shows next to the element for a few seconds and nothing is resent (I19). Call
-/// on the UI thread.
+/// <see cref="WmNotice"/> shows next to the element for a few seconds and nothing is resent (I19). A
+/// Button whose action names a popup opens it anchored to the Button. A single-selection List keeps one
+/// selected item (the first when its <c>selectedKey</c> names none); a TextInput whose <c>navigates</c>
+/// names that List moves the selection with Up and Down, and Enter runs the selected item's action. The
+/// same view renders a plugin's popup surface (<see cref="ForPopup"/>). Call on the UI thread.
 /// </summary>
 public sealed class ContributionView
 {
     private const int ButtonIconPx = 32;
+    private readonly ContributionInstance? _instance;
     private readonly Func<string, object?> _lookup;
     private readonly Action<string>? _retry;
     private readonly Orientation _panelAxis;
     private readonly IElementActions? _actions;
+    private readonly ElementEventSink? _sendEvent;
+    private readonly PopupOpener? _openPopup;
     private readonly IconResolver? _icons;
     private readonly Dictionary<FrameworkElement, ElementInfo> _info = [];
+    private readonly Dictionary<string, ListItems> _lists = new(StringComparer.Ordinal);
+    private readonly Dictionary<FrameworkElement, Action<InvocationSource>> _invokers = [];
     private readonly List<ElementNotice> _notices = [];
     private Scope _root = new(null);
     private IReadOnlyDictionary<string, JsonNode?> _state = new Dictionary<string, JsonNode?>();
@@ -46,18 +54,37 @@ public sealed class ContributionView
     public static readonly TimeSpan NoticeDuration = TimeSpan.FromSeconds(4);
 
     public ContributionView(ContributionInstance instance, Orientation panelAxis, Func<string, object?> lookup,
-        Action<string>? retry = null, IElementActions? actions = null, IconResolver? icons = null)
+        Action<string>? retry = null, IElementActions? actions = null, IconResolver? icons = null, PopupOpener? openPopup = null)
+        : this(instance, instance.Plugin, panelAxis, lookup, retry, actions,
+            actions is null ? null : (elementId, kind, value, source, itemKey) => actions.SendEventAsync(instance.Id, elementId, kind, value, source, itemKey),
+            openPopup, icons)
     {
-        Instance = instance;
+    }
+
+    private ContributionView(ContributionInstance? instance, string pluginId, Orientation panelAxis, Func<string, object?> lookup,
+        Action<string>? retry, IElementActions? actions, ElementEventSink? sendEvent, PopupOpener? openPopup, IconResolver? icons)
+    {
+        _instance = instance;
+        PluginId = pluginId;
         _panelAxis = panelAxis;
         _lookup = lookup;
         _retry = retry;
         _actions = actions;
+        _sendEvent = sendEvent;
+        _openPopup = openPopup;
         _icons = icons;
         Root = new WmContribution { Style = lookup("Wm.Contribution") as Style };
     }
 
-    public ContributionInstance Instance { get; }
+    /// <summary>A view for a plugin's popup surface: vertical by default, events sent through <paramref name="sendEvent"/>.</summary>
+    public static ContributionView ForPopup(string pluginId, Func<string, object?> lookup, IElementActions? actions,
+        ElementEventSink? sendEvent, IconResolver? icons = null) =>
+        new(null, pluginId, Orientation.Vertical, lookup, null, actions, sendEvent, null, icons);
+
+    /// <summary>The instance shown; a popup view has none.</summary>
+    public ContributionInstance Instance => _instance ?? throw new InvalidOperationException("A popup view has no contribution instance.");
+
+    public string PluginId { get; }
 
     public WmContribution Root { get; }
 
@@ -83,6 +110,15 @@ public sealed class ContributionView
     /// <summary>The notices shown so far, oldest first (the last 20).</summary>
     public IReadOnlyList<ElementNotice> Notices() => [.. _notices];
 
+    /// <summary>Every TextInput shown now, in tree order.</summary>
+    public IReadOnlyList<WmTextInput> TextInputs() => [.. Walk().OfType<WmTextInput>()];
+
+    /// <summary>The key of the selected item of a single-selection List, or null.</summary>
+    public string? SelectedKey(string listId) => _lists.TryGetValue(listId, out var list) ? list.Shown : null;
+
+    /// <summary>The first element with <paramref name="elementId"/>, in tree order.</summary>
+    public FrameworkElement? Find(string elementId) => Walk().FirstOrDefault(element => element.Name == elementId);
+
     /// <summary>Shows <paramref name="snapshot"/>; <paramref name="restyle"/> rebuilds even at the same revision.</summary>
     public void Render(InstanceSnapshot? snapshot, bool restyle = false)
     {
@@ -93,36 +129,62 @@ public sealed class ContributionView
             return;
         }
 
-        _state = snapshot.State;
-        if (restyle || Reason is not null || snapshot.ViewRevision != _revision)
+        Show(snapshot.View, snapshot.ViewRevision, snapshot.State, restyle);
+    }
+
+    /// <summary>Shows a popup's <paramref name="snapshot"/>; nothing while it has no view.</summary>
+    public void Render(PopupSnapshot? snapshot, bool restyle = false)
+    {
+        Root.Style = _lookup("Wm.Contribution") as Style;
+        if (snapshot?.View is null)
         {
-            _info.Clear();
-            Reason = null;
-            _revision = snapshot.ViewRevision;
-            _root = new Scope(null);
-            Root.Content = Build(snapshot.View, _root);
+            Reset();
+            _revision = -1;
+            Root.Content = null;
+            return;
+        }
+
+        Show(snapshot.View, snapshot.ViewRevision, snapshot.State, restyle);
+    }
+
+    private void Show(JsonNode view, long revision, IReadOnlyDictionary<string, JsonNode?> state, bool restyle)
+    {
+        _state = state;
+        if (restyle || Reason is not null || Root.Content is null || revision != _revision)
+        {
+            Reset();
+            _revision = revision;
+            Root.Content = Build(view, _root);
             return;
         }
 
         Refresh(_root);
     }
 
-    private void ShowPlaceholder(PlaceholderReason reason, string? detail)
+    private void Reset()
     {
         _info.Clear();
+        _lists.Clear();
+        _invokers.Clear();
         _root = new Scope(null);
+        Reason = null;
+    }
+
+    private void ShowPlaceholder(PlaceholderReason reason, string? detail)
+    {
+        Reset();
         _revision = -1;
         Reason = reason.ToString();
         var placeholder = new WmPlaceholder
         {
-            PluginName = Instance.Plugin,
+            PluginName = PluginId,
             Reason = Reason,
             Detail = detail ?? string.Empty,
             Style = _lookup("Wm.Placeholder") as Style,
         };
         if (_retry is not null && reason is PlaceholderReason.Faulted or PlaceholderReason.Unavailable)
         {
-            placeholder.RetryCommand = new RetryCommand(() => _retry(Instance.Plugin));
+            placeholder.RetryCommand = new RetryCommand(() => _retry(PluginId));
         }
 
         if (!string.IsNullOrEmpty(detail))
@@ -200,8 +262,35 @@ public sealed class ContributionView
                 var list = new WmList { Orientation = _panelAxis };
                 Bind(props["orientation"], scope, value => list.Orientation = OrientationOf(value));
                 var items = new ListItems(list, element["itemTemplate"], scope);
+                Bind(props["selection"], scope, value =>
+                {
+                    items.Single = AsString(value) == "single";
+                    ShowSelection(items);
+                });
+                Bind(props["selectedKey"], scope, value =>
+                {
+                    items.SelectedKey = value is null ? null : AsString(value);
+                    ShowSelection(items);
+                });
                 Bind(props["items"], scope, value => Reconcile(items, value as JsonArray ?? []));
+                if (element["id"] is JsonValue listIdValue && listIdValue.TryGetValue<string>(out var listId))
+                {
+                    _lists[listId] = items;
+                }
+
                 built = list;
+                break;
+            case "textInput":
+                var input = new WmTextInput();
+                Bind(props["placeholder"], scope, value => input.PlaceholderText = AsString(value));
+                Bind(props["value"], scope, value => input.Apply(AsString(value)));
+                var navigates = props["navigates"] is JsonValue navigatesValue && navigatesValue.TryGetValue<string>(out var navigatesId)
+                    ? navigatesId
+                    : null;
+                input.Edited += (_, text) => Send(input, ElementEventKind.TextChanged, JsonValue.Create(text), null);
+                input.Navigate += (_, delta) => Navigate(navigates, delta);
+                input.Submit += (_, _) => Submit(input, navigates);
+                built = input;
                 break;
             case "spacer":
                 var spacer = new WmSpacer();
@@ -221,6 +310,7 @@ public sealed class ContributionView
                 Bind(props["badge"], scope, value => button.Badge = AsString(value));
                 var buttonAction = element["action"] as JsonObject;
                 button.Click += (_, _) => Act(button, scope, buttonAction, ElementEventKind.Invoked, null);
+                _invokers[button] = source => Act(button, scope, buttonAction, ElementEventKind.Invoked, null, source);
                 built = button;
                 break;
             case "toggle":
@@ -254,6 +344,7 @@ public sealed class ContributionView
     {
         var next = new Dictionary<string, Scope>(StringComparer.Ordinal);
         var order = new List<UIElement>();
+        list.Order.Clear();
         foreach (var node in items)
         {
             if (node is not JsonObject item || item["key"] is not JsonValue keyValue || !keyValue.TryGetValue<string>(out var key) || next.ContainsKey(key))
@@ -275,6 +366,7 @@ public sealed class ContributionView
 
             next[key] = kept;
             order.Add(kept.Element!);
+            list.Order.Add(key);
         }
 
         foreach (var gone in list.Items.Values)
@@ -290,6 +382,84 @@ public sealed class ContributionView
         }
 
         list.Control.SetItems(order);
+        ShowSelection(list);
+    }
+
+    /// <summary>
+    /// Marks the selected item of a single-selection list: the plugin's <c>selectedKey</c> when it names
+    /// an item, otherwise the first item.
+    /// </summary>
+    private static void ShowSelection(ListItems list)
+    {
+        list.Shown = list.Single && list.Order.Count > 0
+            ? list.SelectedKey is { } selected && list.Items.ContainsKey(selected) ? selected : list.Order[0]
+            : null;
+        foreach (var (key, scope) in list.Items)
+        {
+            if (scope.Elements.OfType<WmButton>().FirstOrDefault() is { } button)
+            {
+                button.Selected = key == list.Shown;
+            }
+        }
+    }
+
+    /// <summary>Moves a single-selection list's selection by <paramref name="delta"/> and tells the plugin.</summary>
+    private void Navigate(string? listId, int delta)
+    {
+        if (listId is null || !_lists.TryGetValue(listId, out var list) || !list.Single || list.Order.Count == 0)
+        {
+            return;
+        }
+
+        var at = list.Shown is { } shown ? list.Order.IndexOf(shown) : -1;
+        var next = list.Order[Math.Clamp(at + delta, 0, list.Order.Count - 1)];
+        if (next == list.Shown)
+        {
+            return;
+        }
+
+        list.SelectedKey = next;
+        ShowSelection(list);
+        if (_sendEvent is not null)
+        {
+            _ = _sendEvent(listId, ElementEventKind.SelectionChanged, JsonValue.Create(next), InvocationSource.Keyboard, next);
+        }
+    }
+
+    /// <summary>
+    /// Enter in a TextInput: runs the action of the selected item of the list it navigates, or sends
+    /// <c>ItemInvoked</c> when that item has none; without such a list, sends <c>TextSubmitted</c>.
+    /// </summary>
+    private void Submit(WmTextInput input, string? listId)
+    {
+        if (listId is not null && _lists.TryGetValue(listId, out var list) && list.Single)
+        {
+            if (list.Shown is not { } key || !list.Items.TryGetValue(key, out var item))
+            {
+                return;
+            }
+
+            if (item.Elements.Select(element => _invokers.GetValueOrDefault(element)).FirstOrDefault(invoker => invoker is not null) is { } invoke)
+            {
+                invoke(InvocationSource.Keyboard);
+            }
+            else if (_sendEvent is not null)
+            {
+                _ = ReportAsync(input, listId, _sendEvent(listId, ElementEventKind.ItemInvoked, JsonValue.Create(key), InvocationSource.Keyboard, key));
+            }
+
+            return;
+        }
+
+        Send(input, ElementEventKind.TextSubmitted, JsonValue.Create(input.Text), null);
+    }
+
+    private void Send(Control control, ElementEventKind kind, JsonNode? value, string? itemKey)
+    {
+        if (_sendEvent is not null)
+        {
+            _ = ReportAsync(control, control.Name, _sendEvent(control.Name, kind, value, InvocationSource.Keyboard, itemKey));
+        }
     }
 
     private void Forget(Scope scope)
@@ -300,6 +470,8 @@ public sealed class ContributionView
             {
                 info.IconRequest++;
             }
+
+            _invokers.Remove(element);
         }
 
         foreach (var child in scope.Children)
@@ -423,27 +595,47 @@ public sealed class ContributionView
 
     /// <summary>
     /// Runs an element's action. A click arrives as <c>pointer</c> unless the element had keyboard focus,
-    /// as it does after Tab, when Enter or Space produce the click. A Toggle never flips itself: it sends
-    /// the value it asks for and shows whatever the plugin's state says next. Popups arrive with S8.
+    /// as it does after Tab, when Enter or Space produce the click; Enter in a TextInput passes
+    /// <c>keyboard</c>. A Toggle never flips itself: it sends the value it asks for and shows whatever the
+    /// plugin's state says next. A popup action opens the plugin's popup anchored to the element.
     /// </summary>
-    private void Act(Control control, Scope scope, JsonObject? action, ElementEventKind kind, JsonNode? toggled)
+    private void Act(Control control, Scope scope, JsonObject? action, ElementEventKind kind, JsonNode? toggled,
+        InvocationSource? source = null)
     {
-        if (_actions is null || action is null)
+        if (action is null)
         {
             return;
         }
 
-        var source = control.FocusState == FocusState.Keyboard ? InvocationSource.Keyboard : InvocationSource.Pointer;
+        var from = source ?? (control.FocusState == FocusState.Keyboard ? InvocationSource.Keyboard : InvocationSource.Pointer);
         var elementId = control.Name;
         Task<Outcome> pending;
         if (action["invoke"] is JsonObject invoke && invoke["command"] is JsonValue command && command.TryGetValue<string>(out var commandId))
         {
-            pending = InvokeAsync(commandId, Resolve(invoke["args"], scope) as JsonObject, source);
+            if (_actions is null)
+            {
+                return;
+            }
+
+            pending = InvokeAsync(commandId, Resolve(invoke["args"], scope) as JsonObject, from);
         }
         else if (action["event"] is JsonValue name && name.TryGetValue<string>(out var eventName))
         {
-            pending = _actions.SendEventAsync(Instance.Id, elementId, kind,
-                kind == ElementEventKind.Toggled ? toggled : JsonValue.Create(eventName), source, scope.ItemKey);
+            if (_sendEvent is null)
+            {
+                return;
+            }
+
+            pending = _sendEvent(elementId, kind, kind == ElementEventKind.Toggled ? toggled : JsonValue.Create(eventName), from, scope.ItemKey);
+        }
+        else if (action["popup"] is JsonValue popup && popup.TryGetValue<string>(out var popupId))
+        {
+            if (_openPopup is null)
+            {
+                return;
+            }
+
+            pending = _openPopup(popupId, control, from);
         }
         else
         {
@@ -579,8 +771,26 @@ public sealed class ContributionView
         public Scope Owner { get; } = owner;
 
         public Dictionary<string, Scope> Items { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The item keys in the order shown.</summary>
+        public List<string> Order { get; } = [];
+
+        public bool Single { get; set; }
+
+        /// <summary>The key the plugin (or the last Up or Down) selected.</summary>
+        public string? SelectedKey { get; set; }
+
+        /// <summary>The key shown as selected, or null.</summary>
+        public string? Shown { get; set; }
     }
 }
+
+/// <summary>Sends what the user did to an element to the plugin that owns the view.</summary>
+public delegate Task<Outcome> ElementEventSink(string elementId, ElementEventKind kind, JsonNode? value, InvocationSource source,
+    string? itemKey);
+
+/// <summary>Opens one of the view's plugin's popups anchored to <paramref name="anchor"/>.</summary>
+public delegate Task<Outcome> PopupOpener(string popupId, FrameworkElement anchor, InvocationSource source);
 
 /// <summary>What a view knows about an element it built.</summary>
 public sealed class ElementInfo(string? itemKey)

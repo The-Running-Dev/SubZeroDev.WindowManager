@@ -27,6 +27,10 @@ public sealed record PluginManifest(
     public IReadOnlyList<string> Feeds =>
         [.. (Raw["feeds"] as JsonArray ?? []).OfType<JsonObject>().Select(feed => Text(feed, "id") ?? string.Empty)];
 
+    /// <summary>The ids under <c>popups</c>: the popup surfaces the plugin may open.</summary>
+    public IReadOnlyList<string> Popups =>
+        [.. (Raw["popups"] as JsonArray ?? []).OfType<JsonObject>().Select(popup => Text(popup, "id") ?? string.Empty)];
+
     /// <summary>The feed ids under <c>subscribes</c>: the feeds the plugin consumes.</summary>
     public IReadOnlyList<string> Subscribes =>
         [.. (Raw["subscribes"] as JsonArray ?? []).Select(item => item is JsonValue value && value.TryGetValue<string>(out var id) ? id : string.Empty)];

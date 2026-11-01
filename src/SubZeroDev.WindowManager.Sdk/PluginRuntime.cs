@@ -59,7 +59,7 @@ public static class PluginRuntime
     }
 
     /// <summary>
-    /// The ids in a list of plugin.json: <c>{ id }</c> objects for <c>commands</c> and <c>feeds</c>, plain
+    /// The ids in a list of plugin.json: <c>{ id }</c> objects for <c>commands</c>, <c>feeds</c> and <c>popups</c>, plain
     /// strings for <c>subscribes</c>. Empty when it cannot be read.
     /// </summary>
     private static HashSet<string> ReadDeclared(string list)
@@ -203,6 +203,18 @@ public static class PluginRuntime
                 case Methods.ElementEvent:
                     Enqueue(message, () => EventAsync(message.ParamsAs<ElementEventParams>()!));
                     break;
+                case Methods.PopupOpened:
+                    var opened = message.ParamsAs<PopupOpenedParams>()!;
+                    Enqueue(message, () => plugin.Context?.PopupTable.Find(opened.PopupId) is { } shown
+                        ? plugin.OnPopupOpenedAsync(shown, opened.Trigger, CancellationToken.None)
+                        : Task.CompletedTask);
+                    break;
+                case Methods.PopupClosed:
+                    var closed = message.ParamsAs<PopupClosedParams>()!;
+                    Enqueue(message, () => plugin.Context?.PopupTable.Find(closed.PopupId) is { } hidden
+                        ? plugin.OnPopupClosedAsync(hidden, closed.Reason, CancellationToken.None)
+                        : Task.CompletedTask);
+                    break;
                 case Methods.Shutdown:
                     Enqueue(message, () => ShutdownAsync(message.ParamsAs<ShutdownParams>()!));
                     break;
@@ -258,7 +270,8 @@ public static class PluginRuntime
         private async Task InitializeAsync(InitializeParams parameters)
         {
             plugin.Context = new PluginContext(connection, pluginId, parameters.Mode, parameters.DataDirectory, parameters.PluginSettings,
-                ReadDeclared("commands"), ReadDeclared("feeds"), ReadDeclared("subscribes"), callback => _callbacks.Writer.TryWrite(callback));
+                ReadDeclared("commands"), ReadDeclared("feeds"), ReadDeclared("subscribes"),
+                ReadDeclared("popups"), callback => _callbacks.Writer.TryWrite(callback));
             await plugin.OnStartAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
@@ -284,11 +297,20 @@ public static class PluginRuntime
                 ? instance.OnSettingsChangedAsync(parameters.Settings, CancellationToken.None)
                 : Task.CompletedTask;
 
-        private Task EventAsync(ElementEventParams parameters) =>
-            _instances.TryGetValue(parameters.SurfaceId, out var instance)
-                ? instance.OnEventAsync(new ElementEvent(parameters.ElementId, parameters.Kind, parameters.ItemKey,
-                    parameters.Value, parameters.Source), CancellationToken.None)
+        private Task EventAsync(ElementEventParams parameters)
+        {
+            var e = new ElementEvent(parameters.ElementId, parameters.Kind, parameters.ItemKey, parameters.Value, parameters.Source);
+            if (parameters.SurfaceId.StartsWith("popup:", StringComparison.Ordinal))
+            {
+                return plugin.Context?.PopupTable.Find(parameters.SurfaceId["popup:".Length..]) is { } popup
+                    ? plugin.OnPopupEventAsync(popup, e, CancellationToken.None)
+                    : Task.CompletedTask;
+            }
+
+            return _instances.TryGetValue(parameters.SurfaceId, out var instance)
+                ? instance.OnEventAsync(e, CancellationToken.None)
                 : Task.CompletedTask;
+        }
 
         private async Task ShutdownAsync(ShutdownParams parameters)
         {

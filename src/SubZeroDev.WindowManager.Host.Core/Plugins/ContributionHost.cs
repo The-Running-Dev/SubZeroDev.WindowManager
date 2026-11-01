@@ -19,6 +19,10 @@ public sealed record InstancePlacement(ContributionInstance Instance, SurfaceCon
 public sealed record InstanceSnapshot(Guid InstanceId, string PluginId, PlaceholderReason? Reason, string? Detail,
     JsonNode? View, long ViewRevision, IReadOnlyDictionary<string, JsonNode?> State);
 
+/// <summary>What a popup should show: <see cref="View"/> bound to <see cref="State"/>, or nothing yet. Never changes.</summary>
+public sealed record PopupSnapshot(string PluginId, string PopupId, JsonNode? View, long ViewRevision,
+    IReadOnlyDictionary<string, JsonNode?> State);
+
 public interface IContributionHost
 {
     /// <summary>Replaces the set of placed instances: new ones are created in their workers, removed ones destroyed.</summary>
@@ -38,6 +42,27 @@ public interface IContributionHost
     /// </summary>
     Task<Outcome> SendEventAsync(Guid instanceId, string elementId, ElementEventKind kind, JsonNode? value, InvocationSource source,
         string? itemKey = null);
+
+    /// <summary>The latest view of a popup surface (<c>popup:&lt;id&gt;</c>); null before its worker set one.</summary>
+    PopupSnapshot? DescribePopup(string pluginId, string popupId);
+
+    /// <summary>Whether the plugin's manifest declares the popup under <c>popups</c>.</summary>
+    bool DeclaresPopup(string pluginId, string popupId);
+
+    /// <summary>Raised off the UI thread, one at a time, whenever a popup's snapshot changes.</summary>
+    event EventHandler<PopupSnapshot> PopupChanged;
+
+    /// <summary>Raised off the UI thread with the plugin id when a worker stops or faults; its popups close.</summary>
+    event EventHandler<string> PopupOwnerStopped;
+
+    /// <summary>Sends <c>element.event</c> for an element in a popup, like <see cref="SendEventAsync"/>.</summary>
+    Task<Outcome> SendPopupEventAsync(string pluginId, string popupId, string elementId, ElementEventKind kind, JsonNode? value,
+        InvocationSource source, string? itemKey = null);
+
+    /// <summary>Grants the worker foreground rights (I18), then sends <c>popup.opened</c>.</summary>
+    Task<Outcome> NotifyPopupOpenedAsync(string pluginId, string popupId, PopupTrigger trigger);
+
+    Task<Outcome> NotifyPopupClosedAsync(string pluginId, string popupId, PopupCloseReason reason);
 }
 
 /// <summary>
@@ -61,8 +86,11 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
     private readonly Channel<Func<Task>> _work = Channel.CreateUnbounded<Func<Task>>(new UnboundedChannelOptions { SingleReader = true });
     private readonly Dictionary<Guid, Entry> _instances = [];
     private readonly HashSet<IWorkerChannel> _attached = [];
+    private readonly Dictionary<string, IWorkerChannel> _latest = new(StringComparer.Ordinal);
     private readonly Lock _snapshotGate = new();
     private readonly Dictionary<Guid, InstanceSnapshot> _snapshots = [];
+    private readonly Dictionary<(string Plugin, string Popup), PopupEntry> _popups = [];
+    private readonly Dictionary<(string Plugin, string Popup), PopupSnapshot> _popupSnapshots = [];
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _loop;
 
@@ -75,11 +103,40 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
         _pluginLogs = pluginLogs;
         _log = log;
         _supervisor.StatusChanged += (_, status) => Enqueue(() => OnStatusChanged(status));
+
+        // Popup views a worker sets while it starts arrive before it is Running.
+        _supervisor.ChannelOpened += (_, channel) => Attach(channel);
         _catalog.Changed += (_, change) => Enqueue(() => OnCatalogChanged(change));
         _loop = Task.Run(RunAsync);
     }
 
     public event EventHandler<InstanceSnapshot>? InstanceChanged;
+
+    public event EventHandler<PopupSnapshot>? PopupChanged;
+
+    public event EventHandler<string>? PopupOwnerStopped;
+
+    public bool DeclaresPopup(string pluginId, string popupId) =>
+        _catalog.GetManifest(pluginId) is { } manifest && manifest.Popups.Contains(popupId);
+
+    public PopupSnapshot? DescribePopup(string pluginId, string popupId)
+    {
+        lock (_snapshotGate)
+        {
+            return _popupSnapshots.GetValueOrDefault((pluginId, popupId));
+        }
+    }
+
+    public Task<Outcome> SendPopupEventAsync(string pluginId, string popupId, string elementId, ElementEventKind kind, JsonNode? value,
+        InvocationSource source, string? itemKey = null) =>
+        SendToWorkerAsync(pluginId, source is InvocationSource.Pointer or InvocationSource.Keyboard or InvocationSource.Hotkey,
+            Methods.ElementEvent, new ElementEventParams(PopupSurfaceId(popupId), elementId, kind, itemKey, value?.DeepClone(), source));
+
+    public Task<Outcome> NotifyPopupOpenedAsync(string pluginId, string popupId, PopupTrigger trigger) =>
+        SendToWorkerAsync(pluginId, true, Methods.PopupOpened, new PopupOpenedParams(popupId, trigger));
+
+    public Task<Outcome> NotifyPopupClosedAsync(string pluginId, string popupId, PopupCloseReason reason) =>
+        SendToWorkerAsync(pluginId, false, Methods.PopupClosed, new PopupClosedParams(popupId, reason));
 
     public IReadOnlyList<InstanceSnapshot> All
     {
@@ -157,6 +214,31 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
     }
 
     private static string SurfaceIdOf(Guid instanceId) => instanceId.ToString("D");
+
+    private static string PopupSurfaceId(string popupId) => "popup:" + popupId;
+
+    /// <summary>Sends a notification to a running worker in queue order, granting foreground first when asked.</summary>
+    private Task<Outcome> SendToWorkerAsync<TParams>(string pluginId, bool grantForeground, string method, TParams parameters)
+    {
+        var done = new TaskCompletionSource<Outcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Enqueue(() =>
+        {
+            if (_supervisor.GetChannel(pluginId) is not { } channel)
+            {
+                done.TrySetResult(Outcome.Fail(CoreErrorCode.PluginUnavailable, $"{pluginId} is not running.", retryable: true));
+                return Task.CompletedTask;
+            }
+
+            if (grantForeground)
+            {
+                _foreground?.AllowForeground(channel.ProcessId);
+            }
+
+            done.TrySetResult(channel.Notify(method, parameters));
+            return Task.CompletedTask;
+        });
+        return done.Task;
+    }
 
     private void Enqueue(Func<Task> step) => _work.Writer.TryWrite(step);
 
@@ -302,15 +384,26 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
             return;
         }
 
-        if (_attached.Add(channel))
-        {
-            channel.NotificationReceived += (_, notification) => Enqueue(() => OnNotification(channel, notification));
-        }
-
+        Attach(channel);
         foreach (var entry in Waiting(pluginId).Where(entry => entry.Reason != PlaceholderReason.Missing))
         {
             Create(channel, entry);
         }
+    }
+
+    private void Attach(IWorkerChannel channel)
+    {
+        lock (_attached)
+        {
+            if (!_attached.Add(channel))
+            {
+                return;
+            }
+
+            _latest[channel.PluginId] = channel;
+        }
+
+        channel.NotificationReceived += (_, notification) => Enqueue(() => OnNotification(channel, notification));
     }
 
     private void Create(IWorkerChannel channel, Entry entry)
@@ -377,7 +470,14 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
                 return Task.CompletedTask;
         }
 
-        _attached.RemoveWhere(channel => channel.PluginId == status.PluginId);
+        lock (_attached)
+        {
+            // A replacement worker may already be attached; only its predecessors go.
+            _attached.RemoveWhere(channel => channel.PluginId == status.PluginId
+                && !ReferenceEquals(channel, _latest.GetValueOrDefault(status.PluginId)));
+        }
+
+        ForgetPopups(status.PluginId);
         foreach (var entry in entries.Where(entry => entry.Created))
         {
             entry.Created = false;
@@ -414,6 +514,8 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
             await _supervisor.StopAsync(change.Id, _stop.Token).ConfigureAwait(false);
         }
 
+        ForgetPopups(change.Id);
+
         foreach (var entry in _instances.Values.Where(entry => entry.PluginId == change.Id))
         {
             // The new worker numbers its views from 1 again.
@@ -439,6 +541,12 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
             && surfaceElement.ValueKind == JsonValueKind.String
                 ? surfaceElement.GetString()
                 : null;
+        if (surfaceId?.StartsWith("popup:", StringComparison.Ordinal) == true)
+        {
+            OnPopupNotification(channel, notification, surfaceId["popup:".Length..]);
+            return Task.CompletedTask;
+        }
+
         var entry = Guid.TryParse(surfaceId, out var instanceId) && _instances.TryGetValue(instanceId, out var found)
             && found.PluginId == pluginId && ReferenceEquals(found.Channel, channel)
                 ? found
@@ -449,45 +557,108 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
             return Task.CompletedTask;
         }
 
-        SurfaceUpdate update;
-        if (notification.Method == Methods.ViewSet)
+        var update = Apply(entry.Model, notification);
+        if (update.Result != SurfaceUpdateResult.Applied)
         {
-            update = entry.Model.ApplyView(notification.Params);
+            LogRejected(pluginId, notification.Method, surfaceId, update);
+        }
+        else if (notification.Method == Methods.StatePatch)
+        {
+            PublishLater(entry);
         }
         else
         {
-            try
-            {
-                update = notification.Params.Deserialize<StatePatchParams>(ProtocolJson.Options) is { } patch
-                    ? entry.Model.ApplyPatch(patch)
-                    : new SurfaceUpdate(SurfaceUpdateResult.Rejected, "Empty state.patch.");
-            }
-            catch (JsonException e)
-            {
-                update = new SurfaceUpdate(SurfaceUpdateResult.Rejected, e.Message);
-            }
+            Publish(entry, entry.Model.View is null ? PlaceholderReason.Starting : null, null);
         }
 
+        return Task.CompletedTask;
+    }
+
+    private static SurfaceUpdate Apply(SurfaceModel model, WorkerNotification notification)
+    {
+        if (notification.Method == Methods.ViewSet)
+        {
+            return model.ApplyView(notification.Params);
+        }
+
+        try
+        {
+            return notification.Params.Deserialize<StatePatchParams>(ProtocolJson.Options) is { } patch
+                ? model.ApplyPatch(patch)
+                : new SurfaceUpdate(SurfaceUpdateResult.Rejected, "Empty state.patch.");
+        }
+        catch (JsonException e)
+        {
+            return new SurfaceUpdate(SurfaceUpdateResult.Rejected, e.Message);
+        }
+    }
+
+    private void LogRejected(string pluginId, string method, string? surfaceId, SurfaceUpdate update)
+    {
         switch (update.Result)
         {
-            case SurfaceUpdateResult.Applied when notification.Method == Methods.StatePatch:
-                PublishLater(entry);
-                break;
-            case SurfaceUpdateResult.Applied:
-                Publish(entry, entry.Model.View is null ? PlaceholderReason.Starting : null, null);
-                break;
-            case SurfaceUpdateResult.Rejected when notification.Method == Methods.ViewSet:
+            case SurfaceUpdateResult.Rejected when method == Methods.ViewSet:
                 _pluginLogs.Write(pluginId, "host", $"{WireErrorCodes.InvalidView} InvalidView: view.set for {surfaceId} rejected; the previous view stays. {update.Detail}");
                 break;
             case SurfaceUpdateResult.Rejected:
                 _pluginLogs.Write(pluginId, "host", $"{WireErrorCodes.InvalidParams} state.patch for {surfaceId} rejected: {update.Detail}");
                 break;
             case SurfaceUpdateResult.Stale:
-                _pluginLogs.Write(pluginId, "host", $"{notification.Method} for {surfaceId} dropped: {update.Detail}");
+                _pluginLogs.Write(pluginId, "host", $"{method} for {surfaceId} dropped: {update.Detail}");
                 break;
         }
+    }
 
-        return Task.CompletedTask;
+    /// <summary>A popup's view is kept per plugin and popup id; a new worker starts it afresh.</summary>
+    private void OnPopupNotification(IWorkerChannel channel, WorkerNotification notification, string popupId)
+    {
+        var pluginId = channel.PluginId;
+        if (_catalog.GetManifest(pluginId) is not { } manifest || !manifest.Popups.Contains(popupId))
+        {
+            _pluginLogs.Write(pluginId, "host", $"{WireErrorCodes.Undeclared} {notification.Method} for popup '{popupId}' ignored: it is not declared under 'popups'.");
+            return;
+        }
+
+        var key = (pluginId, popupId);
+        if (!_popups.TryGetValue(key, out var entry) || !ReferenceEquals(entry.Channel, channel))
+        {
+            entry = new PopupEntry(channel, new SurfaceModel(PopupSurfaceId(popupId)));
+            _popups[key] = entry;
+        }
+
+        var update = Apply(entry.Model, notification);
+        if (update.Result != SurfaceUpdateResult.Applied)
+        {
+            LogRejected(pluginId, notification.Method, PopupSurfaceId(popupId), update);
+            return;
+        }
+
+        var snapshot = new PopupSnapshot(pluginId, popupId, entry.Model.View, entry.Model.ViewRevision,
+            new Dictionary<string, JsonNode?>(entry.Model.State, StringComparer.Ordinal));
+        lock (_snapshotGate)
+        {
+            _popupSnapshots[key] = snapshot;
+        }
+
+        PopupChanged?.Invoke(this, snapshot);
+    }
+
+    private void ForgetPopups(string pluginId)
+    {
+        foreach (var key in _popups.Keys.Where(key => key.Plugin == pluginId).ToList())
+        {
+            _popups.Remove(key);
+        }
+
+        lock (_snapshotGate)
+        {
+            foreach (var key in _popupSnapshots.Keys.Where(key => key.Plugin == pluginId).ToList())
+            {
+                _popupSnapshots.Remove(key);
+            }
+        }
+
+        PopupOwnerStopped?.Invoke(this, pluginId);
     }
 
     /// <summary>Publishes the instance once the work queued so far has run, so a burst of patches renders once.</summary>
@@ -533,6 +704,8 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
             _snapshots.Remove(instanceId);
         }
     }
+
+    private sealed record PopupEntry(IWorkerChannel Channel, SurfaceModel Model);
 
     private sealed class Entry(InstancePlacement placement)
     {

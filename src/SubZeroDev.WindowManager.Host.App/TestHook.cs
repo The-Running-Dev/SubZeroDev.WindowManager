@@ -259,7 +259,8 @@ internal sealed class TestHook
         try
         {
             var outcome = await _router.InvokeAsync(commandId, args, source, null, CancellationToken.None);
-            _lastInvoke = new JsonObject { ["command"] = commandId, ["ok"] = outcome.Ok, ["code"] = outcome.Error?.Code.ToString(), ["detail"] = outcome.Error?.Detail };
+            _lastInvoke = new JsonObject { ["command"] = commandId, ["ok"] = outcome.Ok, ["code"] = outcome.Error?.Code.ToString(), ["detail"] = outcome.Error?.Detail,
+                ["retryable"] = outcome.Error?.Retryable };
         }
         catch (Exception e)
         {
@@ -409,6 +410,41 @@ internal sealed class TestHook
                     ["message"] = notice.Message,
                 }).ToArray()),
             }).ToArray()),
+            ["popups"] = new JsonArray(_surfaces.Popups.Select(popup => (JsonNode?)new JsonObject
+            {
+                ["plugin"] = popup.PluginId,
+                ["popup"] = popup.PopupId,
+                ["open"] = popup.IsOpen,
+                ["hwnd"] = (long)popup.Handle,
+                ["bounds"] = popup.IsOpen ? Rect(popup.Bounds) : null,
+                ["readyAtUtcMs"] = popup.ReadyAtUtcMs,
+                ["lastCloseReason"] = popup.LastCloseReason?.ToString(),
+                ["focusedInput"] = popup.Frame.XamlRoot is { } root && FocusManager.GetFocusedElement(root) is WmTextInput focused
+                    ? focused.Name
+                    : null,
+                ["inputs"] = new JsonArray(popup.View.TextInputs().Select(input => (JsonNode?)new JsonObject
+                {
+                    ["id"] = input.Name,
+                    ["text"] = input.Text,
+                    ["editedAtUtcMs"] = input.EditedAtUtcMs,
+                }).ToArray()),
+                ["texts"] = new JsonArray(popup.View.Texts().Select(text => (JsonNode?)text).ToArray()),
+                ["selectedKey"] = popup.View.SelectedKey("results"),
+                ["items"] = new JsonArray(popup.View.InteractiveElements().Select(element => (JsonNode?)new JsonObject
+                {
+                    ["id"] = element.Name,
+                    ["label"] = (element as WmButton)?.Label,
+                    ["itemKey"] = popup.View.InfoOf(element)?.ItemKey,
+                    ["selected"] = (element as WmButton)?.Selected,
+                    ["bounds"] = ScreenBounds(element),
+                }).ToArray()),
+                ["notices"] = new JsonArray(popup.View.Notices().Select(notice => (JsonNode?)new JsonObject
+                {
+                    ["element"] = notice.ElementId,
+                    ["code"] = notice.Code.ToString(),
+                    ["message"] = notice.Message,
+                }).ToArray()),
+            }).ToArray()),
             ["plugins"] = new JsonArray(_supervisor.All.Select(status => (JsonNode?)new JsonObject
             {
                 ["id"] = status.PluginId,
@@ -438,16 +474,17 @@ internal sealed class TestHook
     /// <summary>The element's bounds in physical screen pixels, or null before it is laid out.</summary>
     private JsonObject? ScreenBounds(FrameworkElement element)
     {
-        var window = _surfaces.Panels.FirstOrDefault(panel => IsDescendant(element, panel.Panel));
-        if (window is null || element.ActualWidth <= 0 || element.XamlRoot is not { } root)
+        RectInt? bounds = _surfaces.Panels.FirstOrDefault(panel => IsDescendant(element, panel.Panel))?.Bounds
+            ?? _surfaces.Popups.FirstOrDefault(popup => popup.IsOpen && IsDescendant(element, popup.Frame))?.Bounds;
+        if (bounds is not { } window || element.ActualWidth <= 0 || element.XamlRoot is not { } root)
         {
             return null;
         }
 
         var origin = element.TransformToVisual(null).TransformPoint(new Windows.Foundation.Point(0, 0));
         var scale = root.RasterizationScale;
-        var left = window.Bounds.Left + (int)Math.Round(origin.X * scale);
-        var top = window.Bounds.Top + (int)Math.Round(origin.Y * scale);
+        var left = window.Left + (int)Math.Round(origin.X * scale);
+        var top = window.Top + (int)Math.Round(origin.Y * scale);
         return Rect(new RectInt(left, top, left + (int)Math.Round(element.ActualWidth * scale), top + (int)Math.Round(element.ActualHeight * scale)));
     }
 

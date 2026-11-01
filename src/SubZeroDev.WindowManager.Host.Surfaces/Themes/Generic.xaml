@@ -206,7 +206,16 @@
                                     </VisualState.Setters>
                                 </VisualState>
                             </VisualStateGroup>
+                            <VisualStateGroup x:Name="SelectionStates">
+                                <VisualState x:Name="Unselected" />
+                                <VisualState x:Name="Selected">
+                                    <VisualState.Setters>
+                                        <Setter Target="Selection.Visibility" Value="Visible" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
                         </VisualStateManager.VisualStateGroups>
+                        <Border x:Name="Selection" Visibility="Collapsed" Margin="-8,-2" CornerRadius="4" Background="#FF26405A" />
                         <Grid ColumnSpacing="6" VerticalAlignment="Center">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -286,6 +295,26 @@
                         </StackPanel>
                         <Rectangle x:Name="Indicator" Visibility="Collapsed" Height="2" VerticalAlignment="Bottom" Fill="#FF6CB8F6" />
                     </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="wm:WmPopup">
+        <Setter Property="Foreground" Value="#FFE6E6E6" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmPopup">
+                    <Border x:Name="Root" Padding="8" CornerRadius="8" Background="#FF1E1E1E" BorderBrush="#FF3A3A3A" BorderThickness="1">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="OpenStates">
+                                <VisualState x:Name="Opening" />
+                                <VisualState x:Name="Open" />
+                                <VisualState x:Name="Closing" />
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Top" />
+                    </Border>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
