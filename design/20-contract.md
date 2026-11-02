@@ -372,6 +372,7 @@ Provider `host`. Every plugin can invoke them without declaring a dependency.
 | `host.plugin.debugAttach` | `{ pluginId: string }` | `{ pipe: string, token: string }` | Stops the plugin's worker and waits for one started by a developer with these arguments |
 | `host.exit` | none | none | Normal exit (flow 6) |
 | `host.desktop.show` | none | none | Minimises every normal window; a second call restores the ones it minimised (Win+D) |
+| `host.desktop.minimizeAll` | none | none | Minimises every normal window, with nothing remembered to restore (Win+M) |
 | `host.files.open` | `{ path?: string }` | none | Starts `explorer.exe` with the path (default: This PC) as an ordinary application (Win+E) |
 | `host.session.lock` | none | none | |
 | `host.session.signOut` | none | none | An application may block it: `CommandFailed` with `SessionCommandRefused` |
@@ -394,7 +395,7 @@ The public names other plugins may depend on:
 | `subzerodev.running-windows` | `windows.activate { hwnd }`, `windows.minimize { hwnd }` | `windows.running` (array of `{ key, hwnd, title, exe?, aumid?, monitorId, active, minimized }`) | none | `windows` (panelItem, multiInstance; settings: `scope: "allMonitors"\|"thisMonitor"`) |
 | `subzerodev.tray` | none | none (subscribes to `host.tray.icons`) | none | `tray` (panelItem: the notification area). `modes: ["replacement"]` |
 | `subzerodev.desktop-icons` | `desktop.open { path: string }` (`ShellExecute` with `open`) | none | none | `icons` (gadget on the desktop layer: the user's and the public Desktop folders) |
-| `subzerodev.session` | none | none | `menu` | `power` (panelItem: a button opening lock, sign out, restart, shut down and sleep) |
+| `subzerodev.session` | none | none | `menu` | `power` (panelItem: a button opening lock, sign out, restart, shut down and sleep). `modes: ["replacement"]` |
 | `subzerodev.indicators` | none | none | `volume`, `network`, `battery` | `volume`, `network`, `battery` (panelItem each; `battery` is hidden on machines without one) |
 
 ### Host internals (Host.Core abstractions)

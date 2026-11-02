@@ -189,6 +189,27 @@ public interface IHotkeyService
     Outcome<HotkeyRegistration> Register(KeyChord chord, Action onPressed);
 }
 
+/// <summary>The Windows key in replacement mode (S21). A lone Windows-key press is the chord Win with virtual key 0.</summary>
+public interface IWindowsKeyHook : IDisposable
+{
+    /// <summary>Raised off the UI thread for each chord a binding wants.</summary>
+    event EventHandler<KeyChord>? Pressed;
+}
+
+/// <summary>Ending or pausing the session (S21). Sign out, restart and shut down may be refused: <see cref="CoreErrorCode.SessionCommandRefused"/>.</summary>
+public interface ISessionService
+{
+    Outcome Lock();
+
+    Outcome SignOut();
+
+    Outcome Restart();
+
+    Outcome Shutdown();
+
+    Outcome Sleep();
+}
+
 public interface IForegroundService
 {
     /// <summary>Lets the process take the foreground once (<c>AllowSetForegroundWindow</c>, I18).</summary>

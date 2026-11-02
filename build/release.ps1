@@ -36,6 +36,7 @@ $builtIn = @(
     @{ Id = 'subzerodev.launcher'; Project = 'SubZeroDev.WindowManager.Plugins.Launcher' }
     @{ Id = 'subzerodev.tray'; Project = 'SubZeroDev.WindowManager.Plugins.Tray' }
     @{ Id = 'subzerodev.desktop-icons'; Project = 'SubZeroDev.WindowManager.Plugins.DesktopIcons' }
+    @{ Id = 'subzerodev.session'; Project = 'SubZeroDev.WindowManager.Plugins.Session' }
 )
 
 function Invoke-Checked {

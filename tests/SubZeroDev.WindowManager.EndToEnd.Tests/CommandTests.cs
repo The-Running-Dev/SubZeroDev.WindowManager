@@ -210,17 +210,28 @@ internal static partial class Interactive
     public const ushort Control = 0x11;
     public const ushort Alt = 0x12;
     public const ushort F11 = 0x7A;
+    public const ushort LeftWin = 0x5B;
 
     /// <summary>Presses the keys in order, then releases them in reverse, as one injected sequence.</summary>
-    public static unsafe void Press(params ushort[] keys)
+    public static void Press(params ushort[] keys) => Send(keys, 0);
+
+    /// <summary>
+    /// As <see cref="Press"/>, but every event carries the host's test marker, so a host whose Windows-key hook
+    /// runs in test mode swallows all of them and none reaches Windows. Only call it once the hook is installed.
+    /// </summary>
+    public static void PressMarked(params ushort[] keys) => Send(keys, TestMarker);
+
+    private const nint TestMarker = 0x535A574B;
+
+    private static unsafe void Send(ushort[] keys, nint extraInfo)
     {
         const uint Keyboard = 1;
         const uint KeyUp = 0x0002;
         var inputs = stackalloc KeyInput[keys.Length * 2];
         for (var i = 0; i < keys.Length; i++)
         {
-            inputs[i] = new KeyInput { Type = Keyboard, VirtualKey = keys[i] };
-            inputs[(keys.Length * 2) - 1 - i] = new KeyInput { Type = Keyboard, VirtualKey = keys[i], Flags = KeyUp };
+            inputs[i] = new KeyInput { Type = Keyboard, VirtualKey = keys[i], ExtraInfo = extraInfo };
+            inputs[(keys.Length * 2) - 1 - i] = new KeyInput { Type = Keyboard, VirtualKey = keys[i], Flags = KeyUp, ExtraInfo = extraInfo };
         }
 
         var sent = SendInput((uint)(keys.Length * 2), inputs, sizeof(KeyInput));
