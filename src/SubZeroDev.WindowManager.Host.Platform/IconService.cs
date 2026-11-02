@@ -106,6 +106,10 @@ public sealed class IconService : IIconService
         }
     }
 
+    /// <summary>Draws an icon handle the caller owns at the asked size, or null when it cannot be drawn.</summary>
+    public static IconImage? FromIcon(nint icon, int sizePx) =>
+        icon == 0 ? null : Draw(icon, Math.Clamp(sizePx, 8, 256)).Value;
+
     private static Outcome<IconImage> Draw(nint icon, int size)
     {
         var dc = Native.CreateCompatibleDC(0);

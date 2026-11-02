@@ -22,9 +22,10 @@ public sealed record ResolvedIcon(ImageSource? Image, string Source)
 /// and extraction run off the UI thread; images are made on the UI thread, where this is called and
 /// where it returns. Results are cached per reference and size (the newest 256), and the cache empties
 /// when the chain changes; an extraction miss is not cached, so a window that gains its icon later
-/// shows it on the next render.
+/// shows it on the next render. A <c>tray</c> ref is the notification icon's own image, drawn by
+/// <paramref name="tray"/>; its version is part of the cache key, so a new image is drawn again.
 /// </summary>
-public sealed class IconResolver(IIconService icons, Func<AssetPackChain>? chain = null)
+public sealed class IconResolver(IIconService icons, Func<AssetPackChain>? chain = null, Func<string, int, IconImage?>? tray = null)
 {
     private const int CacheLimit = 256;
     private readonly Dictionary<string, ResolvedIcon> _cache = new(StringComparer.Ordinal);
@@ -103,6 +104,10 @@ public sealed class IconResolver(IIconService icons, Func<AssetPackChain>? chain
                 }
 
                 return new ResolvedIcon(fallback, "default");
+
+            case IconRef.Tray trayIcon when tray is not null:
+                var drawn = await Task.Run(() => tray(trayIcon.Key, sizePx), ct);
+                return drawn is null ? ResolvedIcon.None : new ResolvedIcon(ToBitmap(drawn), "tray");
 
             default:
                 return ResolvedIcon.None;

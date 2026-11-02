@@ -272,7 +272,7 @@ Acceptance:
 Out of scope: other applications' app bars (S19); session commands (S21).
 
 ## S19 — The notification area and other applications' app bars
-Status: todo
+Status: done
 Delivers: In replacement mode, the icons applications put in the notification area (chat, cloud sync, VPN, updaters) appear in Ben's panel, react to clicks as they do on the taskbar, and show their tooltips and balloons. Docked toolbars from other applications still get their screen edge.
 Touches: Host.Platform (`ITrayHost`: `Shell_TrayWnd` and `TrayNotifyWnd`, `WM_COPYDATA` for `Shell_NotifyIcon` versions 0 to 4 and `SHAppBarMessage`, the `TaskbarCreated` broadcast); Host.Core (`host.tray.icons` feed, `host.tray.invoke`); Host.Theming (`IconRef.Tray`); plugin `subzerodev.tray`; a test tray client under `tests/`
 Depends on: S18, S6

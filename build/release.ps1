@@ -34,6 +34,7 @@ $builtIn = @(
     @{ Id = 'subzerodev.clock'; Project = 'SubZeroDev.WindowManager.Plugins.Clock' }
     @{ Id = 'subzerodev.running-windows'; Project = 'SubZeroDev.WindowManager.Plugins.RunningWindows' }
     @{ Id = 'subzerodev.launcher'; Project = 'SubZeroDev.WindowManager.Plugins.Launcher' }
+    @{ Id = 'subzerodev.tray'; Project = 'SubZeroDev.WindowManager.Plugins.Tray' }
 )
 
 function Invoke-Checked {

@@ -27,7 +27,8 @@ namespace SubZeroDev.WindowManager.Host.Surfaces;
 /// and its detail shows as the tooltip. A Button or Toggle sends its action through <c>actions</c>, with
 /// <c>$item</c> args taken from its item and its events carrying the item key; when that fails, a
 /// <see cref="WmNotice"/> shows next to the element for a few seconds and nothing is resent (I19). A
-/// Button whose action names a popup opens it anchored to the Button. A single-selection List keeps one
+/// Button whose action names a popup opens it anchored to the Button, and a Button's <c>contextAction</c>
+/// runs on a right click, Shift+F10 or the menu key. A single-selection List keeps one
 /// selected item (the first when its <c>selectedKey</c> names none); a TextInput whose <c>navigates</c>
 /// names that List moves the selection with Up and Down, and Enter runs the selected item's action. The
 /// same view renders a plugin's popup surface (<see cref="ForPopup"/>). Call on the UI thread.
@@ -322,6 +323,17 @@ public sealed class ContributionView
                 var buttonAction = element["action"] as JsonObject;
                 button.Click += (_, _) => Act(button, scope, buttonAction, ElementEventKind.Invoked, null);
                 _invokers[button] = source => Act(button, scope, buttonAction, ElementEventKind.Invoked, null, source);
+                if (element["contextAction"] is JsonObject contextAction)
+                {
+                    // A right click, or Shift+F10 and the menu key, which have no position.
+                    button.ContextRequested += (sender, args) =>
+                    {
+                        args.Handled = true;
+                        var from = args.TryGetPosition(button, out _) ? InvocationSource.Pointer : InvocationSource.Keyboard;
+                        Act(button, scope, contextAction, ElementEventKind.Invoked, null, from);
+                    };
+                }
+
                 built = button;
                 break;
             case "toggle":

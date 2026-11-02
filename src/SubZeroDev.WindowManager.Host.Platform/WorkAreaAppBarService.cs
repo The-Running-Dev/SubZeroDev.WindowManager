@@ -109,6 +109,37 @@ public sealed class WorkAreaAppBarService : IAppBarService, IDisposable
             }
         }, ct);
 
+    /// <summary>
+    /// The strip a reservation would get, without taking it (<c>ABM_QUERYPOS</c>): the monitor's reservations
+    /// with this one added or replaced, laid out as <see cref="Layout"/> does. Null for an unknown monitor.
+    /// </summary>
+    public RectInt? Query(nint hwnd, string monitorId, PanelEdge edge, int thicknessPx)
+    {
+        if (_monitors.Monitors.FirstOrDefault(m => m.StableId == monitorId) is not { } monitor)
+        {
+            return null;
+        }
+
+        _gate.Wait();
+        try
+        {
+            var trial = new MonitorState(Guid.Empty, monitor.WorkArea, monitor.Bounds);
+            if (_states.TryGetValue(monitorId, out var state))
+            {
+                trial.Bars.AddRange(state.Bars.Where(bar => bar.Hwnd != hwnd));
+            }
+
+            var reservation = new Reservation(hwnd, edge, Math.Max(0, thicknessPx));
+            var index = state?.Bars.FindIndex(bar => bar.Hwnd == hwnd) ?? -1;
+            trial.Bars.Insert(index >= 0 ? index : trial.Bars.Count, reservation);
+            return Layout(trial).Strips[hwnd];
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public void RemoveNow(nint hwnd)
     {
         // The journal does not capture a synchronisation context, so waiting here cannot deadlock the UI thread.

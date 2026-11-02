@@ -44,6 +44,7 @@ public sealed partial class App : Application
     private MonitorService? _monitorService;
     private IAppBarService? _appBarService;
     private ShellRoleService? _shellRoles;
+    private TrayHost? _trayHost;
     private int _exiting;
 
     public App(HostOptions options)
@@ -178,7 +179,15 @@ public sealed partial class App : Application
         {
             // As the shell there is no taskbar to negotiate with: the host owns the work area itself.
             _shellRoles = ShellRoleService.Start(hooked, line => log.Write(LogLevel.Warning, "shell", line));
-            _appBarService = new WorkAreaAppBarService(monitors, _journal, WorkAreaAppBarService.Applier(hooked), checkpoint, _shellEvents);
+            var workArea = new WorkAreaAppBarService(monitors, _journal, WorkAreaAppBarService.Applier(hooked), checkpoint, _shellEvents);
+            _appBarService = workArea;
+
+            // The notification area and other programs' app bars: both are Explorer's taskbar's to answer.
+            var feeds = _feeds;
+            _trayHost = TrayHost.Start(hooked, line => log.Write(LogLevel.Warning, "tray", line),
+                new TrayAppBars(monitors, workArea, PrimaryTaskbar));
+            _trayHost.IconsChanged += (_, _) => feeds.PublishHost(TrayFeed.FeedId, TrayFeed.Snapshot(_trayHost.Icons));
+            feeds.PublishHost(TrayFeed.FeedId, TrayFeed.Snapshot(_trayHost.Icons));
         }
         else
         {
@@ -186,7 +195,8 @@ public sealed partial class App : Application
         }
 
         _surfaces = new SurfaceManager(config, monitors, _appBarService, _theme, _contributions, _log, Retry,
-            new ElementActions(_router, _contributions), foreground, new IconResolver(new IconService(), () => _theme!.IconChain));
+            new ElementActions(_router, _contributions), foreground,
+            new IconResolver(new IconService(), () => _theme!.IconChain, (key, size) => _trayHost?.Image(key, size)));
         _surfaces.PanelCreated += (_, panel) => panel.Panel.ContextFlyout = PanelMenu();
         _layoutId = preset.Layout;
         await ApplyLayoutAsync();
@@ -231,7 +241,7 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles };
+                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost };
             _testHook.Start();
         }
     }
@@ -266,6 +276,23 @@ public sealed partial class App : Application
 
             dispatcher.TryEnqueue(() => _ = ShutdownAsync());
             return Task.FromResult(CommandOutcome.Success(new CommandResult(null)));
+        });
+        router.AddBuiltIn(TrayFeed.InvokeCommand, "Click notification icon", (args, ct) =>
+        {
+            if (_trayHost is not { } tray)
+            {
+                return Task.FromResult(CommandOutcome.Fail(CoreErrorCode.NotInReplacementMode,
+                    "host.tray.invoke only works when the app is the shell."));
+            }
+
+            if (TrayFeed.ParseInvoke(args, out var error) is not { } invoke)
+            {
+                return Task.FromResult(CommandOutcome.Fail(CoreErrorCode.CommandFailed, error!));
+            }
+
+            // The owner places its menu at the anchor; the cursor stands in when the caller gives none.
+            var (x, y) = invoke.Point ?? TrayHost.CursorPosition();
+            return InvokeTrayAsync(tray, invoke.Key, invoke.Action, x, y, ct);
         });
         router.AddBuiltIn("host.files.open", "Open folder", (args, _) =>
         {
@@ -367,6 +394,35 @@ public sealed partial class App : Application
 
         var outcome = await act((nint)hwnd, ct).ConfigureAwait(false);
         return outcome.Ok ? CommandOutcome.Success(new CommandResult(null)) : CommandOutcome.Fail(outcome.Error!);
+    }
+
+    private static async Task<CommandOutcome> InvokeTrayAsync(TrayHost tray, string key, TrayAction action, int x, int y, CancellationToken ct)
+    {
+        var outcome = await tray.InvokeAsync(key, action, x, y, ct).ConfigureAwait(false);
+        return outcome.Ok ? CommandOutcome.Success(new CommandResult(null)) : CommandOutcome.Fail(outcome.Error!);
+    }
+
+    /// <summary>
+    /// What <c>ABM_GETTASKBARPOS</c> and <c>ABM_GETSTATE</c> report: the first panel on the primary monitor, at its
+    /// granted rectangle when it reserves space. Called on the tray's thread, so it reads only plain properties.
+    /// </summary>
+    private (RectInt Rect, PanelEdge Edge, bool AutoHide)? PrimaryTaskbar()
+    {
+        try
+        {
+            if (_surfaces?.Panels.ToArray().FirstOrDefault(panel => panel.Monitor.IsPrimary) is not { } panel)
+            {
+                return null;
+            }
+
+            // Home, not the window's bounds: this runs on the tray thread, and an auto-hide taskbar reports its full rect.
+            return (panel.AppBarRect ?? panel.Home, panel.Edge, panel.Definition.Behaviour == PanelBehaviour.AutoHide);
+        }
+        catch (InvalidOperationException)
+        {
+            // The layout changed while it was read; the caller answers as if there were no panel.
+            return null;
+        }
     }
 
     /// <summary>A placeholder's Retry: runs on the UI thread, so the restart itself goes to the background.</summary>
@@ -499,6 +555,7 @@ public sealed partial class App : Application
             await _surfaces.ShutdownAsync(CancellationToken.None);
         }
 
+        _trayHost?.Dispose();
         (_appBarService as IDisposable)?.Dispose();
         _shellRoles?.Dispose();
         _monitorService?.Dispose();

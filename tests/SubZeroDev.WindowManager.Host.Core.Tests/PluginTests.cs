@@ -136,6 +136,7 @@ public sealed partial class PluginTests
         { """{"id":"a","kind":"text","props":{"text":"x","foreground":"#f00"}}""", ViewValidator.Codes.ForbiddenProp },
         { """{"id":"a","kind":"text","props":{"text":"x","fontSize":20}}""", ViewValidator.Codes.ForbiddenProp },
         { """{"id":"a","kind":"text","props":{"text":"x","fontFamily":"Comic Sans MS"}}""", ViewValidator.Codes.ForbiddenProp },
+        { """{"id":"a","kind":"text","props":{"text":"x"},"contextAction":"open"}""", ViewValidator.Codes.InvalidAction },
     };
 
     [Theory]
