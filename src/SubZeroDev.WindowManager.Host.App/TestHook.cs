@@ -86,6 +86,9 @@ internal sealed class TestHook
         _timer.Tick += (_, _) => Tick();
     }
 
+    /// <summary>The shell roles in replacement mode; null otherwise.</summary>
+    public ShellRoleService? ShellRoles { get; init; }
+
     public void Start()
     {
         Directory.CreateDirectory(_directory);
@@ -391,6 +394,17 @@ internal sealed class TestHook
             ["contentRoot"] = _locations.ContentRoot,
             ["workArea"] = Rect(MonitorService.PrimaryWorkArea()),
             ["shellEventsWindow"] = (long)_shellEvents.Handle,
+            ["shellRoles"] = ShellRoles is null ? null : new JsonObject
+            {
+                ["state"] = ShellRoles.State.ToString(),
+                ["desktopWindow"] = (long)ShellRoles.DesktopWindow,
+                ["hookWindow"] = (long)ShellRoles.HookWindow,
+                ["events"] = new JsonArray(ShellRoles.Events.Select(e => (JsonNode?)new JsonObject
+                {
+                    ["code"] = e.Code,
+                    ["hwnd"] = e.Hwnd,
+                }).ToArray()),
+            },
             ["monitors"] = new JsonArray(_monitors.Monitors.Select(monitor => (JsonNode?)new JsonObject
             {
                 ["id"] = monitor.StableId,
@@ -471,6 +485,7 @@ internal sealed class TestHook
                     ["label"] = element switch { WmButton b => b.Label, WmToggle t => t.Label, _ => null },
                     ["checked"] = (element as WmToggle)?.Checked,
                     ["active"] = (element as WmButton)?.Active,
+                    ["attention"] = (element as WmButton)?.Attention,
                     ["activeState"] = element is WmButton ? CurrentState(element, "ActiveStates") : null,
                     ["itemKey"] = view.InfoOf(element)?.ItemKey,
                     ["iconSource"] = view.InfoOf(element)?.IconSource,

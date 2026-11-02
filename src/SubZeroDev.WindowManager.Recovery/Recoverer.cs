@@ -25,6 +25,11 @@ public static class Recoverer
     public static RecoveryReport Recover(string dataRoot, int sessionId, string reason, bool hostExited, int? exitCode, Action<string> log) =>
         Recover(dataRoot, sessionId, reason, hostExited, exitCode, log, IsAlive, Reverter.RevertAll);
 
+    /// <param name="revert">Undoes one change; <see cref="Reverter.ForHook"/> gives the one for the test hook.</param>
+    public static RecoveryReport Recover(string dataRoot, int sessionId, string reason, bool hostExited, int? exitCode, Action<string> log,
+        Func<DesktopChange, Outcome> revert) =>
+        Recover(dataRoot, sessionId, reason, hostExited, exitCode, log, IsAlive, doc => Reverter.RevertAll(doc, revert));
+
     internal static RecoveryReport Recover(string dataRoot, int sessionId, string reason, bool hostExited, int? exitCode,
         Action<string> log, Func<int, DateTimeOffset, bool> isAlive,
         Func<JournalDocument, IReadOnlyList<(DesktopChange, RecoveryError)>> revertAll)

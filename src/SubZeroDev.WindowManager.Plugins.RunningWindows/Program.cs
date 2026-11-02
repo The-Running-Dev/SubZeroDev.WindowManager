@@ -78,7 +78,8 @@ public sealed class WindowListInstance(InstanceRequest request, WindowTracker tr
         var title = new JsonObject { ["$item"] = "title" };
         var button = View.Button("window", "Window",
             View.Invoke("windows.activate", new JsonObject { ["hwnd"] = new JsonObject { ["$item"] = "hwnd" } }),
-            label: Prop<string>.Item("title"), icon: Prop<IconRef>.Item("icon"), active: Prop<bool>.Item("active"), "task");
+            label: Prop<string>.Item("title"), icon: Prop<IconRef>.Item("icon"), active: Prop<bool>.Item("active"), "task")
+            .WithAttention(Prop<bool>.Item("attention"));
         var props = new Dictionary<string, JsonNode?>(button.Props!, StringComparer.Ordinal)
         {
             ["automationName"] = title,

@@ -13,6 +13,22 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S18: shell roles and session start-up
+- **Context:** as the session's shell the host must hold the shell window, hear windows come and go, signal Winlogon, own the work area and start the user's start-up programs once (I6, I24). Tests must never call `SetShellWindow`, set the real work area or minimised-window setting, or start real programs.
+- **Chosen:**
+  - **Roles:** a thread of its own holds a desktop window (`SetShellWindow`) and a hook window (`RegisterShellHookWindow`, then `SetTaskmanWindow`). Another shell-window owner gives `ShellRoleTaken`, and the host runs without the roles.
+  - **Hook record:** under the test hook the desktop window is never registered. A `shell-owner` file stands for another shell. The desktop-ready signal, `ARW_HIDE`, work-area changes and reverts, start-up launches and folder windows go to `desktop-actions.log` instead of being made.
+  - **Flashes:** Windows keeps the high bit of `HSHELL_FLASH` (and `HSHELL_RUDEAPPACTIVATED`) for the task-manager window. The running-windows plugin's own hook window therefore hears a flash as `HSHELL_REDRAW`, and takes a redraw of a background window whose title has not changed as a flash. Activation clears it.
+  - **Attention:** `WithAttention` is an SDK extension on a button node, so `View.Button`'s signature is unchanged.
+  - **Work area:** in replacement mode the host sets the work area itself, journalled as `workArea` with the original rectangle before it is applied. Both the guardian and host start-up recovery put it back.
+  - **Start-up programs:** run in Explorer's order on a background task after the first layout. A volatile HKCU marker key makes a second start in the same session run nothing.
+  - **Folders:** `host.files.open` starts `explorer.exe` with the path. With the app registered as the shell, that Explorer opens a folder window only.
+- **Rejected:**
+  - **A host relay of shell events to plugins:** needs host-provided feeds, which do not exist yet. The plugin's own hook window is enough for the running-windows list.
+  - **Registering the plugin's hook as the task-manager window:** there is one per desktop, and it belongs to the shell.
+  - **A file marker for the session:** it would survive a sign-out. The volatile key goes with the session.
+- **Known gap:** shell hook messages reach only the input desktop, so unit tests cover destroyed events on a desktop of their own, and the end-to-end tests cover created, activated and flash on the real desktop without the roles. That the desktop window becomes `GetShellWindow()`, the high-bit flash codes and S18.7's folder window are checked by hand on the replacement session. An icon change also arrives as a redraw and can mark a window for attention until it is activated.
+
 ## 2026-11-02 — S17: run as the Windows shell
 - **Context:** replacement mode starts with being the shell at sign-in and never stranding the user without one (I22, I23). Tests must never touch the real `Winlogon\Shell` value or start and stop the real Explorer.
 - **Chosen:**

@@ -312,6 +312,7 @@ public static class View   // builder helpers producing Protocol.ViewNode; sugar
     public static ViewNode Icon(string id, Prop<IconRef> icon, IconSize size = IconSize.Medium);
     public static ViewNode Button(string id, string automationName, ElementAction action,
         Prop<string>? label = null, Prop<IconRef>? icon = null, Prop<bool>? active = null, params string[] classes);
+    public static ViewNode WithAttention(this ViewNode button, Prop<bool> attention);
     public static ViewNode Stack(string id, StackOrientation orientation, params ViewNode[] children);
     public static ViewNode List(string id, string automationName, Prop<JsonArray> items, ViewNode itemTemplate,
         StackOrientation orientation = StackOrientation.Panel, ListSelection selection = ListSelection.None,

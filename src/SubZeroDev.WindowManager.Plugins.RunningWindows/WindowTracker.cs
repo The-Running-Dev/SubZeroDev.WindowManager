@@ -6,7 +6,7 @@ using static SubZeroDev.WindowManager.Plugins.RunningWindows.Native;
 namespace SubZeroDev.WindowManager.Plugins.RunningWindows;
 
 /// <summary>One open application window as the feed carries it.</summary>
-public sealed record RunningWindow(long Hwnd, string Title, string? Exe, string? MonitorId, bool Active, bool Minimized)
+public sealed record RunningWindow(long Hwnd, string Title, string? Exe, string? MonitorId, bool Active, bool Minimized, bool Attention = false)
 {
     public JsonObject ToJson() => new()
     {
@@ -18,6 +18,7 @@ public sealed record RunningWindow(long Hwnd, string Title, string? Exe, string?
         ["monitorId"] = MonitorId,
         ["active"] = Active,
         ["minimized"] = Minimized,
+        ["attention"] = Attention,
     };
 }
 
@@ -27,6 +28,8 @@ public sealed record RunningWindow(long Hwnd, string Title, string? Exe, string?
 /// list dirty; a rescan follows within 30 ms, and every 2 s regardless. Windows keep the order they first
 /// appeared in. The active window is the foreground one; while a tool window (a panel) has the foreground,
 /// the last active window stays active, so a click on the panel can tell which window was in front.
+/// A hidden shell hook window on the same thread hears windows flash (<c>FlashWindowEx</c>); a flashing window
+/// asks for attention until it is activated.
 /// </summary>
 public sealed unsafe class WindowTracker : IDisposable
 {
@@ -39,6 +42,7 @@ public sealed unsafe class WindowTracker : IDisposable
     private readonly List<nint> _order = [];
     private readonly Dictionary<uint, string?> _images = [];
     private readonly List<nint> _scan = [];
+    private readonly HashSet<nint> _attention = [];
     private readonly Lock _gate = new();
     private IReadOnlyList<RunningWindow> _windows = [];
     private uint _threadId;
@@ -102,14 +106,33 @@ public sealed unsafe class WindowTracker : IDisposable
         ];
         var hooks = ranges.Select(range => SetWinEventHook(range.Min, range.Max, 0, callback, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS)).ToArray();
         var fallback = SetTimer(0, 0, FallbackMs, 0);
+        var shellHookMessage = RegisterWindowMessageW("SHELLHOOK");
+        var shellHook = CreateWindowExW((uint)WS_EX_TOOLWINDOW, "Static", "SubZeroDev.WindowManager.RunningWindows.ShellHook", WS_POPUP, 0, 0, 0, 0, 0, 0, 0, 0);
+        if (shellHook != 0)
+        {
+            RegisterShellHookWindow(shellHook);
+        }
+
         try
         {
             Rescan();
             _started.TrySetResult();
             while (GetMessageW(out var msg, 0, 0, 0) > 0)
             {
+                // Shell hook notifications are posted, so they arrive here rather than in the window procedure.
+                if (msg.Hwnd == shellHook && msg.Message == shellHookMessage)
+                {
+                    OnShellHook((int)(msg.WParam & 0x7FFF_FFFF), msg.LParam);
+                    continue;
+                }
+
                 if (msg.Message != WM_TIMER)
                 {
+                    if (msg.Hwnd != 0)
+                    {
+                        DispatchMessageW(in msg);
+                    }
+
                     continue;
                 }
 
@@ -129,6 +152,12 @@ public sealed unsafe class WindowTracker : IDisposable
         }
         finally
         {
+            if (shellHook != 0)
+            {
+                DeregisterShellHookWindow(shellHook);
+                DestroyWindow(shellHook);
+            }
+
             KillTimer(0, fallback);
             foreach (var hook in hooks.Where(hook => hook != 0))
             {
@@ -152,6 +181,40 @@ public sealed unsafe class WindowTracker : IDisposable
         }
     }
 
+    private void OnShellHook(int code, nint hwnd)
+    {
+        switch (code)
+        {
+            case HSHELL_FLASH:
+            case HSHELL_REDRAW when IsFlash(hwnd):
+                _attention.Add(hwnd);
+                break;
+            case HSHELL_WINDOWACTIVATED:
+            case HSHELL_RUDEAPPACTIVATED:
+                _attention.Remove(hwnd);
+                break;
+            default:
+                return;
+        }
+
+        Rescan();
+    }
+
+    /// <summary>
+    /// Windows keeps the flash bit of <c>HSHELL_FLASH</c> for the task-manager window, so other hook windows hear a
+    /// flash as a redraw. A redraw of a listed background window whose title has not changed is taken as a flash.
+    /// </summary>
+    private bool IsFlash(nint hwnd)
+    {
+        if (hwnd == GetForegroundWindow())
+        {
+            return false;
+        }
+
+        var known = Windows.FirstOrDefault(window => window.Hwnd == hwnd);
+        return known is not null && known.Title == Title(hwnd);
+    }
+
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
     private static int OnWindow(nint hwnd, nint lParam)
     {
@@ -167,6 +230,7 @@ public sealed unsafe class WindowTracker : IDisposable
         var listed = new HashSet<nint>(_scan.Where(hwnd => hwnd != shell && IsListed(hwnd)));
 
         _order.RemoveAll(hwnd => !listed.Contains(hwnd));
+        _attention.RemoveWhere(hwnd => !listed.Contains(hwnd));
         var known = new HashSet<nint>(_order);
         // EnumWindows walks top to bottom; append new windows bottom-most first so the newest is last.
         foreach (var hwnd in Enumerable.Reverse(_scan).Where(hwnd => listed.Contains(hwnd) && !known.Contains(hwnd)))
@@ -193,7 +257,7 @@ public sealed unsafe class WindowTracker : IDisposable
                 exe = _images[processId] = ProcessImage(processId);
             }
 
-            return new RunningWindow(hwnd, Title(hwnd), exe, MonitorId(hwnd), hwnd == _active, IsIconic(hwnd));
+            return new RunningWindow(hwnd, Title(hwnd), exe, MonitorId(hwnd), hwnd == _active, IsIconic(hwnd), _attention.Contains(hwnd));
         }).ToList();
 
         // Process ids are reused; forget images of processes that no longer own a listed window.

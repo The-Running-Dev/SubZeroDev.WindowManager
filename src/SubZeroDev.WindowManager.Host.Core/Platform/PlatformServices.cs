@@ -252,3 +252,40 @@ public interface IIconService
     /// <summary>The full path of the executable that owns a window, or null when it cannot be read; matches <c>appIcons</c>.</summary>
     string? ExecutableOf(long hwnd);
 }
+
+/// <summary>What the shell roles are: held, taken by another process, or not tried (coexistence mode).</summary>
+public enum ShellRoleState { NotTried, Held, Taken }
+
+/// <summary>One shell hook message the host's hook window received (<c>HSHELL_*</c>).</summary>
+public sealed record ShellHookEvent(int Code, long Hwnd, long AtUtcMs);
+
+/// <summary>
+/// The roles Explorer plays for the session when it is the shell: the desktop window
+/// (<c>GetShellWindow</c>) and the shell hook window that hears windows come, go, activate and flash.
+/// </summary>
+public interface IShellRoleService
+{
+    ShellRoleState State { get; }
+
+    nint DesktopWindow { get; }
+
+    nint HookWindow { get; }
+
+    /// <summary>The most recent hook messages, oldest first.</summary>
+    IReadOnlyList<ShellHookEvent> Events { get; }
+
+    /// <summary>Tells Windows the desktop is ready (<c>ShellDesktopSwitchEvent</c> and <c>WM_USER</c>), once.</summary>
+    bool SignalDesktopReady();
+
+    /// <summary>Hides minimised windows (<c>ARW_HIDE</c>), as Explorer does.</summary>
+    bool HideMinimizedWindows();
+}
+
+/// <summary>What a start-up pass ran and skipped.</summary>
+public sealed record StartupReport(bool AlreadyRan, IReadOnlyList<string> Started, IReadOnlyList<string> Skipped);
+
+/// <summary>Runs the session's start-up programs as Explorer does, once per session (I24).</summary>
+public interface IStartupRunner
+{
+    StartupReport Run();
+}

@@ -42,7 +42,8 @@ public sealed partial class App : Application
     private RecoveryJournal? _journal;
     private ShellEvents? _shellEvents;
     private MonitorService? _monitorService;
-    private AppBarService? _appBarService;
+    private IAppBarService? _appBarService;
+    private ShellRoleService? _shellRoles;
     private int _exiting;
 
     public App(HostOptions options)
@@ -113,9 +114,11 @@ public sealed partial class App : Application
         var dispatcher = DispatcherQueue.GetForCurrentThread();
         _guardian = GuardianLink.Start(_options, dispatcher, _log, settings.RestartPolicy);
         var log = _log;
+        var hookDirectory = Environment.GetEnvironmentVariable(TestHook.Variable);
+        var hooked = string.IsNullOrWhiteSpace(hookDirectory) ? null : hookDirectory;
         using var self = Process.GetCurrentProcess();
         Recoverer.Recover(_locations.DataRoot, self.SessionId, "startup", hostExited: false, exitCode: null,
-            line => log.Write(LogLevel.Warning, "recovery", line));
+            line => log.Write(LogLevel.Warning, "recovery", line), Reverter.ForHook(hooked));
         _journal = new RecoveryJournal(Journal.PathForSession(_locations.DataRoot, self.SessionId), Environment.ProcessId,
             new DateTimeOffset(self.StartTime));
         var started = await _journal.StartAsync(CancellationToken.None);
@@ -124,7 +127,6 @@ public sealed partial class App : Application
             _log.Write(LogLevel.Error, "recovery", $"Could not start the recovery journal: {started.Error}");
         }
 
-        var hookDirectory = Environment.GetEnvironmentVariable(TestHook.Variable);
         var appMode = _appMode = CreateAppModeWatcher(hookDirectory);
         _theme = new ThemeEngine(_locations, _log, dispatcher, () => appMode.IsDark);
         var applied = await _theme.ApplyAsync(AppearanceOf(preset), CancellationToken.None);
@@ -171,12 +173,42 @@ public sealed partial class App : Application
         var simulated = string.IsNullOrWhiteSpace(hookDirectory) ? null : new SimulatedMonitors(_monitorService);
         IMonitorService monitors = simulated is null ? _monitorService : simulated;
         var checkpoint = string.IsNullOrWhiteSpace(hookDirectory) ? null : TestHook.Checkpoint(hookDirectory);
-        _appBarService = new AppBarService(monitors, _journal, checkpoint, _shellEvents);
+        var replacement = _options.Mode == HostMode.Replacement;
+        if (replacement)
+        {
+            // As the shell there is no taskbar to negotiate with: the host owns the work area itself.
+            _shellRoles = ShellRoleService.Start(hooked, line => log.Write(LogLevel.Warning, "shell", line));
+            _appBarService = new WorkAreaAppBarService(monitors, _journal, WorkAreaAppBarService.Applier(hooked), checkpoint, _shellEvents);
+        }
+        else
+        {
+            _appBarService = new AppBarService(monitors, _journal, checkpoint, _shellEvents);
+        }
+
         _surfaces = new SurfaceManager(config, monitors, _appBarService, _theme, _contributions, _log, Retry,
             new ElementActions(_router, _contributions), foreground, new IconResolver(new IconService(), () => _theme!.IconChain));
         _surfaces.PanelCreated += (_, panel) => panel.Panel.ContextFlyout = PanelMenu();
         _layoutId = preset.Layout;
         await ApplyLayoutAsync();
+
+        if (replacement)
+        {
+            // The panels are up: the welcome screen can go, and start-up programs run once per session.
+            _shellRoles!.SignalDesktopReady();
+            _shellRoles.HideMinimizedWindows();
+            Action<string> startupLog = line => log.Write(LogLevel.Info, "startup", line);
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    new StartupRunner(StartupSources.FromEnvironment(hooked), StartupRunner.Launcher(hooked, startupLog), startupLog).Run();
+                }
+                catch (Exception e)
+                {
+                    log.Write(LogLevel.Error, "startup", $"Start-up programs failed: {e}");
+                }
+            });
+        }
 
         _hotkeyService = new HotkeyService();
         _hotkeys = new HotkeyBinder(_router, _hotkeyService, config, _log);
@@ -199,7 +231,7 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents);
+                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles };
             _testHook.Start();
         }
     }
@@ -235,6 +267,15 @@ public sealed partial class App : Application
             dispatcher.TryEnqueue(() => _ = ShutdownAsync());
             return Task.FromResult(CommandOutcome.Success(new CommandResult(null)));
         });
+        router.AddBuiltIn("host.files.open", "Open folder", (args, _) =>
+        {
+            if (args?["path"] is not JsonValue value || !value.TryGetValue<string>(out var path) || path.Length == 0)
+            {
+                return Task.FromResult(CommandOutcome.Fail(CoreErrorCode.CommandFailed, "host.files.open needs { path: string }."));
+            }
+
+            return Task.FromResult(OpenFolder(path));
+        });
         router.AddBuiltIn("host.window.activate", "Activate window", (args, ct) => WindowCommandAsync(args, foreground.ActivateWindowAsync, ct));
         router.AddBuiltIn("host.window.minimize", "Minimise window", (args, ct) => WindowCommandAsync(args, foreground.MinimizeWindowAsync, ct));
         router.AddBuiltIn("host.preset.apply", "Apply preset", async (args, ct) =>
@@ -255,6 +296,37 @@ public sealed partial class App : Application
                 ? CommandOutcome.Success(new CommandResult(null))
                 : CommandOutcome.Fail(CoreErrorCode.CommandFailed, "The host is shutting down."));
         });
+    }
+
+    /// <summary>
+    /// Opens a folder in a file manager window. Explorer started with a path opens just that window and never
+    /// takes the shell roles, so this works when the app is the shell. Under the test hook it is recorded in
+    /// <c>desktop-actions.log</c> instead.
+    /// </summary>
+    private static CommandOutcome OpenFolder(string path)
+    {
+        if (Environment.GetEnvironmentVariable(TestHook.Variable) is { Length: > 0 } hook)
+        {
+            Directory.CreateDirectory(hook);
+            File.AppendAllText(Path.Combine(hook, Reverter.DesktopActionsLog), $"files-open {path}\n", new System.Text.UTF8Encoding(false));
+            return CommandOutcome.Success(new CommandResult(null));
+        }
+
+        var expanded = Environment.ExpandEnvironmentVariables(path);
+        if (!Directory.Exists(expanded))
+        {
+            return CommandOutcome.Fail(CoreErrorCode.CommandFailed, $"The folder '{path}' does not exist.");
+        }
+
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { expanded }, UseShellExecute = false });
+            return CommandOutcome.Success(new CommandResult(null));
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return CommandOutcome.Fail(CoreErrorCode.CommandFailed, $"Could not open '{path}': {e.Message}");
+        }
     }
 
     /// <summary>Opens the settings window, creating it the first time. Call on the UI thread.</summary>
@@ -427,7 +499,8 @@ public sealed partial class App : Application
             await _surfaces.ShutdownAsync(CancellationToken.None);
         }
 
-        _appBarService?.Dispose();
+        (_appBarService as IDisposable)?.Dispose();
+        _shellRoles?.Dispose();
         _monitorService?.Dispose();
         _shellEvents?.Dispose();
 
