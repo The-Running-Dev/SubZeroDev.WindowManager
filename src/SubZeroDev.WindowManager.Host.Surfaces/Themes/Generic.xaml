@@ -5,6 +5,14 @@
 
     <!-- Host defaults: used when no theme loads. Literal colours are allowed here only. -->
 
+    <!--
+        These controls keep the platform template, so they need no default style here. Naming them gives
+        them XAML type metadata, without which a theme's Wm.Element.Slider or Wm.Element.TextInput style
+        cannot name its target type.
+    -->
+    <Style x:Key="Wm.Metadata.Slider" TargetType="wm:WmSlider" />
+    <Style x:Key="Wm.Metadata.TextInput" TargetType="wm:WmTextInput" />
+
     <Style TargetType="wm:WmPanel">
         <Setter Property="Template">
             <Setter.Value>

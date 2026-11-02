@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "subzerodev.shell",
+  "displayName": "SubZeroDev shell",
+  "panels": [
+    {
+      "id": "cea2313a-fd51-4b63-b1de-b22aaa268972",
+      "monitor": "primary",
+      "placement": { "edge": "bottom" },
+      "thickness": 40,
+      "behaviour": "reserve",
+      "zones": {
+        "start": [
+          { "id": "a56ee404-071e-4968-b100-994ed71b60d8", "plugin": "subzerodev.launcher", "contribution": "launcher" }
+        ],
+        "center": [
+          { "id": "c8c0bf21-84fb-43e7-a249-f6e76a00a1f9", "plugin": "subzerodev.running-windows", "contribution": "windows" }
+        ],
+        "end": [
+          { "id": "7de4d567-20d1-4be0-ab41-7da37474f644", "plugin": "subzerodev.tray", "contribution": "tray" },
+          { "id": "cb34a194-d9b0-4328-8df2-0d3f4f325f0e", "plugin": "subzerodev.indicators", "contribution": "network" },
+          { "id": "54e1db27-38e4-44be-8c24-893132bc13cf", "plugin": "subzerodev.indicators", "contribution": "volume" },
+          { "id": "a7f6cb3c-1fd5-4ce1-a041-11effe0ebfd1", "plugin": "subzerodev.indicators", "contribution": "battery" },
+          { "id": "2b2db391-21bb-4a54-bec5-736130b31e5c", "plugin": "subzerodev.clock", "contribution": "clock" },
+          { "id": "18632327-eb3f-4e69-a5c6-422024719389", "plugin": "subzerodev.session", "contribution": "power" }
+        ]
+      }
+    }
+  ]
+}

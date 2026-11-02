@@ -118,7 +118,7 @@ public sealed record CommandResult(JsonNode? Value);
 public sealed record ElementEventParams(string SurfaceId, string ElementId, ElementEventKind Kind,
     string? ItemKey, JsonNode? Value, InvocationSource Source);
 
-public enum ElementEventKind { Invoked, Toggled, TextChanged, TextSubmitted, SelectionChanged, ItemInvoked }
+public enum ElementEventKind { Invoked, Toggled, TextChanged, TextSubmitted, SelectionChanged, ItemInvoked, ValueChanged }
 
 public sealed record FeedPublishParams(string FeedId, JsonNode Snapshot);
 

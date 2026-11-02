@@ -137,7 +137,30 @@ public sealed partial class PluginTests
         { """{"id":"a","kind":"text","props":{"text":"x","fontSize":20}}""", ViewValidator.Codes.ForbiddenProp },
         { """{"id":"a","kind":"text","props":{"text":"x","fontFamily":"Comic Sans MS"}}""", ViewValidator.Codes.ForbiddenProp },
         { """{"id":"a","kind":"text","props":{"text":"x"},"contextAction":"open"}""", ViewValidator.Codes.InvalidAction },
+        // S22.4: a slider is styled by its theme only, and named for assistive technology.
+        { """{"id":"a","kind":"slider","props":{"automationName":"Volume","value":0.5,"width":300}}""", ViewValidator.Codes.ForbiddenProp },
+        { """{"id":"a","kind":"slider","props":{"automationName":"Volume","value":0.5,"foreground":"#f00"}}""", ViewValidator.Codes.ForbiddenProp },
+        { """{"id":"a","kind":"slider","props":{"value":0.5,"step":0.1}}""", ViewValidator.Codes.MissingAutomationName },
+        { """{"id":"a","kind":"slider","props":{"automationName":"Volume","value":0.5,"thumb":"round"}}""", ViewValidator.Codes.UnknownProp },
     };
+
+    [Fact]
+    public void S22_4_a_slider_with_a_value_and_step_is_accepted()
+    {
+        var model = new SurfaceModel("s");
+        var update = model.ApplyView(ViewSet(1,
+            """{"id":"a","kind":"slider","props":{"automationName":"Volume","value":{"$state":"level"},"step":0.02},"action":{"event":"level"}}"""));
+
+        Assert.True(update.Applied, string.Join("; ", update.Issues?.Select(i => i.Code) ?? []));
+    }
+
+    [Theory]
+    [InlineData("subzerodev.default", HostMode.Replacement, false, "subzerodev.shell")]
+    [InlineData("subzerodev.default", HostMode.Replacement, true, "subzerodev.default")]
+    [InlineData("subzerodev.default", HostMode.Coexistence, false, "subzerodev.default")]
+    [InlineData("user.mine", HostMode.Replacement, false, "user.mine")]
+    public void S22_5_replacement_mode_shows_the_shell_layout_for_an_unsaved_default(string layout, HostMode mode, bool saved, string shown) =>
+        Assert.Equal(shown, BuiltInLayouts.ForMode(layout, mode, saved));
 
     [Theory]
     [MemberData(nameof(InvalidViews))]

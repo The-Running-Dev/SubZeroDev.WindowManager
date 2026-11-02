@@ -540,6 +540,86 @@ public sealed partial class WmToggle : Button
 }
 
 /// <summary>
+/// A <c>Slider</c> element over 0..1. <see cref="Committed"/> fires with the value when the pointer lets
+/// go, and when an arrow key, Home or End moves it (by <see cref="Step"/>). A value from the plugin's
+/// state is shown through <see cref="Apply"/>, which never fires it and waits while a drag is under way.
+/// Uses the platform slider template unless <c>Wm.Element.Slider</c> restyles it.
+/// </summary>
+public sealed partial class WmSlider : Slider
+{
+    public const double DefaultStep = 0.05;
+
+    private bool _dragging;
+
+    public WmSlider()
+    {
+        Minimum = 0;
+        Maximum = 1;
+        Step = DefaultStep;
+        LargeChange = 0.1;
+        IsThumbToolTipEnabled = false;
+        // The slider marks its own pointer input handled, so these are heard even then.
+        AddHandler(PointerPressedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => _dragging = true), handledEventsToo: true);
+        AddHandler(PointerReleasedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => Release()), handledEventsToo: true);
+        AddHandler(PointerCaptureLostEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => Release()), handledEventsToo: true);
+        PreviewKeyDown += OnPreviewKeyDown;
+    }
+
+    /// <summary>Raised with the value the user moved it to.</summary>
+    public event EventHandler<double>? Committed;
+
+    /// <summary>What an arrow key moves; anything outside (0, 1] is the default.</summary>
+    public double Step
+    {
+        get => SmallChange;
+        set
+        {
+            var step = value > 0 && value <= 1 ? value : DefaultStep;
+            SmallChange = step;
+            StepFrequency = step;
+        }
+    }
+
+    public void Apply(double value)
+    {
+        if (!_dragging)
+        {
+            Value = Math.Clamp(value, 0, 1);
+        }
+    }
+
+    private void Release()
+    {
+        if (_dragging)
+        {
+            _dragging = false;
+            Committed?.Invoke(this, Value);
+        }
+    }
+
+    private void OnPreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+    {
+        double? next = e.Key switch
+        {
+            Windows.System.VirtualKey.Left or Windows.System.VirtualKey.Down => Value - Step,
+            Windows.System.VirtualKey.Right or Windows.System.VirtualKey.Up => Value + Step,
+            Windows.System.VirtualKey.Home => 0,
+            Windows.System.VirtualKey.End => 1,
+            _ => null,
+        };
+        if (next is not { } target)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        // Whole steps, so repeated presses land on the same values whatever the start.
+        Value = Math.Clamp(Math.Round(target / Step) * Step, 0, 1);
+        Committed?.Invoke(this, Value);
+    }
+}
+
+/// <summary>
 /// A <c>TextInput</c> element. An edit is reported through <see cref="Edited"/> once typing pauses for
 /// <see cref="Debounce"/>. A value from the plugin's state is shown through <see cref="Apply"/> only
 /// while no edit is pending, so it never overwrites what is being typed. Up and Down raise

@@ -76,6 +76,8 @@ In replacement mode the host takes the roles Explorer plays:
 - **Desktop icons.** The `subzerodev.desktop-icons` gadget lists your Desktop and the public Desktop, sorted by name, and follows changes. A double click or Enter opens an icon as Explorer would.
 - **Windows key.** A lone press of the Windows key, or Ctrl+Esc, opens the launcher. Win+R opens it in run mode, Win+E opens This PC, Win+D shows the desktop and Win+M minimises every window. Other Windows-key shortcuts, Win+L among them, still go to Windows, and the Start menu stays closed.
 - **Power menu.** Add the `power` item from plugin `subzerodev.session` to a panel. It locks, sleeps, signs out, restarts or shuts down; the last three ask first. An application with unsaved work may refuse, and the menu says so. The same actions are the `host.session.*` commands.
+- **Volume, network and battery.** Plugin `subzerodev.indicators` shows each as a panel item. The volume popup has a mute switch and a level slider (the arrow keys move it by 2 %); the network and battery popups show the state and open the matching Settings page. The battery item hides itself on a machine without a battery.
+- **Built-in layout.** A preset that uses the built-in `subzerodev.default` layout gets the `subzerodev.shell` layout in replacement mode: launcher, running windows, notification area, the three indicators, clock and power menu along the bottom. Save your own `subzerodev.default` to keep it instead.
 - **Other applications' app bars.** A docked toolbar gets its edge from the same work-area service as the host's `reserve` panels, so the two never overlap. `ABM_GETTASKBARPOS` reports the primary monitor's first panel as the taskbar.
 
 Add the tray item to a panel with plugin `subzerodev.tray`. In coexistence mode it shows as `Incompatible`, because Explorer keeps the notification area.
@@ -96,7 +98,7 @@ Flashing windows mark their running-windows button for attention until you activ
 ## Known gaps
 
 - **Is the per-user value honoured on your build?** Windows 11 Enterprise 26200 is expected to honour it. If it does not, the fallback is the per-user Custom User Interface policy value, and that switch will be a decision entry. This is checked by hand (S17.7): after `--shell on` and signing out and in, the guardian runs and `explorer.exe` does not; after `--shell off` and another sign-in, Explorer is back.
-- Until S22 lands, replacement mode has no system indicators (volume, network, battery).
+- Real audio, network and battery devices, and whether each `ms-settings:` page opens without Explorer, are checked by hand; the tests use a file of their own. The indicators show text labels until an asset pack gives their icons images. Wi-Fi networks are chosen in Settings, not in the popup.
 - The real Windows key and the five power commands are checked by hand; the tests inject marked keys the host swallows and record the commands. Win+Tab, virtual-desktop keys and the Win+X menu are not handled.
 - Real tray apps and docked toolbars are checked by hand; the tests use a client of their own. Other app bars are not told (`ABN_POSCHANGED`) when the host's own panels change.
 - Your real wallpaper and Desktop folders are checked by hand; the tests use files of their own. Desktop icons stack in one column, with no wrapping grid, and cannot be dragged.

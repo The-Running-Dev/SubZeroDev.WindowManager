@@ -13,7 +13,7 @@ public sealed record ViewNode(
     ElementAction? Action = null,
     ElementAction? ContextAction = null);
 
-public enum ElementKind { Text, Icon, Image, Button, Toggle, Stack, List, Progress, TextInput, Separator, Spacer }
+public enum ElementKind { Text, Icon, Image, Button, Toggle, Stack, List, Progress, TextInput, Slider, Separator, Spacer }
 
 /// <summary>Exactly one of <see cref="Invoke"/>, <see cref="Event"/> or <see cref="Popup"/> is set.</summary>
 public sealed record ElementAction(InvokeAction? Invoke = null, string? Event = null, string? Popup = null);
@@ -69,11 +69,12 @@ public static partial class ViewValidator
         ["list"] = ["items", "orientation", "selection", "selectedKey"],
         ["progress"] = ["value"],
         ["textInput"] = ["value", "placeholder", "navigates"],
+        ["slider"] = ["value", "step"],
         ["separator"] = [],
         ["spacer"] = ["flex"],
     };
 
-    private static readonly HashSet<string> NeedsAutomationName = new(StringComparer.Ordinal) { "button", "toggle", "textInput", "list" };
+    private static readonly HashSet<string> NeedsAutomationName = new(StringComparer.Ordinal) { "button", "toggle", "textInput", "slider", "list" };
 
     public static ValidationResult Validate(ViewNode root) =>
         Validate(JsonSerializer.SerializeToNode(root, ProtocolJson.Options));

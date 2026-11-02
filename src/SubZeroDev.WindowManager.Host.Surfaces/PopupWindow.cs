@@ -144,6 +144,24 @@ public sealed class PopupWindow
         TryFocus();
     }
 
+    /// <summary>Whether keyboard focus is on an element of the view, rather than lost with a replaced element.</summary>
+    public bool HasFocusWithin
+    {
+        get
+        {
+            var focused = Frame.XamlRoot is { } root ? FocusManager.GetFocusedElement(root) as DependencyObject : null;
+            for (; focused is not null; focused = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(focused))
+            {
+                if (focused == View.Root)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
     /// <summary>Fits the window to the view after it rendered again, and retries a pending <see cref="FocusContent"/>.</summary>
     public void ViewRendered()
     {
@@ -158,9 +176,17 @@ public sealed class PopupWindow
             return;
         }
 
-        var target = View.TextInputs().FirstOrDefault() as Control ?? FocusManager.FindFirstFocusableElement(Frame) as Control;
+        var target = View.TextInputs().FirstOrDefault() as Control
+            ?? View.InteractiveElements().FirstOrDefault(element => element.Visibility == Visibility.Visible && element.IsEnabled)
+            ?? FocusManager.FindFirstFocusableElement(Frame) as Control;
         if (target is null)
         {
+            // A view just rendered may not be in the tree yet.
+            if (_focusRetries++ < MaxFocusRetries)
+            {
+                _window.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, TryFocus);
+            }
+
             return;
         }
 
