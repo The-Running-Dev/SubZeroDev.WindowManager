@@ -505,7 +505,7 @@ public static partial class Program
         }
 
         private void Recover(string reason, bool hostExited, int? exitCode) =>
-            Recoverer.Recover(_dataRoot, _sessionId, reason, hostExited, exitCode, Log);
+            Recoverer.Recover(_dataRoot, _sessionId, reason, hostExited, exitCode, Log, Reverter.ForHook(_hookDirectory));
 
         /// <summary>Tells the user and waits for them; under the test hook a <c>dismiss</c> file stands in for the message box.</summary>
         private async Task GiveUpAsync()

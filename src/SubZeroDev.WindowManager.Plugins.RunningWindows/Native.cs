@@ -48,6 +48,34 @@ internal static unsafe partial class Native
         public fixed char Device[32];
     }
 
+    public const uint WS_POPUP = 0x80000000;
+    public const int HSHELL_WINDOWACTIVATED = 4;
+    public const int HSHELL_REDRAW = 6;
+    public const int HSHELL_RUDEAPPACTIVATED = 0x8004;
+    public const int HSHELL_FLASH = 0x8006;
+
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial uint RegisterWindowMessageW(string name);
+
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint CreateWindowExW(uint exStyle, string className, string title, uint style,
+        int x, int y, int width, int height, nint parent, nint menu, nint module, nint param);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DestroyWindow(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool RegisterShellHookWindow(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeregisterShellHookWindow(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint DispatchMessageW(in MSG msg);
+
     [LibraryImport("user32.dll")]
     public static partial nint SetWinEventHook(uint eventMin, uint eventMax, nint module,
         delegate* unmanaged[Stdcall]<nint, uint, nint, int, int, uint, uint, void> callback, uint processId, uint threadId, uint flags);

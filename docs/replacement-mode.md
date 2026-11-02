@@ -61,6 +61,19 @@ The guardian passes `--mode replacement` to the host, and the host passes `--wm-
 
 is not started. It shows as `Incompatible` with `ModeUnsupported`, and the Plugins page says why.
 
+## What the host does as the shell
+
+In replacement mode the host takes the roles Explorer plays:
+
+- **Shell window and shell hook.** Its desktop window becomes the shell window, and a hook window hears windows come, go, activate and flash. If another process already holds the shell window, the host logs `ShellRoleTaken` and runs without the roles. Everything else still starts.
+- **Desktop ready.** Once the first layout is placed, the host signals `ShellDesktopSwitchEvent` and sends `WM_USER` to its desktop window, once, so Windows takes down the welcome screen.
+- **Minimised windows.** They are hidden (`ARW_HIDE`) instead of piling up at the bottom of the screen. Use the running-windows list to bring them back. The setting lasts for the session only.
+- **Work area.** A `reserve` panel sets the work area itself. The original is journalled first, so if the host dies the guardian puts it back.
+- **Start-up programs.** The host runs them once per session, in Explorer's order: HKLM RunOnce, RunOnceEx, HKLM Run, HKCU Run, the common Startup folder, your Startup folder, then HKCU RunOnce. Sources turned off by the `Explorer` policy values are skipped. A restarted host starts nothing again.
+- **Folder windows.** `host.files.open {"path": "C:\\Some\\Folder"}` opens a File Explorer folder window. Explorer does not become the shell.
+
+Flashing windows mark their running-windows button for attention until you activate them.
+
 ## Guardian exit codes
 
 | Code | Meaning |
@@ -75,4 +88,5 @@ is not started. It shows as `Incompatible` with `ModeUnsupported`, and the Plugi
 ## Known gaps
 
 - **Is the per-user value honoured on your build?** Windows 11 Enterprise 26200 is expected to honour it. If it does not, the fallback is the per-user Custom User Interface policy value, and that switch will be a decision entry. This is checked by hand (S17.7): after `--shell on` and signing out and in, the guardian runs and `explorer.exe` does not; after `--shell off` and another sign-in, Explorer is back.
-- Until later slices land, replacement mode has no notification area (S19), no desktop or wallpaper (S20), no Windows key or session commands (S21) and no system indicators (S22). Shell roles and session start-up (startup apps, the work area) come in S18.
+- Until later slices land, replacement mode has no notification area (S19), no desktop or wallpaper (S20), no Windows key or session commands (S21) and no system indicators (S22).
+- A window that changes its icon can be marked for attention as if it flashed, until you activate it.

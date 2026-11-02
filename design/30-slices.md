@@ -257,7 +257,7 @@ Acceptance:
 Out of scope: the shell roles (S18) and the notification area (S19); registration for other accounts.
 
 ## S18 — Shell roles and session start-up
-Status: todo
+Status: done
 Delivers: Signed in to the app as his shell, Ben gets his start-up programs, windows report themselves to the running-windows list, minimised windows go to the panel instead of piling up on the screen, and File Explorer folder windows open as ordinary windows.
 Touches: Host.Platform (`IShellRoleService`, `IStartupRunner`, replacement `IAppBarService` that sets the work area, `ARW_HIDE`); Host.App (replacement start order); Host.Core (`host.files.open`); plugin `subzerodev.running-windows` (shell-hook events in replacement mode); `docs/replacement-mode.md`
 Depends on: S17, S7

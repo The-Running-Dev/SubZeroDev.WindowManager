@@ -74,6 +74,16 @@ public static class View
             ("automationName", automationName), ("label", label?.ToJson()), ("icon", icon?.ToJson()), ("active", active?.ToJson()))
         with { Action = action };
 
+    /// <summary>The button with an <c>attention</c> prop: true asks for the user's attention, as a flashing window does.</summary>
+    public static ViewNode WithAttention(this ViewNode button, Prop<bool> attention)
+    {
+        var props = new Dictionary<string, JsonNode?>(button.Props ?? new Dictionary<string, JsonNode?>(), StringComparer.Ordinal)
+        {
+            ["attention"] = attention.ToJson(),
+        };
+        return button with { Props = props };
+    }
+
     public static ViewNode Toggle(string id, string automationName, Prop<bool> isChecked, ElementAction action,
         Prop<string>? label = null, Prop<IconRef>? icon = null, params string[] classes) =>
         Node(id, ElementKind.Toggle, classes,

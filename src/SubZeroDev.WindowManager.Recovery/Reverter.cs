@@ -6,6 +6,9 @@ namespace SubZeroDev.WindowManager.Recovery;
 /// <summary>Undoes journalled desktop changes with plain Win32 calls; no UI and no host state.</summary>
 public static partial class Reverter
 {
+    /// <summary>The file in the test-hook folder where desktop changes are recorded instead of being made.</summary>
+    public const string DesktopActionsLog = "desktop-actions.log";
+
     /// <summary>Newest first. Returns the entries that could not be reverted; the caller logs them and still clears the journal.</summary>
     public static IReadOnlyList<(DesktopChange Change, RecoveryError Error)> RevertAll(JournalDocument doc) => RevertAll(doc, Revert);
 
@@ -23,6 +26,24 @@ public static partial class Reverter
 
         return failures;
     }
+
+    /// <summary>
+    /// The revert for a process under the test hook: a work area is recorded in <c>desktop-actions.log</c> as
+    /// <c>revert-work-area &lt;monitor&gt; l,t,r,b</c> instead of being set, so a test never changes the real one.
+    /// </summary>
+    public static Func<DesktopChange, Outcome> ForHook(string? hookDirectory) => hookDirectory is null ? Revert : change =>
+    {
+        if (change.Kind != DesktopChangeKind.WorkArea)
+        {
+            return Revert(change);
+        }
+
+        var p = change.Payload;
+        Directory.CreateDirectory(hookDirectory);
+        File.AppendAllText(Path.Combine(hookDirectory, DesktopActionsLog),
+            $"revert-work-area {change.MonitorId} {p["left"]},{p["top"]},{p["right"]},{p["bottom"]}\n");
+        return Outcome.Success;
+    };
 
     public static Outcome Revert(DesktopChange change) => change.Kind switch
     {

@@ -20,6 +20,16 @@ public sealed record DesktopChange(Guid Id, DesktopChangeKind Kind, [property: J
             ["edge"] = edge,
             ["thicknessPx"] = thicknessPx,
         });
+
+    /// <summary>A work area set by the host; the payload is the rectangle to put back.</summary>
+    public static DesktopChange WorkArea(string monitorId, int left, int top, int right, int bottom, DateTimeOffset appliedAt) =>
+        new(Guid.NewGuid(), DesktopChangeKind.WorkArea, monitorId, appliedAt, new JsonObject
+        {
+            ["left"] = left,
+            ["top"] = top,
+            ["right"] = right,
+            ["bottom"] = bottom,
+        });
 }
 
 /// <summary>The session's journal: which host wrote it, whether it exited cleanly, and the changes still applied, oldest first.</summary>

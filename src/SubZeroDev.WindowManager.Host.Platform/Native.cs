@@ -234,4 +234,67 @@ internal static unsafe partial class Native
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool IsWindowVisible(nint window);
+
+    public const uint SpiSetWorkArea = 0x002F;
+    public const uint SpiGetMinimizedMetrics = 0x002B;
+    public const uint SpiSetMinimizedMetrics = 0x002C;
+    public const uint SpifSendChange = 0x0002;
+    public const int ArwHide = 0x0008;
+    public const uint WmUser = 0x0400;
+    public const uint WsExToolWindow = 0x00000080;
+    public const uint EventModifyState = 0x0002;
+    public const uint HshellWindowCreated = 1;
+    public const uint HshellWindowDestroyed = 2;
+    public const uint HshellWindowActivated = 4;
+    public const uint HshellRudeAppActivated = 0x8004;
+    public const uint HshellFlash = 0x8006;
+
+    [LibraryImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SystemParametersInfo(uint action, uint param, MinimizedMetrics* data, uint winIni);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint GetShellWindow();
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetShellWindow(nint window);
+
+    /// <summary>Undocumented, exported by user32 since Windows NT: the window that hears shell hook messages with their high bit.</summary>
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetTaskmanWindow(nint window);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool RegisterShellHookWindow(nint window);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeregisterShellHookWindow(nint window);
+
+    [LibraryImport("user32.dll", EntryPoint = "PostMessageW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool PostMessage(nint window, uint message, nuint wParam, nint lParam);
+
+    [LibraryImport("kernel32.dll", EntryPoint = "OpenEventW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint OpenEvent(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, string name);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetEvent(nint handle);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetThreadDesktop(nint desktop);
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct MinimizedMetrics
+{
+    public uint Size;
+    public int Width;
+    public int HorizontalGap;
+    public int VerticalGap;
+    public int Arrange;
 }
