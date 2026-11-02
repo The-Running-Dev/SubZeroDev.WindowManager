@@ -183,7 +183,7 @@ public sealed partial class LauncherTests
     /// The manifest's Ctrl+Alt+Space when no other program holds it; otherwise the first free fallback,
     /// bound through the host's <c>hotkeys</c> setting, so a machine with a conflicting tool still runs these tests.
     /// </summary>
-    private static readonly (string? Override, ushort[] Keys) OpenChord = PickOpenChord();
+    internal static readonly (string? Override, ushort[] Keys) OpenChord = PickOpenChord();
 
     private static (string? Override, ushort[] Keys) PickOpenChord()
     {
