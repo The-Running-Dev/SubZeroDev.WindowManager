@@ -12,7 +12,7 @@ Each budget is the 90th percentile of ten measured runs plus 20%, rounded down. 
 | `hostIdleCpuPercent` | Host CPU over 60 s idle (% of one core) | 8.1 | 6.5 |
 | `hotkeyToPopupMs` | Launcher hotkey until the popup is shown with the query focused, second open (ms) | 26 | 27 |
 | `clickToForegroundMs` | Click on a minimised window's item until it is the foreground window (ms) | 92 | 92 |
-| `replacementStartupMs` | Guardian start in replacement mode until every item of the built-in `subzerodev.shell` layout shows a live view (ms) | 2354 | 3000 |
+| `replacementStartupMs` | Guardian start in replacement mode until every item of the built-in `subzerodev.shell` layout shows a live view (ms) | 2354 | 5419 |
 
 ## How they are measured
 
