@@ -10,7 +10,8 @@ public sealed record ViewNode(
     IReadOnlyDictionary<string, JsonNode?>? Props = null,
     IReadOnlyList<ViewNode>? Children = null,
     ViewNode? ItemTemplate = null,
-    ElementAction? Action = null);
+    ElementAction? Action = null,
+    ElementAction? ContextAction = null);
 
 public enum ElementKind { Text, Icon, Image, Button, Toggle, Stack, List, Progress, TextInput, Separator, Spacer }
 
@@ -177,6 +178,11 @@ public static partial class ViewValidator
         if (element["action"] is { } action)
         {
             CheckAction(action, label, insideTemplate, issues);
+        }
+
+        if (element["contextAction"] is { } contextAction)
+        {
+            CheckAction(contextAction, label, insideTemplate, issues);
         }
     }
 

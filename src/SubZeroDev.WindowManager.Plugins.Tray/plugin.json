@@ -1,0 +1,23 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.tray",
+  "version": "0.1.0",
+  "displayName": "Notification area",
+  "publisher": "SubZeroDev",
+  "description": "Shows other programs' notification icons and their balloons on a panel when the app is the shell.",
+  "hostApi": "^1.0",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.Tray.exe", "args": [] },
+  "capabilities": [],
+  "modes": [ "replacement" ],
+  "requiresExplorer": false,
+  "subscribes": [ "host.tray.icons" ],
+  "contributions": [
+    {
+      "id": "tray",
+      "kind": "panelItem",
+      "displayName": "Notification area",
+      "multiInstance": true
+    }
+  ],
+  "settingsVersion": 1
+}

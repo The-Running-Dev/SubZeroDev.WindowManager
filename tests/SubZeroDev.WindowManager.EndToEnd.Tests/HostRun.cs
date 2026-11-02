@@ -495,6 +495,27 @@ internal static partial class Interactive
         }
     }
 
+    /// <summary>The primary monitor's bounds in physical pixels.</summary>
+    public static (int Left, int Top, int Right, int Bottom) PrimaryMonitor()
+    {
+        var previous = SetThreadDpiAwarenessContext(PerMonitorAwareV2);
+        try
+        {
+            var monitor = MonitorFromPoint(0, 1);
+            var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+            if (!GetMonitorInfoW(monitor, ref info))
+            {
+                throw new InvalidOperationException("GetMonitorInfo failed.");
+            }
+
+            return (info.Monitor.Left, info.Monitor.Top, info.Monitor.Right, info.Monitor.Bottom);
+        }
+        finally
+        {
+            SetThreadDpiAwarenessContext(previous);
+        }
+    }
+
     /// <summary>The window's rectangle in physical pixels.</summary>
     public static (int Left, int Top, int Right, int Bottom) WindowRect(nint hwnd)
     {

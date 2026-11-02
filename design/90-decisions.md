@@ -13,6 +13,22 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S19: the notification area and other applications' app bars
+- **Context:** as the shell the host must answer `Shell_NotifyIcon` and `SHAppBarMessage`, which shell32 sends to `Shell_TrayWnd` as `WM_COPYDATA`. Tests must never create a real `Shell_TrayWnd`, which would take the icons from the user's Explorer, or broadcast the real `TaskbarCreated`.
+- **Chosen:**
+  - **Tray window:** `Shell_TrayWnd` with a `TrayNotifyWnd` child, on a thread of its own, created only in replacement mode. Another process's `Shell_TrayWnd` makes the state `Taken`, and the host runs without a tray.
+  - **Hook scope:** under the test hook the class and the broadcast message are `SubZeroDev.WindowManager.TrayWnd.<id>` and `SubZeroDev.WindowManager.TaskbarCreated.<id>`, with the id from the hook's `tray-id` file (else the process id). Foreground grants are recorded in `desktop-actions.log`.
+  - **Icons:** keyed by GUID (`N` format) when the owner names one with `NIF_GUID`, else by `<ownerHwnd>:<uid>`. The host keeps a copy of each image, and the feed's icon reference carries a `v` that changes with it. Icons of a destroyed owner go on a 500 ms sweep.
+  - **Feed:** `FeedBroker.PublishHost` publishes `host.tray.icons` from the host itself. The test hook's status carries the tray's `changedAt`, so S19.1's 250 ms can be measured.
+  - **Clicks:** `host.tray.invoke {key, action, x?, y?}`. A missing point is the cursor position. A Button's `contextAction` (SDK `WithContextAction`) sends the right click, and `tooltip` (`WithTooltip`) shows the icon's tip.
+  - **App bars:** `ABM_QUERYPOS` and `ABM_SETPOS` go to the S18 work-area service on the monitor the rectangle overlaps most. The reply is written back into the caller's shared `APPBARDATA` with `SHLockShared`. The `hShared` field is read as 64 bits, because a handle above `0x7FFFFFFF` must not be sign-extended. `ABM_GETTASKBARPOS` answers with the primary monitor's first panel's home rectangle, not its window bounds, which an auto-hide panel reports in full and which cannot be read off the UI thread.
+  - **Test client:** allocates its shared block into the tray's process, as shell32 does. On this build a block that `SHAllocShared` allocates for the calling process stays in that process's heap, and no other process can lock it.
+- **Rejected:**
+  - **The real class names under the hook:** the user's tray apps would move to the test host and lose their icons when it exits.
+  - **Our own file mapping and `DuplicateHandle` for the app-bar block:** shell32 already uses `SHAllocShared`, so the host must read what it sends.
+  - **Rendering icons from the owner's `HICON` on each draw:** the handle can go before the panel draws, so a copy is kept.
+- **Known gap:** the real `Shell_NotifyIcon` and `SHAppBarMessage` are never called from tests, so real tray apps (chat, cloud sync, VPN) and a real docked toolbar are checked by hand on the replacement session. `ABN_POSCHANGED` goes to other app bars when one of them moves, but not when the host's own panels change.
+
 ## 2026-11-02 — S18: shell roles and session start-up
 - **Context:** as the session's shell the host must hold the shell window, hear windows come and go, signal Winlogon, own the work area and start the user's start-up programs once (I6, I24). Tests must never call `SetShellWindow`, set the real work area or minimised-window setting, or start real programs.
 - **Chosen:**

@@ -16,6 +16,7 @@
     <Project Path="src/SubZeroDev.WindowManager.Plugins.Clock/SubZeroDev.WindowManager.Plugins.Clock.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Plugins.Launcher/SubZeroDev.WindowManager.Plugins.Launcher.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Plugins.RunningWindows/SubZeroDev.WindowManager.Plugins.RunningWindows.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Plugins.Tray/SubZeroDev.WindowManager.Plugins.Tray.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.PackTool/SubZeroDev.WindowManager.PackTool.csproj" />
   </Folder>
   <Folder Name="/tests/">

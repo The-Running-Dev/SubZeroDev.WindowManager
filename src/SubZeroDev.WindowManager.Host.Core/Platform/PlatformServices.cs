@@ -214,8 +214,17 @@ public abstract record IconRef
 
     public sealed record File(string PackagePath) : IconRef;
 
+    /// <summary>A notification-area icon by its key; <paramref name="Version"/> changes when the owner sets a new image.</summary>
+    public sealed record Tray(string Key, int Version = 0) : IconRef;
+
     public static IconRef? FromJson(JsonNode? node)
     {
+        if (node is JsonObject { Count: 2 } versioned && Text(versioned["tray"]) is { } trayKey
+            && versioned["v"] is JsonValue v && v.TryGetValue<int>(out var version))
+        {
+            return new Tray(trayKey, version);
+        }
+
         if (node is not JsonObject body || body.Count != 1)
         {
             return null;
@@ -228,6 +237,7 @@ public abstract record IconRef
             { Key: "window", Value: JsonValue value } when value.TryGetValue<double>(out var hwnd) => new Window((long)hwnd),
             { Key: "file", Value: JsonValue value } when value.TryGetValue<string>(out var path) => new File(path),
             { Key: "app", Value: JsonObject app } => new App(Text(app["exe"]), Text(app["aumid"])),
+            { Key: "tray", Value: JsonValue value } when value.TryGetValue<string>(out var key) => new Tray(key),
             _ => null,
         };
     }
@@ -279,6 +289,100 @@ public interface IShellRoleService
 
     /// <summary>Hides minimised windows (<c>ARW_HIDE</c>), as Explorer does.</summary>
     bool HideMinimizedWindows();
+}
+
+/// <summary>What the notification area is: held, taken by another process's <c>Shell_TrayWnd</c>, or not tried (coexistence mode).</summary>
+public enum TrayState { NotTried, Held, Taken }
+
+/// <summary>A balloon an icon's owner asked for (<c>NIF_INFO</c>), shown until <paramref name="Until"/>.</summary>
+public sealed record TrayBalloon(string Title, string Text, DateTimeOffset At, DateTimeOffset Until);
+
+/// <summary>
+/// One notification-area icon. <paramref name="Key"/> is <c>"&lt;ownerHwnd&gt;:&lt;uid&gt;"</c>, or the icon's
+/// GUID (<c>N</c> format) when its owner names it by one;
+/// <paramref name="IconVersion"/> goes up each time the owner sets a new image.
+/// </summary>
+public sealed record TrayIcon(string Key, nint OwnerHwnd, uint Uid, int OwnerPid, string Tooltip, bool Hidden, TrayBalloon? Balloon,
+    int IconVersion, int ProtocolVersion);
+
+public enum TrayAction { Select, ContextMenu, DoubleClick }
+
+/// <summary>
+/// The notification area and app-bar messages Explorer answers as the shell: the host's <c>Shell_TrayWnd</c>
+/// receives <c>Shell_NotifyIcon</c> and <c>SHAppBarMessage</c> calls, keeps the icons, and sends clicks back to their owners.
+/// </summary>
+public interface ITrayHost
+{
+    TrayState State { get; }
+
+    IReadOnlyList<TrayIcon> Icons { get; }
+
+    /// <summary>The icons or a balloon changed; raised on the tray's thread.</summary>
+    event EventHandler IconsChanged;
+
+    /// <summary>The icon's current image at a size, or null when it has none.</summary>
+    IconImage? Image(string key, int sizePx);
+
+    /// <summary>Gives the owner foreground rights, then sends the click in the form its version expects. NotFound if the icon is gone.</summary>
+    Task<Outcome> InvokeAsync(string key, TrayAction action, int x, int y, CancellationToken ct);
+}
+
+/// <summary>The <c>host.tray.icons</c> feed and the <c>host.tray.invoke</c> arguments.</summary>
+public static class TrayFeed
+{
+    public const string FeedId = "host.tray.icons";
+    public const string InvokeCommand = "host.tray.invoke";
+
+    /// <summary>
+    /// The feed snapshot: one entry per icon, hidden ones included, with <c>icon</c> a tray icon reference whose
+    /// <c>v</c> changes with the image, and <c>balloon.at</c> in Unix milliseconds.
+    /// </summary>
+    public static JsonArray Snapshot(IEnumerable<TrayIcon> icons) =>
+        new([.. icons.Select(icon => (JsonNode?)new JsonObject
+        {
+            ["key"] = icon.Key,
+            ["uid"] = icon.Uid,
+            ["ownerPid"] = icon.OwnerPid,
+            ["tooltip"] = icon.Tooltip,
+            ["icon"] = new JsonObject { ["tray"] = icon.Key, ["v"] = icon.IconVersion },
+            ["hidden"] = icon.Hidden,
+            ["balloon"] = icon.Balloon is { } balloon
+                ? new JsonObject { ["title"] = balloon.Title, ["text"] = balloon.Text, ["at"] = balloon.At.ToUnixTimeMilliseconds() }
+                : null,
+        })]);
+
+    /// <summary>
+    /// Reads <c>{ key, action: "select" | "contextMenu" | "doubleClick", x?, y? }</c>; null with the reason
+    /// when it is malformed. A missing point is null, for the caller to fill with the cursor position.
+    /// </summary>
+    public static (string Key, TrayAction Action, (int X, int Y)? Point)? ParseInvoke(JsonObject? args, out string? error)
+    {
+        error = null;
+        if (args?["key"] is not JsonValue keyValue || !keyValue.TryGetValue<string>(out var key) || key.Length == 0)
+        {
+            error = "host.tray.invoke needs { key: string, action: \"select\" | \"contextMenu\" | \"doubleClick\" }.";
+            return null;
+        }
+
+        var actionName = args["action"] is JsonValue actionValue && actionValue.TryGetValue<string>(out var name) ? name : null;
+        TrayAction? action = actionName switch
+        {
+            "select" => TrayAction.Select,
+            "contextMenu" => TrayAction.ContextMenu,
+            "doubleClick" => TrayAction.DoubleClick,
+            _ => null,
+        };
+        if (action is null)
+        {
+            error = $"Unknown tray action '{actionName}'; use select, contextMenu or doubleClick.";
+            return null;
+        }
+
+        (int X, int Y)? point = args["x"] is JsonValue x && x.TryGetValue<int>(out var px) && args["y"] is JsonValue y && y.TryGetValue<int>(out var py)
+            ? (px, py)
+            : null;
+        return (key, action.Value, point);
+    }
 }
 
 /// <summary>What a start-up pass ran and skipped.</summary>

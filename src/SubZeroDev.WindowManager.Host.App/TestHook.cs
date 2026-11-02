@@ -89,6 +89,9 @@ internal sealed class TestHook
     /// <summary>The shell roles in replacement mode; null otherwise.</summary>
     public ShellRoleService? ShellRoles { get; init; }
 
+    /// <summary>The notification area in replacement mode; null otherwise.</summary>
+    public TrayHost? Tray { get; init; }
+
     public void Start()
     {
         Directory.CreateDirectory(_directory);
@@ -405,6 +408,16 @@ internal sealed class TestHook
                     ["hwnd"] = e.Hwnd,
                 }).ToArray()),
             },
+            ["tray"] = Tray is null ? null : new JsonObject
+            {
+                ["state"] = Tray.State.ToString(),
+                ["className"] = Tray.ClassName,
+                ["createdMessage"] = Tray.CreatedMessageName,
+                ["announced"] = Tray.Announced,
+                ["window"] = (long)Tray.Window,
+                ["changedAt"] = Tray.LastChanged?.ToUnixTimeMilliseconds(),
+                ["icons"] = TrayFeed.Snapshot(Tray.Icons),
+            },
             ["monitors"] = new JsonArray(_monitors.Monitors.Select(monitor => (JsonNode?)new JsonObject
             {
                 ["id"] = monitor.StableId,
@@ -490,6 +503,7 @@ internal sealed class TestHook
                     ["itemKey"] = view.InfoOf(element)?.ItemKey,
                     ["iconSource"] = view.InfoOf(element)?.IconSource,
                     ["hasIcon"] = element switch { WmButton b => b.Icon is not null, WmToggle t => t.Icon is not null, _ => false },
+                    ["tooltip"] = ToolTipService.GetToolTip(element) as string,
                     ["bounds"] = ScreenBounds(element),
                 }).ToArray()),
                 ["notices"] = new JsonArray(view.Notices().Select(notice => (JsonNode?)new JsonObject

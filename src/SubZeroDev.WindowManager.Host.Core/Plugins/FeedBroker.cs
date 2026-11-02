@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SubZeroDev.WindowManager.Host.Core.Diagnostics;
 using SubZeroDev.WindowManager.Protocol;
 
@@ -104,6 +105,19 @@ public sealed class FeedBroker : IFeedBroker
             }
 
             _feeds[publish.FeedId] = (pluginId, update);
+            Send(update);
+        }
+
+        Updated?.Invoke(this, update);
+    }
+
+    /// <summary>Publishes a feed the host itself provides, such as <c>host.tray.icons</c>; no manifest declares it.</summary>
+    public void PublishHost(string feedId, JsonNode? snapshot)
+    {
+        var update = new FeedUpdateParams(feedId, true, snapshot);
+        lock (_gate)
+        {
+            _feeds[feedId] = ("host", update);
             Send(update);
         }
 

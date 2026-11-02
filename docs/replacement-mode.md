@@ -71,6 +71,10 @@ In replacement mode the host takes the roles Explorer plays:
 - **Work area.** A `reserve` panel sets the work area itself. The original is journalled first, so if the host dies the guardian puts it back.
 - **Start-up programs.** The host runs them once per session, in Explorer's order: HKLM RunOnce, RunOnceEx, HKLM Run, HKCU Run, the common Startup folder, your Startup folder, then HKCU RunOnce. Sources turned off by the `Explorer` policy values are skipped. A restarted host starts nothing again.
 - **Folder windows.** `host.files.open {"path": "C:\\Some\\Folder"}` opens a File Explorer folder window. Explorer does not become the shell.
+- **Notification area.** The host's `Shell_TrayWnd` hears the icons applications add, and broadcasts `TaskbarCreated` so running apps add theirs again. The `subzerodev.tray` plugin shows them as buttons with their tooltips and the latest balloon. A click selects the icon and a right click opens its menu, with the app allowed to take the foreground first. If another process already holds `Shell_TrayWnd`, the host logs `TrayTaken` and runs without a notification area.
+- **Other applications' app bars.** A docked toolbar gets its edge from the same work-area service as the host's `reserve` panels, so the two never overlap. `ABM_GETTASKBARPOS` reports the primary monitor's first panel as the taskbar.
+
+Add the tray item to a panel with plugin `subzerodev.tray`. In coexistence mode it shows as `Incompatible`, because Explorer keeps the notification area.
 
 Flashing windows mark their running-windows button for attention until you activate them.
 
@@ -88,5 +92,6 @@ Flashing windows mark their running-windows button for attention until you activ
 ## Known gaps
 
 - **Is the per-user value honoured on your build?** Windows 11 Enterprise 26200 is expected to honour it. If it does not, the fallback is the per-user Custom User Interface policy value, and that switch will be a decision entry. This is checked by hand (S17.7): after `--shell on` and signing out and in, the guardian runs and `explorer.exe` does not; after `--shell off` and another sign-in, Explorer is back.
-- Until later slices land, replacement mode has no notification area (S19), no desktop or wallpaper (S20), no Windows key or session commands (S21) and no system indicators (S22).
+- Until later slices land, replacement mode has no desktop or wallpaper (S20), no Windows key or session commands (S21) and no system indicators (S22).
+- Real tray apps and docked toolbars are checked by hand; the tests use a client of their own. Other app bars are not told (`ABN_POSCHANGED`) when the host's own panels change.
 - A window that changes its icon can be marked for attention as if it flashed, until you activate it.

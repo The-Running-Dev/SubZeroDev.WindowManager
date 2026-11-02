@@ -20,8 +20,12 @@ public abstract record IconRef
 
     public sealed record File(string PackagePath) : IconRef;
 
+    /// <summary>A notification-area icon by its <c>host.tray.icons</c> key (replacement mode).</summary>
+    public sealed record Tray(string Key) : IconRef;
+
     internal JsonNode ToJson() => this switch
     {
+        Tray tray => new JsonObject { ["tray"] = tray.Key },
         Named named => new JsonObject { ["named"] = named.Id },
         App app => new JsonObject { ["app"] = new JsonObject { ["exe"] = app.Exe, ["aumid"] = app.Aumid } },
         Window window => new JsonObject { ["window"] = window.Hwnd },
@@ -82,6 +86,19 @@ public static class View
             ["attention"] = attention.ToJson(),
         };
         return button with { Props = props };
+    }
+
+    /// <summary>The element with an action for a right click (a context click), as a notification icon's menu.</summary>
+    public static ViewNode WithContextAction(this ViewNode element, ElementAction action) => element with { ContextAction = action };
+
+    /// <summary>The element with a <c>tooltip</c> prop.</summary>
+    public static ViewNode WithTooltip(this ViewNode element, Prop<string> tooltip)
+    {
+        var props = new Dictionary<string, JsonNode?>(element.Props ?? new Dictionary<string, JsonNode?>(), StringComparer.Ordinal)
+        {
+            ["tooltip"] = tooltip.ToJson(),
+        };
+        return element with { Props = props };
     }
 
     public static ViewNode Toggle(string id, string automationName, Prop<bool> isChecked, ElementAction action,
