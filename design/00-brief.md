@@ -75,3 +75,27 @@ Maintained: a base that keeps being extended with plugins over time.
 - Open: .NET and Windows App SDK versions, minimum Windows build, architectures beyond the development machine, and deployment/update format — affects packaging, the plugin SDK's target framework and test targets.
 - Open: whether this folder becomes a git repository and which GitHub remote it uses — affects the `/agentkit:next` build loop, which works through branches and pull requests.
 - Open: the initial monitor/DPI test matrix — which physical or virtual display setups are available to test against.
+
+### Second release (drafted 2026-11-02, assumed until Ben confirms)
+
+Ben asked for the next brief once the first release's slices had merged. The stated goal it serves is the Problem's: the app replaces the Explorer shell altogether. Nothing below is stated by Ben yet, so each entry stays `Assumed:` or `Open:` until he confirms, corrects or drops it.
+
+- Assumed: the second release closes the gaps the first release leaves in replacement mode, as recorded in `docs/replacement-mode.md` § *Features Explorer hosts*. Done means a working day in replacement mode needs nothing that only Explorer provides.
+- Assumed: in scope, in this order of priority:
+  1. **Other applications' notifications.** They show as they arrive, and a history can be opened, acted on and cleared. This lifts the first-release non-goal "Toast notifications and the notification centre".
+  2. **Virtual desktops.** Several sets of windows, switched and moved between from the keyboard and from a panel item. This lifts the first-release non-goal "Virtual-desktop management".
+  3. **Quick settings beyond volume, network and battery.** Bluetooth on and off, display brightness, and the other common toggles, reachable from one popup.
+  4. **The remaining Windows keys and menus.** A power-user menu in place of Win+X, with Win+A, Win+N and Win+Tab reaching their replacements.
+  5. **Taskbar depth in running windows.** Grouping by application, a thumbnail on hover, jump lists, and progress and overlay badges.
+  6. **The desktop.** The usual file context menu on desktop icons, and wallpaper chosen per monitor.
+- Assumed: each in-scope feature ships as a plugin built on the published SDK, as the first release's features do, and works in replacement mode with Explorer not running.
+- Assumed definition of done for the second release:
+  - every in-scope feature works in replacement mode with Explorer not running;
+  - in `docs/replacement-mode.md` § *Features Explorer hosts*, no row in scope still reads *Missing*;
+  - the first release's startup, idle and reaction budgets are still met;
+  - automated tests never touch the user's real notifications, desktops, devices or settings, as the first release's tests do not.
+- Open: whether Windows delivers other applications' notifications to a shell other than Explorer on build 26200. It decides whether item 1 can be built at all, so a check on the real machine comes before `/design`.
+- Open: virtual desktops as Windows' own, or as the shell's own sets of windows. Windows' own belong to Explorer, so they are absent in replacement mode. The shell's own work without Explorer, but applications that ask Windows which desktop they are on will not see them. The cost and the behaviour differ materially.
+- Open: whether second-release features also run in coexistence mode, where Explorer already provides them. Win+A, Win+N and Win+Tab would otherwise conflict with Explorer's own handling of those keys.
+- Open: whether these belong in the second release or later: custom plugin UI drawn inside the host's own windows (deferred by the first release's design), a theme editor, and automatic updates. Each one widens the release's scope.
+- Open: the manual checks in issue #28, S17.7 (the per-user shell value) and S23.4 (a cold start) above all. A failure there changes replacement mode itself, and this release builds on it.
