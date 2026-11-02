@@ -142,6 +142,7 @@ public sealed partial class App : Application
         var hostVersion = typeof(App).Assembly.GetName().Version is { } version ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.1.0";
         _supervisor = new PluginSupervisor(_catalog, _launcher, _pluginLogs, _log, _locations, HostMode.Coexistence, hostVersion,
             settings.RestartPolicy);
+        _catalog.StopWorkerAsync = _supervisor.StopAsync;
         var pluginSettings = new PluginSettingsStore(config, _locations, _pluginLogs);
         _supervisor.PluginSettings = pluginSettings;
         _supervisor.Enablement = new PluginEnablement(config, _catalog);
@@ -228,7 +229,7 @@ public sealed partial class App : Application
     public SettingsWindow OpenSettings(string? page, string? pluginId)
     {
         _settingsWindow ??= new SettingsWindow(new SettingsServices(_catalog!, _supervisor!, _pluginLogs!, _settingsService!,
-            PresetNames, () => ActivePresetId, ApplyPresetAsync, ReapplyLayoutAsync));
+            PresetNames, () => ActivePresetId, ApplyPresetAsync, ReapplyLayoutAsync, Path.Combine(_locations!.DataRoot, "plugin-data")));
         _settingsWindow.Open(page, pluginId);
         return _settingsWindow;
     }

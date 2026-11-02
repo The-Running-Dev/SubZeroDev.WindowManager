@@ -22,6 +22,8 @@ namespace SubZeroDev.WindowManager.TestPlugin;
 /// <c>count</c> as a string; <c>migrate-throws</c> appends "start &lt;settings&gt;" and throws from
 /// <c>MigrateSettingsAsync</c>. All three show "ok".
 /// <c>fixture-windows</c> is not a plugin at all: see <see cref="Fixture"/>.
+/// Every scenario appends "created &lt;instance&gt;" and "destroyed &lt;instance&gt;" to <c>instances.log</c> in its
+/// data folder as instances come and go.
 /// </summary>
 public static class Program
 {
@@ -112,6 +114,7 @@ public sealed class ProbeInstance(InstanceRequest request) : ContributionInstanc
 {
     protected internal override Task OnCreatedAsync(CancellationToken ct)
     {
+        Program.Append("instances.log", $"created {InstanceId}");
         if (Program.Scenario == "buttons")
         {
             Surface.SetView(View.Stack("root", StackOrientation.Horizontal,
@@ -158,6 +161,12 @@ public sealed class ProbeInstance(InstanceRequest request) : ContributionInstanc
         }
 
         return Task.CompletedTask;
+    }
+
+    public override ValueTask DisposeAsync()
+    {
+        Program.Append("instances.log", $"destroyed {InstanceId}");
+        return base.DisposeAsync();
     }
 
     private static JsonObject Text(string id, string text) =>

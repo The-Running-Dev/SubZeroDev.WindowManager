@@ -20,15 +20,17 @@ public sealed record SettingsServices(
     Func<IReadOnlyList<(string Id, string Name)>> Presets,
     Func<string> ActivePreset,
     Func<string, CancellationToken, Task<Outcome>> ApplyPreset,
-    Func<Task> InstanceSaved);
+    Func<Task> InstanceSaved,
+    string PluginDataRoot);
 
 /// <summary>
 /// <c>host.settings.open</c>: one window with a Plugins page (every plugin package with its version, source,
-/// state and problems; the selected one's switches, instance settings, recent faults and log tail) and an
-/// Appearance page (the active preset). Closing hides it; it lives until <see cref="Close"/>. Every control
+/// state and problems; installing a package and removing one; the selected one's switches, instance settings,
+/// recent faults and log tail), a Layout page (see <c>SettingsWindow.Layout.cs</c>) and an Appearance page
+/// (the active preset). Closing hides it; it lives until <see cref="Close"/>. Every control
 /// has an automation name and id and is reachable with Tab. Call on the UI thread.
 /// </summary>
-public sealed class SettingsWindow
+public sealed partial class SettingsWindow
 {
     public const string PluginsPage = "plugins";
     public const string AppearancePage = "appearance";
@@ -38,8 +40,10 @@ public sealed class SettingsWindow
     private readonly NavigationView _navigation;
     private readonly NavigationViewItem _pluginsItem;
     private readonly NavigationViewItem _appearanceItem;
+    private readonly NavigationViewItem _layoutItem;
     private readonly Grid _pluginsPage;
     private readonly StackPanel _appearancePage;
+    private readonly StackPanel _layoutPage;
     private readonly ListView _pluginList;
     private readonly StackPanel _detail = new() { Spacing = 12, Padding = new Thickness(16, 0, 16, 16) };
     private readonly TextBlock _detailHeader = new() { Style = null, FontSize = 20, TextWrapping = TextWrapping.Wrap };
@@ -48,6 +52,9 @@ public sealed class SettingsWindow
     private readonly Button _enable;
     private readonly Button _disable;
     private readonly Button _retry;
+    private readonly Button _remove;
+    private readonly CheckBox _deleteData = new() { Content = "Delete data" };
+    private readonly TextBox _installPath = new() { PlaceholderText = "Package zip or folder", MinWidth = 200 };
     private readonly StackPanel _instances = new() { Spacing = 12 };
     private readonly StackPanel _faults = new() { Spacing = 4 };
     private readonly TextBox _log;
@@ -69,6 +76,24 @@ public sealed class SettingsWindow
         _enable = ActionButton("Enable", "Plugin.Enable", () => _services.Supervisor.EnableAsync(SelectedPlugin!, CancellationToken.None));
         _disable = ActionButton("Disable", "Plugin.Disable", () => _services.Supervisor.DisableAsync(SelectedPlugin!, CancellationToken.None));
         _retry = ActionButton("Retry", "Plugin.Retry", () => _services.Supervisor.RetryAsync(SelectedPlugin!, CancellationToken.None));
+        _remove = ActionButton("Remove", "Plugin.Remove", () => RemoveAsync(SelectedPlugin!, _deleteData.IsChecked == true));
+        Name(_deleteData, "Delete data", "Plugin.DeleteData");
+        Name(_installPath, "Package to install", "Plugins.InstallPath");
+        var install = new Button { Content = "Install" };
+        Name(install, "Install", "Plugins.Install");
+        install.Click += async (_, _) =>
+        {
+            var installed = await _services.Catalog.InstallAsync(PackageKind.Plugin, _installPath.Text.Trim().Trim('"'), CancellationToken.None);
+            if (installed.Ok)
+            {
+                _message.Text = $"Installed {installed.Value!.Id} {installed.Value.Version}.";
+                Select(installed.Value.Id);
+            }
+            else
+            {
+                Report(new Outcome(installed.Error), string.Empty);
+            }
+        };
         _log = new TextBox
         {
             IsReadOnly = true,
@@ -88,7 +113,7 @@ public sealed class SettingsWindow
         _detail.Children.Add(_detailHeader);
         _detail.Children.Add(_detailState);
         _detail.Children.Add(_problems);
-        _detail.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _enable, _disable, _retry } });
+        _detail.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _enable, _disable, _retry, _remove, _deleteData } });
         _detail.Children.Add(Heading("Instances"));
         _detail.Children.Add(_instances);
         _detail.Children.Add(Heading("Recent faults"));
@@ -96,13 +121,21 @@ public sealed class SettingsWindow
         _detail.Children.Add(Heading("Log"));
         _detail.Children.Add(_log);
 
+        var installRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Padding = new Thickness(0, 0, 0, 8), Children = { _installPath, install } };
+        Grid.SetRow(_pluginList, 1);
+        var plugins = new Grid
+        {
+            RowDefinitions = { new RowDefinition { Height = GridLength.Auto }, new RowDefinition { Height = new GridLength(1, GridUnitType.Star) } },
+            Children = { installRow, _pluginList },
+        };
         var detailScroll = new ScrollViewer { Content = _detail };
         Grid.SetColumn(detailScroll, 1);
         _pluginsPage = new Grid
         {
             ColumnDefinitions = { new ColumnDefinition { Width = GridLength.Auto }, new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) } },
-            Children = { _pluginList, detailScroll },
+            Children = { plugins, detailScroll },
         };
+        _layoutPage = BuildLayoutPage();
 
         _presets = new ComboBox { Header = "Preset", MinWidth = 280 };
         Name(_presets, "Preset", "Appearance.Preset");
@@ -119,6 +152,8 @@ public sealed class SettingsWindow
         Name(_pluginsItem, "Plugins page", "Settings.Nav.Plugins");
         _appearanceItem = new NavigationViewItem { Content = "Appearance", Tag = AppearancePage, Icon = new SymbolIcon(Symbol.FontColor) };
         Name(_appearanceItem, "Appearance page", "Settings.Nav.Appearance");
+        _layoutItem = new NavigationViewItem { Content = "Layout", Tag = LayoutPage, Icon = new SymbolIcon(Symbol.ViewAll) };
+        Name(_layoutItem, "Layout page", "Settings.Nav.Layout");
         _navigation = new NavigationView
         {
             PaneDisplayMode = NavigationViewPaneDisplayMode.Left,
@@ -126,7 +161,7 @@ public sealed class SettingsWindow
             IsSettingsVisible = false,
             IsPaneToggleButtonVisible = false,
             OpenPaneLength = 200,
-            MenuItems = { _pluginsItem, _appearanceItem },
+            MenuItems = { _pluginsItem, _layoutItem, _appearanceItem },
         };
         Name(_navigation, "Settings sections", "Settings.Nav");
         _navigation.SelectionChanged += (_, e) => ShowPage(e.SelectedItem is NavigationViewItem { Tag: string page } ? page : PluginsPage);
@@ -169,7 +204,12 @@ public sealed class SettingsWindow
     /// <summary>Shows and activates the window on <paramref name="page"/>, with <paramref name="pluginId"/> selected when given.</summary>
     public void Open(string? page, string? pluginId)
     {
-        _navigation.SelectedItem = page == AppearancePage ? _appearanceItem : _pluginsItem;
+        _navigation.SelectedItem = page switch
+        {
+            AppearancePage => _appearanceItem,
+            LayoutPage => _layoutItem,
+            _ => _pluginsItem,
+        };
         ShowPage(Page);
         if (pluginId is not null)
         {
@@ -187,6 +227,7 @@ public sealed class SettingsWindow
         RefreshPluginList();
         RefreshStatus();
         RefreshPresets();
+        RefreshLayout();
     }
 
     public void Select(string pluginId)
@@ -250,6 +291,13 @@ public sealed class SettingsWindow
                 case TextBox text:
                     text.Text = value!.GetValue<string>();
                     break;
+                case CheckBox check:
+                    check.IsChecked = value!.GetValue<bool>();
+                    break;
+                case ListView list:
+                    var tag = value!.GetValue<string>();
+                    list.SelectedItem = list.Items.OfType<ListViewItem>().FirstOrDefault(item => item.Tag as string == tag);
+                    break;
                 default:
                     return $"No settable control {set}.";
             }
@@ -290,6 +338,7 @@ public sealed class SettingsWindow
                 ["enable"] = _enable.IsEnabled,
                 ["disable"] = _disable.IsEnabled,
                 ["retry"] = _retry.IsEnabled,
+                ["remove"] = _remove.IsEnabled,
                 ["faults"] = new JsonArray([.. _faults.Children.OfType<TextBlock>().Select(text => (JsonNode?)text.Text)]),
                 ["logLines"] = new JsonArray([.. _logLines.Select(line => (JsonNode?)line)]),
                 ["instances"] = new JsonArray([.. _forms.Select(form => (JsonNode?)new JsonObject
@@ -310,13 +359,44 @@ public sealed class SettingsWindow
                 ["items"] = new JsonArray([.. _presets.Items.OfType<ComboBoxItem>().Select(item => (JsonNode?)(string)item.Tag)]),
                 ["selected"] = (_presets.SelectedItem as ComboBoxItem)?.Tag as string,
             },
+            ["layout"] = LayoutSnapshot(),
         };
     }
 
     private void ShowPage(string page)
     {
-        _navigation.Content = page == AppearancePage ? _appearancePage : _pluginsPage;
+        _navigation.Content = page switch
+        {
+            AppearancePage => _appearancePage,
+            LayoutPage => _layoutPage,
+            _ => _pluginsPage,
+        };
         Refresh();
+    }
+
+    /// <summary>Removes a user plugin, then its <c>plugin-data</c> folder too when asked.</summary>
+    private async Task<Outcome> RemoveAsync(string pluginId, bool deleteData)
+    {
+        var outcome = await _services.Catalog.RemoveAsync(PackageKind.Plugin, pluginId, CancellationToken.None);
+        if (!outcome.Ok || !deleteData)
+        {
+            return outcome;
+        }
+
+        var data = Path.Combine(_services.PluginDataRoot, pluginId);
+        try
+        {
+            if (Directory.Exists(data))
+            {
+                Directory.Delete(data, recursive: true);
+            }
+
+            return outcome;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return Outcome.Fail(CoreErrorCode.IoFailure, $"{pluginId} was removed but its data could not be deleted: {e.Message}", true);
+        }
     }
 
     private IEnumerable<(PackageRecord Record, PluginStatus Status)> Rows() =>
@@ -432,7 +512,7 @@ public sealed class SettingsWindow
         {
             _detailHeader.Text = "No plugin selected.";
             _detailState.Text = string.Empty;
-            _enable.IsEnabled = _disable.IsEnabled = _retry.IsEnabled = false;
+            _enable.IsEnabled = _disable.IsEnabled = _retry.IsEnabled = _remove.IsEnabled = false;
             _logLines = [];
             _log.Text = string.Empty;
             return;
@@ -449,6 +529,7 @@ public sealed class SettingsWindow
         _enable.IsEnabled = status.State == PluginState.Disabled;
         _disable.IsEnabled = status.State is not (PluginState.Disabled or PluginState.Invalid);
         _retry.IsEnabled = status.State is PluginState.Unavailable or PluginState.Faulted;
+        _remove.IsEnabled = true;
 
         var faults = _services.Supervisor.FaultsOf(pluginId);
         foreach (var fault in faults.Reverse())
