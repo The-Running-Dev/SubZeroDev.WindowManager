@@ -146,7 +146,7 @@ public sealed unsafe class PanelWindow
     }
 
     /// <summary>Makes <c>WS_EX_TOPMOST</c> match <see cref="WantsTopmost"/>.</summary>
-    private void ApplyTopmost()
+    public void ApplyTopmost()
     {
         if (!_closeRequested && WantsTopmost != IsTopmost)
         {
