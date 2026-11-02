@@ -12,6 +12,7 @@ Each budget is the 90th percentile of ten measured runs plus 20%, rounded down. 
 | `hostIdleCpuPercent` | Host CPU over 60 s idle (% of one core) | 8.1 | 6.5 |
 | `hotkeyToPopupMs` | Launcher hotkey until the popup is shown with the query focused, second open (ms) | 26 | 27 |
 | `clickToForegroundMs` | Click on a minimised window's item until it is the foreground window (ms) | 92 | 92 |
+| `replacementStartupMs` | Guardian start in replacement mode until every item of the built-in `subzerodev.shell` layout shows a live view (ms) | 2354 | 5419 |
 
 ## How they are measured
 
@@ -21,6 +22,8 @@ Each budget is the 90th percentile of ten measured runs plus 20%, rounded down. 
 2. Idle waits 60 s, then reads the host's CPU time over that minute and the private bytes of the host and each worker.
 3. The hotkey opens the launcher once, closes it, then times the second open, as S8.1 does.
 4. A test window is minimised and its item clicked; the test polls for it to become the foreground window.
+
+Replacement startup (S23) is measured separately: the guardian starts with `--mode replacement` and no layout of its own, so the host shows the built-in `subzerodev.shell` layout with all eight items. The test hook fakes Explorer, the shell roles and the indicator devices, so nothing on the machine changes. Its runs go to `replacement.json`.
 
 The test hook that reports status writes `status.json` every 250 ms, so the idle CPU includes that work. A released build without the hook does less.
 
@@ -36,4 +39,4 @@ SUBZERODEV_WM_BUDGETS=measure SUBZERODEV_WM_BUDGET_OUT=artifacts/budgets tests/S
 
 ## Checking
 
-The `budgets` job in `.github/workflows/ci.yml` runs startup and idle three times on every pull request with `SUBZERODEV_WM_BUDGETS=ci` and fails when a median is more than 10% over its CI budget. `SUBZERODEV_WM_BUDGETS=reference` checks against the reference column instead. `SUBZERODEV_WM_BUDGET_RUNS` changes the number of runs.
+The `budgets` job in `.github/workflows/ci.yml` runs startup, idle and replacement startup three times on every pull request with `SUBZERODEV_WM_BUDGETS=ci` and fails when a median is more than 10% over its CI budget. `SUBZERODEV_WM_BUDGETS=reference` checks against the reference column instead. `SUBZERODEV_WM_BUDGET_RUNS` changes the number of runs.
