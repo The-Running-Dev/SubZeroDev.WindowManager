@@ -164,7 +164,7 @@ Acceptance:
 Out of scope: package install and removal (S11), layout editing (S11).
 
 ## S11 — Install, place and remove plugins
-Status: todo
+Status: done
 Delivers: A plugin author can hand Ben a package file, and Ben can install it, add its items to a panel, rearrange or remove them, and remove the plugin, all from settings and without restarting.
 Touches: PackTool (`wm-pack`); Host.Core (`IPackageCatalog.InstallAsync`/`RemoveAsync`, staging, upgrade with rollback, user override of built-in ids); Host.Settings (install, remove, layout editor: add, move and remove instances across zones and panels; add and remove panels)
 Depends on: S10

@@ -232,6 +232,8 @@ public sealed partial class SettingsWindowTests
         problems.AddRange(Unreachable(Window(status)!));
         status = await SettingsUiAsync(run, new JsonObject { ["page"] = "appearance" });
         problems.AddRange(Unreachable(Window(status)!));
+        status = await SettingsUiAsync(run, new JsonObject { ["page"] = "layout" });
+        problems.AddRange(Unreachable(Window(status)!));
 
         Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
         Assert.Equal(0, await run.StopAsync());
@@ -294,7 +296,7 @@ public sealed partial class SettingsWindowTests
     private static bool FocusableWithin(AutomationElement element) =>
         element.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.IsKeyboardFocusableProperty, true)) is not null;
 
-    private static async Task<JsonObject> SettingsUiAsync(HostRun run, params JsonObject[] requests)
+    internal static async Task<JsonObject> SettingsUiAsync(HostRun run, params JsonObject[] requests)
     {
         var before = (int?)(await run.WaitForStatusAsync())["settingsUiRuns"] ?? 0;
         await File.WriteAllLinesAsync(Path.Combine(run.HookDirectory, "settings-ui"), requests.Select(request => request.ToJsonString()),
@@ -313,7 +315,7 @@ public sealed partial class SettingsWindowTests
         return code;
     }
 
-    private static async Task<string> WaitForFileAsync(string path, Func<string, bool> condition)
+    internal static async Task<string> WaitForFileAsync(string path, Func<string, bool> condition)
     {
         var deadline = Stopwatch.StartNew();
         while (true)
@@ -333,19 +335,19 @@ public sealed partial class SettingsWindowTests
         JsonNode.Parse(File.ReadAllText(Path.Combine(run.DataRoot, "settings.json")))!["plugins"]?[plugin]?["enabled"] is not JsonValue value
         || value.GetValue<bool>();
 
-    private static JsonObject? Window(JsonObject status) => status["settingsWindow"] as JsonObject;
+    internal static JsonObject? Window(JsonObject status) => status["settingsWindow"] as JsonObject;
 
-    private static JsonObject Row(JsonObject status, string plugin) =>
+    internal static JsonObject Row(JsonObject status, string plugin) =>
         Window(status)?["plugins"]?.AsArray().FirstOrDefault(row => (string?)row!["id"] == plugin)?.AsObject()
         ?? throw new InvalidOperationException($"The settings window lists no {plugin}: {status["settingsWindow"]?.ToJsonString()}");
 
-    private static string? State(JsonObject status, string plugin) =>
+    internal static string? State(JsonObject status, string plugin) =>
         (string?)Window(status)?["plugins"]?.AsArray().FirstOrDefault(row => (string?)row!["id"] == plugin)?["state"];
 
-    private static JsonObject? Plugin(JsonObject status, string plugin) =>
+    internal static JsonObject? Plugin(JsonObject status, string plugin) =>
         status["plugins"]!.AsArray().FirstOrDefault(p => (string?)p!["id"] == plugin)?.AsObject();
 
-    private static string? Reason(JsonObject status, string plugin) =>
+    internal static string? Reason(JsonObject status, string plugin) =>
         (string?)status["contributions"]!.AsArray().FirstOrDefault(c => (string?)c!["plugin"] == plugin)?["reason"];
 
     /// <summary>The first instance's settings in a layout file's text; null while the file is missing or being written.</summary>

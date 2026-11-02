@@ -79,6 +79,33 @@ public sealed class SettingsService(IPackageCatalog catalog, IPluginSupervisor s
             ? SaveInstanceAsync(manifest, instanceId, settings, ct)
             : Task.FromResult(Outcome.Fail(CoreErrorCode.NotFound, $"{pluginId} has no valid manifest."));
 
+    /// <summary>A copy of the active layout's JSON, or null when the layout is not valid.</summary>
+    public JsonObject? ActiveLayout() =>
+        config.Get(new DocumentId(DocumentKind.Layout, activeLayoutId())) is { Health: DocumentHealth.Valid, Content: { } content }
+            ? (JsonObject)content.DeepClone()
+            : null;
+
+    /// <summary>Applies one <see cref="LayoutEditor"/> operation to the active layout and writes it.</summary>
+    public async Task<Outcome> EditLayoutAsync(Func<JsonObject, Outcome<JsonObject>> edit, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        var id = new DocumentId(DocumentKind.Layout, activeLayoutId());
+        var state = config.Get(id);
+        if (state is not { Health: DocumentHealth.Valid, Content: { } content })
+        {
+            return Outcome.Fail(CoreErrorCode.DocumentReadOnly, $"Layout '{id.Id}' is {state.Health}.");
+        }
+
+        var edited = edit(content);
+        if (!edited.Ok)
+        {
+            return new Outcome(edited.Error);
+        }
+
+        var written = await config.WriteAsync(id, state.ContentHash, edited.Value!, ct).ConfigureAwait(false);
+        return written.Ok ? Outcome.Success : new Outcome(written.Error);
+    }
+
     /// <summary>Sends <c>plugin.settingsChanged</c> to the running worker when its settings file changed outside the host.</summary>
     public void OnDocumentChanged(DocumentChangedEventArgs e)
     {

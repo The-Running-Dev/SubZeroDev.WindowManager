@@ -14,6 +14,19 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S11: install, place and remove plugins
+- **Context:** a plugin has to go from a package file to an item on a panel, and back out again, from the settings window and without a host restart, and a bad or half-copied package must never leave a broken folder behind.
+- **Chosen:**
+  - `wm-pack` (the PackTool project) checks the manifest with the same reader the host uses and that the entry was built, then writes a zip with sorted entries and a fixed time, so the same input gives the same bytes. Exit codes: 0 ok, 1 invalid manifest, 2 entry missing, 3 I/O.
+  - Installs unpack into `<data>\staging\<guid>`, refuse any entry that leaves that folder (`PackageInvalid`), accept a single wrapper folder, check the package there, and only then move it into `plugins\<id>` in one move. `staging` is emptied when the catalog starts.
+  - An upgrade stops the worker, moves the installed folder aside, moves the new one in and restarts the plugin. When either move fails the installed folder is put back and restarted, so the previous version keeps running.
+  - Removing stops the worker, moves the folder into staging and deletes it there; `plugin-data\<id>` is kept unless "Delete data" is ticked. Placed instances fall back to the `Missing` placeholder. A built-in plugin is refused with `PackageInUse`.
+  - The layout editor's operations (`LayoutEditor`) edit a copy of the layout's JSON, keep every member they do not touch, and are refused with `DocumentInvalid` when the result would not parse. The Layout page applies each change through `SettingsService.EditLayoutAsync` and the instance-saved path, so the panel updates as it does for a hand edit. Removing an instance sends `instance.destroy` to its worker.
+- **Rejected:**
+  - Unpacking straight into `plugins`, because a failed or escaping extract would leave a partial package the catalog then reports as invalid.
+  - Drag and drop in the layout editor for now, because buttons and the keyboard reach the same operations and are the required path.
+- **Known gap:** only plugin packages install (themes, layouts and presets are still copied by hand); the upgrade path is covered by unit tests only, not end to end; there is no package signing; a "Delete data" that fails after the remove leaves the plugin removed and reports `IoFailure`.
+
 ## 2026-11-02 — S10: settings window and plugin manager
 - **Context:** Ben needs one window to see every plugin's health, turn plugins on and off, configure instances, read logs and faults, and pick a preset, without editing files, and every control has to work from the keyboard and screen readers.
 - **Chosen:**
