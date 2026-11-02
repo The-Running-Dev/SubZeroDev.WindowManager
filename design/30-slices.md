@@ -242,7 +242,7 @@ Acceptance:
 Out of scope: optimisation work beyond meeting the budgets.
 
 ## S17 — Run as the Windows shell, and always get back to Explorer
-Status: todo
+Status: done
 Delivers: Ben can make the app his Windows shell with one command and no admin rights, sign in to it instead of Explorer, and always get Explorer back: by command, from Settings, by holding Shift at sign-in, or automatically when the host keeps failing.
 Touches: Guardian (`--shell on|off|status`, `--mode replacement`, `--take-over`, `shell.json`, Explorer fallback); Host.App (`--mode`, host mode to workers); Host.Core (mode filtering per I16, `host.shell.restoreExplorer`, `NotInReplacementMode`); Recovery (`workArea` revert); Host.Settings (a "Use as my shell" switch); `docs/replacement-mode.md`
 Depends on: S15, S4

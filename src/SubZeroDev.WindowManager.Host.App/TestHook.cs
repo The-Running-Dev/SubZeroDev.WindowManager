@@ -384,6 +384,7 @@ internal sealed class TestHook
             ["ready"] = ready,
             ["hostPid"] = Environment.ProcessId,
             ["args"] = new JsonArray(_options.Args.Select(a => (JsonNode?)a).ToArray()),
+            ["mode"] = _options.Mode == HostMode.Replacement ? "replacement" : "coexistence",
             ["guardianPid"] = _guardian?.GuardianPid ?? _options.GuardianPid,
             ["guardianPipe"] = _guardian?.PipeName ?? _options.GuardianPipe,
             ["dataRoot"] = _locations.DataRoot,

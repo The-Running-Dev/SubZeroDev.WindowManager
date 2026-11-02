@@ -21,6 +21,8 @@ public static partial class Program
     public const int AlreadyRunning = 2;
     public const int BudgetSpent = 3;
     public const int HostNotStarted = 4;
+    public const int ShellOverridden = 5;
+    public const int ShellRoleTaken = 6;
     public const string HostExeVariable = "SUBZERODEV_WM_HOST_EXE";
     public const string InstanceVariable = "SUBZERODEV_WM_INSTANCE";
     public const string DataRootVariable = "SUBZERODEV_WM_DATA_ROOT";
@@ -37,11 +39,36 @@ public static partial class Program
     public static async Task<int> Main(string[] args)
     {
         var guardian = new Guardian(args);
+        var shell = new ShellRegistration(guardian.DataRoot, guardian.Log);
         if (args.Contains("--uninstall"))
         {
-            // Runs even while the app is running, and leaves the data folder. Unregistering the shell comes with S17.
+            // Runs even while the app is running, and leaves the data folder.
             Registration(guardian, () => Install.Unregister(guardian.Log));
+            Registration(guardian, () => shell.Off());
             return Normal;
+        }
+
+        var shellIndex = Array.IndexOf(args, "--shell");
+        if (shellIndex >= 0)
+        {
+            var verb = shellIndex + 1 < args.Length ? args[shellIndex + 1] : string.Empty;
+            guardian.Log($"Guardian {Environment.ProcessId}: --shell {verb}");
+            try
+            {
+                return verb switch
+                {
+                    "on" => shell.On(Environment.ProcessPath!),
+                    "off" => shell.Off(),
+                    "status" => shell.Status(),
+                    _ => Usage(guardian, "--shell needs on, off or status."),
+                };
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                guardian.Log($"--shell {verb} failed: {e.Message}");
+                Console.Error.WriteLine($"--shell {verb} failed: {e.Message}");
+                return HostNotStarted;
+            }
         }
 
         if (args.Contains("--first-run"))
@@ -66,6 +93,13 @@ public static partial class Program
         }
     }
 
+    private static int Usage(Guardian guardian, string message)
+    {
+        guardian.Log(message);
+        Console.Error.WriteLine(message);
+        return HostNotStarted;
+    }
+
     /// <summary>A failed registration step is logged and does not stop the launch.</summary>
     private static void Registration(Guardian guardian, Action step)
     {
@@ -86,6 +120,7 @@ public static partial class Program
         private readonly string _logPath;
         private readonly string? _hookDirectory;
         private readonly int _sessionId;
+        private readonly bool _replacement;
         private readonly Lock _logGate = new();
         private string _state = "starting";
         private int? _hostPid;
@@ -102,6 +137,8 @@ public static partial class Program
             _hookDirectory = string.IsNullOrWhiteSpace(hook) ? null : hook;
             using var self = Process.GetCurrentProcess();
             _sessionId = self.SessionId;
+            var mode = Array.IndexOf(args, "--mode");
+            _replacement = mode >= 0 && mode + 1 < args.Length && args[mode + 1] == "replacement";
         }
 
         public string DataRoot => _dataRoot;
@@ -119,6 +156,29 @@ public static partial class Program
             Process? host = null;
             string pipeName;
             var attachIndex = Array.IndexOf(_args, "--attach");
+            if (_replacement && attachIndex < 0)
+            {
+                // Started by Windows as the shell: the escape hatch first, then make sure nothing else is the shell.
+                if (ShellStart.ShiftHeld(_hookDirectory))
+                {
+                    Log("Shift is held; starting Explorer instead.");
+                    await StartExplorerAsync();
+                    return Normal;
+                }
+
+                if (ShellStart.ShellOwner(_hookDirectory) is { } owner)
+                {
+                    if (!_args.Contains("--take-over"))
+                    {
+                        Log($"Process {owner} is already the shell; exiting (ShellRoleTaken). Use --take-over to replace it.");
+                        return ShellRoleTaken;
+                    }
+
+                    Log($"Process {owner} is the shell; asking it to exit (--take-over).");
+                    await ShellStart.TakeOverAsync(_hookDirectory, Log);
+                }
+            }
+
             if (attachIndex >= 0)
             {
                 if (attachIndex + 1 >= _args.Length || !int.TryParse(_args[attachIndex + 1], CultureInfo.InvariantCulture, out var hostPid))
@@ -161,6 +221,7 @@ public static partial class Program
                     host = StartHost(pipeName);
                     if (host is null)
                     {
+                        await FallBackToExplorerAsync();
                         return HostNotStarted;
                     }
                 }
@@ -185,6 +246,7 @@ public static partial class Program
                     }
 
                     Log("Host exited normally.");
+                    await RestoreExplorerIfAskedAsync();
                     return Normal;
                 }
 
@@ -202,6 +264,7 @@ public static partial class Program
                 if (budget.RecordFault(DateTimeOffset.UtcNow) is not { } backoff)
                 {
                     Log("The host keeps failing; restart budget spent.");
+                    await FallBackToExplorerAsync();
                     await GiveUpAsync();
                     return BudgetSpent;
                 }
@@ -350,6 +413,12 @@ public static partial class Program
             start.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
             start.ArgumentList.Add("--guardian-pipe");
             start.ArgumentList.Add(pipeName);
+            if (_replacement)
+            {
+                start.ArgumentList.Add("--mode");
+                start.ArgumentList.Add("replacement");
+            }
+
             try
             {
                 var host = Process.Start(start);
@@ -365,6 +434,67 @@ public static partial class Program
                 Log($"Could not start the host {hostExe}: {e.Message}");
                 return null;
             }
+        }
+
+        /// <summary>In replacement mode the user is never left without a shell: Explorer starts before anything waits on them (I23).</summary>
+        private async Task FallBackToExplorerAsync()
+        {
+            if (_replacement)
+            {
+                await StartExplorerAsync();
+            }
+        }
+
+        /// <summary>Starts Explorer with the shell value naming it for the launch, so it takes the shell role rather than opening a folder window.</summary>
+        private async Task StartExplorerAsync()
+        {
+            try
+            {
+                await new ShellRegistration(_dataRoot, Log).WhileExplorerStartsAsync(() => ShellStart.StartExplorerAsync(_hookDirectory, Log));
+                return;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                Log($"Could not name Explorer in the shell value: {e.Message}");
+            }
+
+            await ShellStart.StartExplorerAsync(_hookDirectory, Log);
+        }
+
+        /// <summary>
+        /// After a normal host exit in replacement mode, Explorer takes over for the rest of the session, so exiting
+        /// never leaves the user without a shell. The marker <c>host.shell.restoreExplorer</c> leaves says whether
+        /// to unregister as well.
+        /// </summary>
+        private async Task RestoreExplorerIfAskedAsync()
+        {
+            var marker = Path.Combine(_dataRoot, GuardianNames.RestoreExplorerFile);
+            var unregister = false;
+            if (File.Exists(marker))
+            {
+                try
+                {
+                    unregister = JsonNode.Parse(File.ReadAllText(marker))?["unregister"] is JsonValue value && value.TryGetValue<bool>(out var flag) && flag;
+                    File.Delete(marker);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+                {
+                    Log($"Could not read {marker}: {e.Message}");
+                }
+            }
+
+            if (!_replacement)
+            {
+                return;
+            }
+
+            if (unregister)
+            {
+                Registration(this, () => new ShellRegistration(_dataRoot, Log).Off());
+            }
+
+            Log("Restoring Explorer as the shell for this session.");
+            await StartExplorerAsync();
         }
 
         /// <summary>True when the host marked a clean exit and left nothing journalled.</summary>

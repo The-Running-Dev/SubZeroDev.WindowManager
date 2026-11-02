@@ -5,6 +5,7 @@ using System.Text;
 using Microsoft.UI.Dispatching;
 using SubZeroDev.WindowManager.Host.Core;
 using SubZeroDev.WindowManager.Host.Core.Diagnostics;
+using SubZeroDev.WindowManager.Protocol;
 using SubZeroDev.WindowManager.Recovery;
 using LogLevel = SubZeroDev.WindowManager.Host.Core.Diagnostics.LogLevel;
 
@@ -26,16 +27,18 @@ internal sealed class GuardianLink : IAsyncDisposable
     private readonly IHostLog _log;
     private readonly RestartBudget _budget;
     private readonly string _guardianExe;
+    private readonly bool _replacement;
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _loop;
     private int _guardianPid;
     private string _pipeName;
 
-    private GuardianLink(int guardianPid, string pipeName, string guardianExe, DispatcherQueue dispatcher, IHostLog log, RestartPolicy policy)
+    private GuardianLink(int guardianPid, string pipeName, string guardianExe, bool replacement, DispatcherQueue dispatcher, IHostLog log, RestartPolicy policy)
     {
         _guardianPid = guardianPid;
         _pipeName = pipeName;
         _guardianExe = guardianExe;
+        _replacement = replacement;
         _dispatcher = dispatcher;
         _log = log;
         _budget = new RestartBudget(policy, Backoffs);
@@ -54,7 +57,7 @@ internal sealed class GuardianLink : IAsyncDisposable
             return null;
         }
 
-        return new GuardianLink(pid, options.GuardianPipe, FindGuardian(pid), dispatcher, log, policy);
+        return new GuardianLink(pid, options.GuardianPipe, FindGuardian(pid), options.Mode == HostMode.Replacement, dispatcher, log, policy);
     }
 
     public async ValueTask DisposeAsync()
@@ -113,6 +116,12 @@ internal sealed class GuardianLink : IAsyncDisposable
                 var info = new ProcessStartInfo(_guardianExe) { UseShellExecute = false };
                 info.ArgumentList.Add("--attach");
                 info.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+                if (_replacement)
+                {
+                    info.ArgumentList.Add("--mode");
+                    info.ArgumentList.Add("replacement");
+                }
+
                 using var guardian = Process.Start(info) ?? throw new InvalidOperationException("Process.Start returned null.");
                 Volatile.Write(ref _pipeName, GuardianNames.AttachPipe(Environment.ProcessId));
                 Volatile.Write(ref _guardianPid, guardian.Id);
@@ -215,11 +224,12 @@ internal sealed class GuardianLink : IAsyncDisposable
         }
     }
 
-    private static string FindGuardian(int pid)
+    /// <summary>The running guardian's executable, else the configured one, else the one next to the host folder.</summary>
+    internal static string FindGuardian(int? pid)
     {
         try
         {
-            using var process = Process.GetProcessById(pid);
+            using var process = Process.GetProcessById(pid ?? -1);
             if (process.MainModule?.FileName is { } path)
             {
                 return path;

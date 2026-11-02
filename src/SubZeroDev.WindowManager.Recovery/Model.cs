@@ -64,6 +64,12 @@ public static class GuardianNames
     public const string Ping = "ping";
     public const string Pong = "pong";
 
+    /// <summary>
+    /// Written to the data folder by <c>host.shell.restoreExplorer</c> before the host exits normally:
+    /// <c>{ "unregister": bool }</c>. The guardian deletes it, unregisters the shell if asked, and starts Explorer.
+    /// </summary>
+    public const string RestoreExplorerFile = "restore-explorer.json";
+
     public static string NewPipe() => PipePrefix + Guid.NewGuid().ToString("N");
 
     /// <summary>The pipe a guardian started with <c>--attach &lt;hostPid&gt;</c> listens on, so the host knows it without being told.</summary>

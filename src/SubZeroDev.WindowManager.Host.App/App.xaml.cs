@@ -143,7 +143,7 @@ public sealed partial class App : Application
         _pluginLogs = new PluginLogs(_locations.LogsDirectory);
         _launcher = new WorkerLauncher();
         var hostVersion = typeof(App).Assembly.GetName().Version is { } version ? $"{version.Major}.{version.Minor}.{version.Build}" : "0.1.0";
-        _supervisor = new PluginSupervisor(_catalog, _launcher, _pluginLogs, _log, _locations, HostMode.Coexistence, hostVersion,
+        _supervisor = new PluginSupervisor(_catalog, _launcher, _pluginLogs, _log, _locations, _options.Mode, hostVersion,
             settings.RestartPolicy);
         _catalog.StopWorkerAsync = _supervisor.StopAsync;
         var pluginSettings = new PluginSettingsStore(config, _locations, _pluginLogs);
@@ -212,6 +212,29 @@ public sealed partial class App : Application
             dispatcher.TryEnqueue(() => _ = ShutdownAsync());
             return Task.FromResult(CommandOutcome.Success(new CommandResult(null)));
         });
+        router.AddBuiltIn("host.shell.restoreExplorer", "Restore Explorer", (args, ct) =>
+        {
+            if (_options.Mode != HostMode.Replacement)
+            {
+                return Task.FromResult(CommandOutcome.Fail(CoreErrorCode.NotInReplacementMode,
+                    "host.shell.restoreExplorer only works when the app is the shell."));
+            }
+
+            // The guardian reads this after the normal exit: it unregisters if asked, then starts Explorer.
+            var unregister = args?["unregister"] is JsonValue value && value.TryGetValue<bool>(out var flag) && flag;
+            try
+            {
+                var marker = Path.Combine(_locations!.DataRoot, GuardianNames.RestoreExplorerFile);
+                File.WriteAllText(marker, new JsonObject { ["unregister"] = unregister }.ToJsonString() + "\n");
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return Task.FromResult(CommandOutcome.Fail(CoreErrorCode.IoFailure, $"Could not ask the guardian to restore Explorer: {e.Message}"));
+            }
+
+            dispatcher.TryEnqueue(() => _ = ShutdownAsync());
+            return Task.FromResult(CommandOutcome.Success(new CommandResult(null)));
+        });
         router.AddBuiltIn("host.window.activate", "Activate window", (args, ct) => WindowCommandAsync(args, foreground.ActivateWindowAsync, ct));
         router.AddBuiltIn("host.window.minimize", "Minimise window", (args, ct) => WindowCommandAsync(args, foreground.MinimizeWindowAsync, ct));
         router.AddBuiltIn("host.preset.apply", "Apply preset", async (args, ct) =>
@@ -238,7 +261,8 @@ public sealed partial class App : Application
     public SettingsWindow OpenSettings(string? page, string? pluginId)
     {
         _settingsWindow ??= new SettingsWindow(new SettingsServices(_catalog!, _supervisor!, _pluginLogs!, _settingsService!,
-            PresetNames, () => ActivePresetId, ApplyPresetAsync, ReapplyLayoutAsync, Path.Combine(_locations!.DataRoot, "plugin-data")));
+            PresetNames, () => ActivePresetId, ApplyPresetAsync, ReapplyLayoutAsync, Path.Combine(_locations!.DataRoot, "plugin-data"),
+            ShellRegistered, SetShellAsync));
         _settingsWindow.Open(page, pluginId);
         return _settingsWindow;
     }
@@ -312,6 +336,53 @@ public sealed partial class App : Application
         menu.Items.Add(settings);
         menu.Items.Add(exit);
         return menu;
+    }
+
+    /// <summary>Whether <c>shell.json</c>, which the guardian's <c>--shell</c> writes, says the app is registered as the shell.</summary>
+    private bool ShellRegistered()
+    {
+        try
+        {
+            var json = JsonNode.Parse(File.ReadAllText(Path.Combine(_locations!.DataRoot, "shell.json")));
+            return json?["registered"] is JsonValue value && value.TryGetValue<bool>(out var registered) && registered;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>The settings switch: runs the guardian's <c>--shell on|off</c>, which needs no elevation.</summary>
+    private async Task<Core.Outcome> SetShellAsync(bool on, CancellationToken ct)
+    {
+        var info = new ProcessStartInfo(GuardianLink.FindGuardian(_guardian?.GuardianPid ?? _options.GuardianPid))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+        };
+        info.ArgumentList.Add("--shell");
+        info.ArgumentList.Add(on ? "on" : "off");
+        try
+        {
+            using var process = Process.Start(info) ?? throw new InvalidOperationException("Process.Start returned null.");
+            var error = process.StandardError.ReadToEndAsync(ct);
+            var output = process.StandardOutput.ReadToEndAsync(ct);
+            await process.WaitForExitAsync(ct);
+            await output;
+            var text = (await error).Trim();
+            return process.ExitCode switch
+            {
+                0 => Core.Outcome.Success,
+                5 => Core.Outcome.Fail(CoreErrorCode.ShellOverridden, text),
+                _ => Core.Outcome.Fail(CoreErrorCode.CommandFailed, text.Length > 0 ? text : $"The guardian exited with {process.ExitCode}."),
+            };
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return Core.Outcome.Fail(CoreErrorCode.StartFailed, $"Could not run the guardian: {e.Message}");
+        }
     }
 
     private async Task ReapplyLayoutAsync()

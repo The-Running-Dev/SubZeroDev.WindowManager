@@ -1,5 +1,6 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using SubZeroDev.WindowManager.Protocol;
 
 namespace SubZeroDev.WindowManager.Host.App;
 
@@ -12,12 +13,13 @@ public static class ExitCodes
 }
 
 /// <summary>The arguments the guardian passes: <c>--guardian-pid &lt;pid&gt; --guardian-pipe &lt;name&gt;</c>.</summary>
-public sealed record HostOptions(IReadOnlyList<string> Args, int? GuardianPid, string? GuardianPipe)
+public sealed record HostOptions(IReadOnlyList<string> Args, int? GuardianPid, string? GuardianPipe, HostMode Mode = HostMode.Coexistence)
 {
     public static HostOptions Parse(string[] args)
     {
         int? pid = null;
         string? pipe = null;
+        var mode = HostMode.Coexistence;
         for (var i = 0; i + 1 < args.Length; i++)
         {
             switch (args[i])
@@ -29,10 +31,13 @@ public sealed record HostOptions(IReadOnlyList<string> Args, int? GuardianPid, s
                 case "--guardian-pipe":
                     pipe = args[++i];
                     break;
+                case "--mode":
+                    mode = args[++i] == "replacement" ? HostMode.Replacement : HostMode.Coexistence;
+                    break;
             }
         }
 
-        return new HostOptions(args, pid, pipe);
+        return new HostOptions(args, pid, pipe, mode);
     }
 }
 

@@ -365,6 +365,12 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
             return (PluginState.Incompatible, [problem], problem);
         }
 
+        if (_mode == HostMode.Replacement && manifest.RequiresExplorer)
+        {
+            var problem = new CoreError(CoreErrorCode.ModeUnsupported, $"{pluginId} needs Explorer, which does not run in replacement mode.", false);
+            return (PluginState.Incompatible, [problem], problem);
+        }
+
         if (Enablement?.IsEnabled(pluginId) == false)
         {
             return (PluginState.Disabled, [], new CoreError(CoreErrorCode.PluginDisabled, $"{pluginId} is disabled.", false));
