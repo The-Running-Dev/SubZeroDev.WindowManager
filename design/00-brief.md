@@ -17,6 +17,7 @@ Requirements stated by Ben:
 - Provide a substantial share of functionality through plugins, not built into the host: build an extensible base, then basic plugins, then keep extending those plugins.
 - Make colours, icons and broader appearance deeply customisable, in the spirit of WindowBlinds.
 - Bring in the beauty and customisability of Enlightenment.
+- Second release: close the gaps the first release leaves in replacement mode, as recorded in `docs/replacement-mode.md` § *Features Explorer hosts*, so that a working day in replacement mode needs nothing only Explorer provides. Each feature ships as a plugin on the published SDK, as the first release's do (Ben, 2026-11-02).
 
 Product model (from the supplied brief): functionality and presentation are independently configurable — plugins (commands, data providers, widgets), layouts (panels, placement, monitor assignment), themes (templates, shapes, typography, materials, visual states, transitions), palettes (colours, independent of the theme), asset packs (icons, wallpapers, graphics), and presets (a saved combination). Changing the visual identity keeps the functionality; replacing a feature keeps the layout and appearance. Default features ship as separately packaged plugins built on the same public SDK offered to third parties.
 
@@ -27,9 +28,11 @@ Explorer's own desktop. LiteStep (`D:\Dropbox\Projects\LiteStep-Original`, `D:\D
 Users who want control over how their desktop looks, how it is arranged, and which features it provides. Plugin developers building against the published SDK in separate projects.
 
 ## Non-goals
-Outside the first release (the supplied brief keeps extension points for these, without making them prerequisites):
+Outside the first release, and brought in by the second (Ben, 2026-11-02):
 - Toast notifications and the notification centre. Hosting the notification area (other applications' tray icons) is in scope for replacement mode.
 - Virtual-desktop management. Task View and virtual desktops belong to Explorer, so they are unavailable in replacement mode.
+
+Outside both releases (the supplied brief keeps extension points for these, without making them prerequisites):
 - Skinning external applications or Windows-wide appearance. It needs code injected into other processes.
 - Replacing File Explorer's folder windows. In replacement mode they still come from `explorer.exe`, started as an ordinary application.
 - A plugin/theme marketplace.
@@ -51,6 +54,18 @@ The first release is ready for evaluation when:
 - Measurable startup, idle-resource and interaction-response budgets exist and are met (budgets set after the first working prototype, not in advance).
 
 First-release deliverables: host and plugin SDK (discovery, lifecycle, compatibility checks, commands, settings, diagnostics); a configurable panel; clock, launcher (shortcuts and basic search) and running-windows plugins; a plugin manager (enable, disable, configure, inspect); theme and asset support (shared styling, palettes, replaceable icons); the two sample configurations; recovery and display handling; replacement mode (shell registration and the way back to Explorer, shell roles and start-up programs, the notification-area and app-bar host, the desktop, the Windows key and session commands, system indicators).
+
+The second release is ready when (Ben, 2026-11-02):
+- Each of these works in replacement mode with Explorer not running, in this order of priority:
+  1. Other applications' notifications show as they arrive, and a history can be opened, acted on and cleared.
+  2. Virtual desktops: several sets of windows, switched and moved between from the keyboard and from a panel item.
+  3. Quick settings beyond volume, network and battery: Bluetooth on and off, display brightness and the other common toggles, reachable from one popup.
+  4. The remaining Windows keys and menus: a power-user menu in place of Win+X, with Win+A, Win+N and Win+Tab reaching their replacements.
+  5. Taskbar depth in running windows: grouping by application, a thumbnail on hover, jump lists, and progress and overlay badges.
+  6. The desktop: the usual file context menu on desktop icons, and wallpaper chosen per monitor.
+- In `docs/replacement-mode.md` § *Features Explorer hosts*, no row in scope still reads *Missing*.
+- The first release's startup, idle and reaction budgets are still met.
+- Automated tests never touch the user's real notifications, desktops, devices or settings.
 
 ## Narrowest useful version
 The foundation prototype: a themeable desktop surface running alongside Explorer, one separately built plugin loaded by the host, and a demonstrated isolated-worker failure that leaves the host usable. The functional desktop (clock, launcher, running windows, configuration, plugin manager) follows; then customisation and stability; then the expanded platform; then replacement mode, built and qualified as its own milestone until Explorer is no longer needed.
@@ -76,25 +91,11 @@ Maintained: a base that keeps being extended with plugins over time.
 - Open: whether this folder becomes a git repository and which GitHub remote it uses — affects the `/agentkit:next` build loop, which works through branches and pull requests.
 - Open: the initial monitor/DPI test matrix — which physical or virtual display setups are available to test against.
 
-### Second release (drafted 2026-11-02, assumed until Ben confirms)
+### Second release
 
-Ben asked for the next brief once the first release's slices had merged. The stated goal it serves is the Problem's: the app replaces the Explorer shell altogether. Nothing below is stated by Ben yet, so each entry stays `Assumed:` or `Open:` until he confirms, corrects or drops it.
+Ben confirmed the second release's scope, priorities and definition of done on 2026-11-02; they are under *Problem*, *Non-goals* and *Definition of done*. These choices are still open:
 
-- Assumed: the second release closes the gaps the first release leaves in replacement mode, as recorded in `docs/replacement-mode.md` § *Features Explorer hosts*. Done means a working day in replacement mode needs nothing that only Explorer provides.
-- Assumed: in scope, in this order of priority:
-  1. **Other applications' notifications.** They show as they arrive, and a history can be opened, acted on and cleared. This lifts the first-release non-goal "Toast notifications and the notification centre".
-  2. **Virtual desktops.** Several sets of windows, switched and moved between from the keyboard and from a panel item. This lifts the first-release non-goal "Virtual-desktop management".
-  3. **Quick settings beyond volume, network and battery.** Bluetooth on and off, display brightness, and the other common toggles, reachable from one popup.
-  4. **The remaining Windows keys and menus.** A power-user menu in place of Win+X, with Win+A, Win+N and Win+Tab reaching their replacements.
-  5. **Taskbar depth in running windows.** Grouping by application, a thumbnail on hover, jump lists, and progress and overlay badges.
-  6. **The desktop.** The usual file context menu on desktop icons, and wallpaper chosen per monitor.
-- Assumed: each in-scope feature ships as a plugin built on the published SDK, as the first release's features do, and works in replacement mode with Explorer not running.
-- Assumed definition of done for the second release:
-  - every in-scope feature works in replacement mode with Explorer not running;
-  - in `docs/replacement-mode.md` § *Features Explorer hosts*, no row in scope still reads *Missing*;
-  - the first release's startup, idle and reaction budgets are still met;
-  - automated tests never touch the user's real notifications, desktops, devices or settings, as the first release's tests do not.
-- Open: whether Windows delivers other applications' notifications to a shell other than Explorer on build 26200. It decides whether item 1 can be built at all, so a check on the real machine comes before `/design`.
+- Open: whether Windows delivers other applications' notifications to a shell other than Explorer on build 26200. It decides whether notifications (the second release's first item) can be built at all, so a check on the real machine comes before `/design`.
 - Open: virtual desktops as Windows' own, or as the shell's own sets of windows. Windows' own belong to Explorer, so they are absent in replacement mode. The shell's own work without Explorer, but applications that ask Windows which desktop they are on will not see them. The cost and the behaviour differ materially.
 - Open: whether second-release features also run in coexistence mode, where Explorer already provides them. Win+A, Win+N and Win+Tab would otherwise conflict with Explorer's own handling of those keys.
 - Open: whether these belong in the second release or later: custom plugin UI drawn inside the host's own windows (deferred by the first release's design), a theme editor, and automatic updates. Each one widens the release's scope.
