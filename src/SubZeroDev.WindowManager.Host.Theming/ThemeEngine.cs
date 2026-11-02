@@ -30,8 +30,8 @@ public interface IThemeEngine
 /// Loads a theme in two halves: <see cref="ThemePackageReader"/> reads and checks the files off the UI
 /// thread, then the dictionaries are built with <c>XamlReader.Load</c> on the UI thread, checked, and
 /// swapped into <c>Application.Resources</c> in one step (I13). Token colours come from <c>theme.json</c>,
-/// overridden by the selected palette; with a light and a dark palette the app mode picks one. Asset
-/// packs and icons arrive with later slices.
+/// overridden by the selected palette; with a light and a dark palette the app mode picks one. The
+/// asset-pack chain (<see cref="IconChain"/>) is read with the files and swapped in the same step.
 /// </summary>
 public sealed class ThemeEngine : IThemeEngine
 {
@@ -75,6 +75,9 @@ public sealed class ThemeEngine : IThemeEngine
     /// <summary>The outcome of the last apply, including a failed one that left the appearance unchanged.</summary>
     public ApplyResult? LastApply { get; private set; }
 
+    /// <summary>The icon fallback chain of the applied appearance; replaced, never changed, on each swap.</summary>
+    public AssetPackChain IconChain { get; private set; } = AssetPackChain.Empty;
+
     /// <summary>When the last successful swap happened, in Unix milliseconds; 0 before the first.</summary>
     public long AppliedAtUtcMs { get; private set; }
 
@@ -105,7 +108,8 @@ public sealed class ThemeEngine : IThemeEngine
 
         await RunOnUiAsync(() =>
         {
-            Swap([], selection with { ThemeId = string.Empty }, PanelBackdrop.None, ThemeSource.HostDefault, null);
+            Swap([], selection with { ThemeId = string.Empty }, PanelBackdrop.None, ThemeSource.HostDefault, null,
+                AssetPackReader.BuildChain(_locations, [], null, null));
             return true;
         }).ConfigureAwait(false);
         return result;
@@ -115,7 +119,7 @@ public sealed class ThemeEngine : IThemeEngine
     {
         // The fallback runs without a palette: a palette that broke the apply must not break recovery too.
         var paletteId = builtInOnly ? null : PaletteReader.Resolve(selection.Palette, _isDark());
-        var (package, readErrors, palette) = await Task.Run(() =>
+        var (package, readErrors, palette, chain) = await Task.Run(() =>
         {
             Palette? palette = null;
             if (paletteId is not null)
@@ -123,14 +127,17 @@ public sealed class ThemeEngine : IThemeEngine
                 var (read, paletteErrors) = PaletteReader.Read(_locations, paletteId);
                 if (read is null)
                 {
-                    return ((ThemePackage?)null, paletteErrors, (Palette?)null);
+                    return ((ThemePackage?)null, paletteErrors, (Palette?)null, AssetPackChain.Empty);
                 }
 
                 palette = read;
             }
 
             var (package, errors) = ThemePackageReader.Read(_locations, selection.ThemeId, builtInOnly, palette?.Colors);
-            return (package, errors, palette);
+            var chain = package is null || !swap
+                ? AssetPackChain.Empty
+                : AssetPackReader.BuildChain(_locations, selection.AssetPacks, package.RootPath, package.DefaultAssetPack);
+            return (package, errors, palette, chain);
         }, ct).ConfigureAwait(false);
         if (package is null)
         {
@@ -167,7 +174,8 @@ public sealed class ThemeEngine : IThemeEngine
             if (swap)
             {
                 dictionaries.Insert(0, BuildTokenDictionary(package.Tokens));
-                Swap(dictionaries, selection with { ThemeId = package.Id }, package.Backdrop, package.Source, palette?.Id);
+                LogPacks(chain);
+                Swap(dictionaries, selection with { ThemeId = package.Id }, package.Backdrop, package.Source, palette?.Id, chain);
                 _log.Write(LogLevel.Info, "theme",
                     palette is null ? $"Applied {package.Id} from {package.Source}." : $"Applied {package.Id} from {package.Source} with palette {palette.Id}.");
             }
@@ -227,7 +235,7 @@ public sealed class ThemeEngine : IThemeEngine
 
     /// <summary>Replaces the previous appearance dictionaries in one pass on the UI thread.</summary>
     private void Swap(List<ResourceDictionary> dictionaries, AppearanceSelection selection, PanelBackdrop backdrop, ThemeSource source,
-        string? paletteId)
+        string? paletteId, AssetPackChain chain)
     {
         var merged = Application.Current.Resources.MergedDictionaries;
         foreach (var old in _applied)
@@ -246,8 +254,20 @@ public sealed class ThemeEngine : IThemeEngine
         CurrentBackdrop = backdrop;
         CurrentSource = source;
         CurrentPaletteId = paletteId;
+        IconChain = chain;
         AppliedAtUtcMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         AppearanceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>A pack that cannot be used is logged and skipped; the apply still succeeds (S13.3).</summary>
+    private void LogPacks(AssetPackChain chain)
+    {
+        foreach (var pack in chain.Packs.Where(p => p.Problems.Count > 0))
+        {
+            var level = pack.Health == PackageHealth.Invalid ? LogLevel.Warning : LogLevel.Info;
+            var verdict = pack.Health == PackageHealth.Invalid ? "is skipped" : "has problems";
+            _log.Write(level, "theme", $"Asset pack {pack.Id} {verdict}: {string.Join("; ", pack.Problems)}");
+        }
     }
 
     private Task<T> RunOnUiAsync<T>(Func<T> work)

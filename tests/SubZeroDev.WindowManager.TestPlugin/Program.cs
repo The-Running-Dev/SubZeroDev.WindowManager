@@ -15,6 +15,8 @@ namespace SubZeroDev.WindowManager.TestPlugin;
 /// <c>samples.remote</c>, which nothing running provides) and <c>ev</c> (event <c>ping</c>), and the Toggle
 /// <c>tog</c>; it appends each <c>samples.echo</c> invocation to <c>invocations.log</c> and each element
 /// event to <c>events.log</c> in its data folder;
+/// <c>icons</c> shows one Button per named icon, each with the icon's id as its element id:
+/// <c>wm.test.first</c>, <c>wm.test.second</c>, <c>wm.test.theme</c>, <c>launcher</c> and <c>wm.test.missing</c>;
 /// <c>subscriber</c> shows "ok" and appends "available &lt;true|false&gt; &lt;items&gt;" to <c>feed.log</c> in its
 /// data folder for each <c>windows.running</c> update (its manifest must subscribe to that feed).
 /// <c>save-settings</c> appends "start &lt;settings&gt;" to <c>settings.log</c>, then saves its plugin settings
@@ -128,6 +130,14 @@ public sealed class ProbeInstance(InstanceRequest request) : ContributionInstanc
                 View.Button("ev", "Event", View.Event("ping"), label: "Event"),
                 View.Toggle("tog", "Toggle", Prop<bool>.State("checked"), View.Event("toggled"), label: "Toggle")));
             Surface.SetState("checked", false);
+            return Task.CompletedTask;
+        }
+
+        if (Program.Scenario == "icons")
+        {
+            string[] names = ["wm.test.first", "wm.test.second", "wm.test.theme", "launcher", "wm.test.missing"];
+            Surface.SetView(View.Stack("root", StackOrientation.Horizontal,
+                names.Select(name => View.Button(name, name, View.Event("ping"), icon: new IconRef.Named(name))).ToArray()));
             return Task.CompletedTask;
         }
 

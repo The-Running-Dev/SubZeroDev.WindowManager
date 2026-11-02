@@ -25,7 +25,7 @@ public sealed record ThemeResourceFile(string Path, string Xaml);
 /// <summary>A theme read from disk and checked, before any XAML object exists.</summary>
 public sealed record ThemePackage(
     string Id, string RootPath, ThemeSource Source, PanelBackdrop Backdrop,
-    IReadOnlyDictionary<string, uint> Tokens, IReadOnlyList<ThemeResourceFile> Resources);
+    IReadOnlyDictionary<string, uint> Tokens, IReadOnlyList<ThemeResourceFile> Resources, string? DefaultAssetPack = null);
 
 /// <summary>
 /// The file half of theme loading: everything that can run off the UI thread (I9). It finds the theme
@@ -188,7 +188,8 @@ public static class ThemePackageReader
         }
 
         var id = metadata["id"] is JsonValue idValue && idValue.TryGetValue<string>(out var declaredId) ? declaredId : themeId;
-        return errors.Count > 0 ? (null, errors) : (new ThemePackage(id, root, source, backdrop, tokens, resources), errors);
+        var assetPack = metadata["defaultAssetPack"] is JsonValue packValue && packValue.TryGetValue<string>(out var packId) ? packId : null;
+        return errors.Count > 0 ? (null, errors) : (new ThemePackage(id, root, source, backdrop, tokens, resources, assetPack), errors);
     }
 
     public static bool TryParseColour(string text, out uint argb)

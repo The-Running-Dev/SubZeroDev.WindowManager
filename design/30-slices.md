@@ -194,7 +194,7 @@ Acceptance:
 Out of scope: hiding Explorer's taskbar (open question 1), per-monitor layouts that differ beyond the `monitor` selector.
 
 ## S13 — Icon packs
-Status: todo
+Status: done
 Delivers: Ben can install an icon pack and see the panel and plugin icons change everywhere at once, including application icons chosen for override.
 Touches: Host.Theming (asset pack loading, `icons` and `appIcons`, the fallback chain asset packs → theme bundle → host default → system icon); Host.Core (asset pack catalog); preset `assetPacks`
 Depends on: S7, S5
