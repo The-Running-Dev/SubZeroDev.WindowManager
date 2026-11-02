@@ -604,6 +604,7 @@ internal sealed class TestHook
             {
                 ["stalls"] = _watchdog.Stalls,
                 ["longestMs"] = _watchdog.LongestMs,
+                ["lastStallUtcMs"] = _watchdog.LastStallUtcMs,
             },
             ["lastPointerPress"] = Interlocked.Read(ref _lastPointerPress),
             ["nowUtcMs"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),

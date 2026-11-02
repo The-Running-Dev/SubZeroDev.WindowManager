@@ -72,6 +72,7 @@ public sealed class IconPackTests
         var before = await run.WaitForAsync(s => WindowSource(s, key) is "extracted" or "default", Settle);
         Assert.NotEqual("pack:test.apps", WindowSource(before, key));
 
+        await run.WaitForQuietAsync();
         var asked = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         WritePreset(run, "subzerodev.default", ["test.apps"]);
         var after = await run.WaitForAsync(s => WindowSource(s, key) == "pack:test.apps", Settle);

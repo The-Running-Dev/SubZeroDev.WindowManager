@@ -26,6 +26,7 @@ public sealed class AppearanceTests
         Assert.Equal(DefaultSurface, Background(before));
         var messages = (long)before["workerMessages"]!;
 
+        await run.WaitForQuietAsync();
         var asked = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         WriteSettings(run, "user.blue");
         // The panel's template is rebuilt after the swap, so its background can trail the theme id by a frame.
