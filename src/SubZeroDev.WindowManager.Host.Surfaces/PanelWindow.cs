@@ -171,13 +171,39 @@ public sealed unsafe class PanelWindow
         _window.DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, ApplyTopmost);
     }
 
-    /// <summary>Makes <c>WS_EX_TOPMOST</c> match <see cref="WantsTopmost"/>.</summary>
+    /// <summary>
+    /// Why the last attempt left <c>WS_EX_TOPMOST</c> not matching <see cref="WantsTopmost"/>: the Win32 error
+    /// of a failed z-order change, -1 when the change succeeded but did not stick, 0 when it matched.
+    /// </summary>
+    public int TopmostError { get; private set; }
+
+    /// <summary>
+    /// Makes <c>WS_EX_TOPMOST</c> match <see cref="WantsTopmost"/>. The presenter keeps its own always-on-top
+    /// state and can hold the window to it, so a window that does not match has the presenter's state set
+    /// afresh (flipped and back; a desktop panel is never flipped to topmost) before the z-order is changed
+    /// directly.
+    /// </summary>
     public void ApplyTopmost()
     {
-        if (!_closeRequested && WantsTopmost != IsTopmost)
+        if (_closeRequested || WantsTopmost == IsTopmost)
         {
-            SetWindowPos(Handle, WantsTopmost ? HwndTopmost : HwndNoTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+            return;
         }
+
+        if (Definition.Behaviour != PanelBehaviour.Desktop)
+        {
+            _presenter.IsAlwaysOnTop = !WantsTopmost;
+        }
+
+        _presenter.IsAlwaysOnTop = WantsTopmost;
+        if (WantsTopmost != IsTopmost
+            && !SetWindowPos(Handle, WantsTopmost ? HwndTopmost : HwndNoTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate))
+        {
+            TopmostError = Marshal.GetLastPInvokeError();
+            return;
+        }
+
+        TopmostError = WantsTopmost == IsTopmost ? 0 : -1;
     }
 
     public void Close()
@@ -305,7 +331,7 @@ public sealed unsafe class PanelWindow
     [DllImport("user32.dll")]
     private static extern nint SetWindowLongPtrW(nint hwnd, int index, nint value);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(nint hwnd, nint insertAfter, int x, int y, int width, int height, uint flags);
 
     [DllImport("user32.dll")]

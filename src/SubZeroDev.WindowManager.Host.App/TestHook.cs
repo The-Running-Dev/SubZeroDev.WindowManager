@@ -387,6 +387,7 @@ internal sealed class TestHook
                 ["primary"] = window.Monitor.IsPrimary,
                 ["topmost"] = window.IsTopmost,
                 ["wantsTopmost"] = window.WantsTopmost,
+                ["topmostError"] = window.TopmostError,
                 ["collapsed"] = window.Collapsed,
                 ["scale"] = window.Monitor.Scale,
                 ["edge"] = window.Panel.Edge,
