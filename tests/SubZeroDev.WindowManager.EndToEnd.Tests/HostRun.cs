@@ -205,7 +205,7 @@ internal sealed class HostRun : IDisposable
             await Task.Delay(50);
         }
 
-        throw new TimeoutException($"Condition not met within {timeout}. Last status: {last?.ToJsonString()}");
+        throw new TimeoutException($"Condition not met within {timeout}. Last status: {last?.ToJsonString()}{Environment.NewLine}{HostLogTail()}");
     }
 
     /// <summary>Texts shown by each contribution of <paramref name="plugin"/>, one list per instance.</summary>
@@ -447,6 +447,13 @@ internal sealed class HostRun : IDisposable
             using var reader = new StreamReader(stream);
             return reader.ReadToEnd();
         }));
+    }
+
+    /// <summary>The host log's last lines, so a failure on CI says what the host was doing.</summary>
+    public string HostLogTail(int lines = 30)
+    {
+        var all = HostLog().Split(Environment.NewLine);
+        return "Host log:" + Environment.NewLine + string.Join(Environment.NewLine, all.Skip(Math.Max(0, all.Length - lines)));
     }
 
     private static string Metadata(string key) =>

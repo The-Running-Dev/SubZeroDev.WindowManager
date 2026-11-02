@@ -76,7 +76,8 @@ public sealed class IconPackTests
         WritePreset(run, "subzerodev.default", ["test.apps"]);
         var after = await run.WaitForAsync(s => WindowSource(s, key) == "pack:test.apps", Settle);
 
-        Assert.InRange((long)after["theme"]!["appliedAtUtcMs"]! - asked, 0, 1000);
+        var took = (long)after["theme"]!["appliedAtUtcMs"]! - asked;
+        Assert.True(took is >= 0 and <= 1000, $"The preset applied {took} ms after the change.{Environment.NewLine}{run.HostLogTail()}");
         Assert.Equal(0, await run.StopAsync());
     }
 

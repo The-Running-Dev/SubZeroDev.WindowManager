@@ -177,7 +177,9 @@ public sealed class MonitorTests
         run.CopyPlugin(HostRun.TestPluginDirectory, Buttons, ["buttons"]);
         WriteLayout(run, "primary", "bottom", "desktop", (Guid.NewGuid(), Buttons, "probe"));
         run.Start(HostRun.HostExe);
-        var status = await run.WaitForAsync(s => (bool?)s["ready"] == true, Startup);
+        // Ready holds while the buttons still show their loading placeholder, which has nothing to focus.
+        var status = await run.WaitForAsync(s => (bool?)s["ready"] == true
+            && s["contributions"]!.AsArray().Any(c => (string?)c!["plugin"] == Buttons && c["reason"] is null), Startup);
         var panel = (nint)(long)Panels(status).Single()["handle"]!;
         Assert.False((bool)Panels(status).Single()["topmost"]!);
 

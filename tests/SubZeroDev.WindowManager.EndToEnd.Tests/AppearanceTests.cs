@@ -28,10 +28,11 @@ public sealed class AppearanceTests
 
         var asked = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         WriteSettings(run, "user.blue");
-        var after = await run.WaitForAsync(s => (string?)s["theme"]!["id"] == "user.blue", Settle);
+        // The panel's template is rebuilt after the swap, so its background can trail the theme id by a frame.
+        var after = await run.WaitForAsync(s => (string?)s["theme"]!["id"] == "user.blue" && Background(s) == "#FF224466", Settle);
 
-        Assert.Equal("#FF224466", Background(after));
-        Assert.InRange((long)after["theme"]!["appliedAtUtcMs"]! - asked, 0, 1000);
+        var took = (long)after["theme"]!["appliedAtUtcMs"]! - asked;
+        Assert.True(took is >= 0 and <= 1000, $"The preset applied {took} ms after the change.{Environment.NewLine}{run.HostLogTail()}");
         Assert.Equal(messages, (long)after["workerMessages"]!);
         Assert.Equal("user.blue", (string?)after["settings"]!["activePreset"]);
         Assert.Equal(0, await run.StopAsync());
