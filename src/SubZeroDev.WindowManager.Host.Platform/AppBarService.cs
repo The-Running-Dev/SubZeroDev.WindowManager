@@ -6,10 +6,15 @@ namespace SubZeroDev.WindowManager.Host.Platform;
 /// <summary>
 /// Shell app-bar registration. Each call runs <c>SHAppBarMessage</c> on a background task (I9) and
 /// returns the rectangle the shell granted; the caller moves its window there. Every registration is
-/// journalled before <c>ABM_NEW</c> and the entry is ended only after <c>ABM_REMOVE</c> (I6).
+/// journalled before <c>ABM_NEW</c> and the entry is ended only after <c>ABM_REMOVE</c> (I6). A monitor with
+/// no handle (a simulated one) is refused, as the shell would refuse a bar on a monitor it does not know.
+/// <see cref="ShellRestarted"/> follows <see cref="ShellEvents.TaskbarCreated"/>; <see cref="FullscreenChanged"/>
+/// comes from polling the foreground window every 250 ms once anyone listens.
 /// </summary>
-public sealed class AppBarService : IAppBarService
+public sealed class AppBarService : IAppBarService, IDisposable
 {
+    private static readonly TimeSpan FullscreenPoll = TimeSpan.FromMilliseconds(250);
+
     private static readonly uint CallbackMessage = Native.RegisterWindowMessage("SubZeroDev.WindowManager.AppBar");
 
     private readonly IMonitorService _monitors;
@@ -17,28 +22,65 @@ public sealed class AppBarService : IAppBarService
     private readonly Func<string, Task> _checkpoint;
     private readonly Dictionary<nint, Guid> _registered = [];
     private readonly Lock _gate = new();
+    private readonly HashSet<string> _fullscreen = new(StringComparer.Ordinal);
+    private readonly int _processId = Environment.ProcessId;
+    private Timer? _poll;
+    private EventHandler<FullscreenChangedEventArgs>? _fullscreenChanged;
 
     /// <param name="checkpoint">Awaited at named points ("before-appbar", "after-remove") so tests can observe the journal from outside; a no-op normally.</param>
-    public AppBarService(IMonitorService monitors, IRecoveryJournal journal, Func<string, Task>? checkpoint = null)
+    public AppBarService(IMonitorService monitors, IRecoveryJournal journal, Func<string, Task>? checkpoint = null, ShellEvents? events = null)
     {
         _monitors = monitors;
         _journal = journal;
         _checkpoint = checkpoint ?? (_ => Task.CompletedTask);
+        if (events is not null)
+        {
+            events.TaskbarCreated += (_, _) => ShellRestarted?.Invoke(this, EventArgs.Empty);
+        }
+
         // Last resort: a host that exits without closing its panels still gives the space back.
         AppDomain.CurrentDomain.ProcessExit += (_, _) => RemoveAll();
     }
 
     public event EventHandler<FullscreenChangedEventArgs> FullscreenChanged
     {
-        add { }
-        remove { }
+        add
+        {
+            lock (_gate)
+            {
+                _fullscreenChanged += value;
+                _poll ??= new Timer(_ => PollFullscreen(), null, FullscreenPoll, FullscreenPoll);
+            }
+        }
+        remove
+        {
+            lock (_gate)
+            {
+                _fullscreenChanged -= value;
+            }
+        }
     }
 
-    public event EventHandler ShellRestarted
-    {
-        add { }
-        remove { }
-    }
+    public event EventHandler? ShellRestarted;
+
+    public void Dispose() => _poll?.Dispose();
+
+    public Task<Outcome<RectInt>> RenewAsync(nint hwnd, string monitorId, PanelEdge edge, int thicknessPx, CancellationToken ct) =>
+        Task.Run(() =>
+        {
+            var monitor = Find(monitorId);
+            if (monitor is null)
+            {
+                return Outcome<RectInt>.Fail(CoreErrorCode.NotFound, $"Monitor '{monitorId}' is not connected.");
+            }
+
+            // The restarted shell forgot every bar: ABM_NEW again (a shell that still knows the bar just says no)
+            // and claim the space anew. The journal entry from the first registration still covers the window.
+            var data = NewData(hwnd);
+            data.CallbackMessage = CallbackMessage;
+            Native.SHAppBarMessage(Native.AbmNew, ref data);
+            return Outcome<RectInt>.Success(SetPosition(hwnd, monitor, edge, thicknessPx));
+        }, ct);
 
     public Task<Outcome<RectInt>> RegisterAsync(nint hwnd, string monitorId, PanelEdge edge, int thicknessPx, CancellationToken ct) =>
         Task.Run(async () =>
@@ -47,6 +89,11 @@ public sealed class AppBarService : IAppBarService
             if (monitor is null)
             {
                 return Outcome<RectInt>.Fail(CoreErrorCode.NotFound, $"Monitor '{monitorId}' is not connected.");
+            }
+
+            if (monitor.Handle == 0)
+            {
+                return Outcome<RectInt>.Fail(CoreErrorCode.AppBarRefused, $"Monitor '{monitorId}' is not known to the shell.");
             }
 
             var change = Recovery.DesktopChange.AppBar(monitorId, hwnd, edge.ToString().ToLowerInvariant(), thicknessPx, DateTimeOffset.UtcNow);
@@ -158,6 +205,56 @@ public sealed class AppBarService : IAppBarService
 
         Native.SHAppBarMessage(Native.AbmSetPos, ref data);
         return MonitorService.ToRectInt(data.Bounds);
+    }
+
+    /// <summary>
+    /// A monitor is full-screen while the foreground window belongs to another process, has no caption, is
+    /// not the desktop or a taskbar, and covers the whole monitor.
+    /// </summary>
+    private void PollFullscreen()
+    {
+        var window = Native.GetForegroundWindow();
+        var covered = window == 0 ? null : Covered(window);
+        var changes = new List<FullscreenChangedEventArgs>();
+        lock (_gate)
+        {
+            foreach (var monitor in _fullscreen.Where(id => id != covered).ToList())
+            {
+                _fullscreen.Remove(monitor);
+                changes.Add(new FullscreenChangedEventArgs(monitor, false));
+            }
+
+            if (covered is not null && _fullscreen.Add(covered))
+            {
+                changes.Add(new FullscreenChangedEventArgs(covered, true));
+            }
+        }
+
+        foreach (var change in changes)
+        {
+            _fullscreenChanged?.Invoke(this, change);
+        }
+    }
+
+    private unsafe string? Covered(nint window)
+    {
+        Native.GetWindowThreadProcessId(window, out var processId);
+        if (processId == _processId || !Native.IsWindowVisible(window) || Native.IsIconic(window)
+            || ((uint)Native.GetWindowLongPtr(window, Native.GwlStyle) & Native.WsCaption) == Native.WsCaption)
+        {
+            return null;
+        }
+
+        var name = stackalloc char[64];
+        var length = Native.GetClassName(window, name, 64);
+        var className = new string(name, 0, Math.Max(length, 0));
+        if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" || !Native.GetWindowRect(window, out var rect))
+        {
+            return null;
+        }
+
+        return _monitors.Monitors.FirstOrDefault(m => rect.Left <= m.Bounds.Left && rect.Top <= m.Bounds.Top
+            && rect.Right >= m.Bounds.Right && rect.Bottom >= m.Bounds.Bottom)?.StableId;
     }
 
     private MonitorInfo? Find(string monitorId) => _monitors.Monitors.FirstOrDefault(m => m.StableId == monitorId);

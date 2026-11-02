@@ -68,6 +68,23 @@ internal struct KeyboardInput
     public ulong Padding2;
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct WindowClassEx
+{
+    public uint Size;
+    public uint Style;
+    public delegate* unmanaged<nint, uint, nuint, nint, nint> WindowProc;
+    public int ClassExtra;
+    public int WindowExtra;
+    public nint Instance;
+    public nint Icon;
+    public nint Cursor;
+    public nint Background;
+    public char* MenuName;
+    public char* ClassName;
+    public nint SmallIcon;
+}
+
 internal static unsafe partial class Native
 {
     public const uint AbmNew = 0;
@@ -177,4 +194,44 @@ internal static unsafe partial class Native
 
     [LibraryImport("advapi32.dll")]
     public static partial int RegNotifyChangeKeyValue(nint key, int watchSubtree, uint filter, nint changed, int asynchronous);
+
+    public const uint WmDisplayChange = 0x007E;
+    public const uint WmSettingChange = 0x001A;
+    public const uint WsPopup = 0x80000000;
+    public const uint WsCaption = 0x00C00000;
+    public const int GwlStyle = -16;
+
+    [LibraryImport("kernel32.dll", EntryPoint = "GetModuleHandleW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint GetModuleHandle(string? name);
+
+    [LibraryImport("user32.dll", EntryPoint = "RegisterClassExW", SetLastError = true)]
+    public static partial ushort RegisterClassEx(WindowClassEx* windowClass);
+
+    [LibraryImport("user32.dll", EntryPoint = "CreateWindowExW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint CreateWindowEx(uint exStyle, string className, string title, uint style,
+        int x, int y, int width, int height, nint parent, nint menu, nint module, nint param);
+
+    [LibraryImport("user32.dll", EntryPoint = "DefWindowProcW")]
+    public static partial nint DefWindowProc(nint window, uint message, nuint wParam, nint lParam);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DestroyWindow(nint window);
+
+    [LibraryImport("user32.dll", EntryPoint = "DispatchMessageW")]
+    public static partial nint DispatchMessage(in Msg message);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetWindowRect(nint window, out Rect rect);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    public static partial nint GetWindowLongPtr(nint window, int index);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetClassNameW")]
+    public static partial int GetClassName(nint window, char* name, int capacity);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWindowVisible(nint window);
 }

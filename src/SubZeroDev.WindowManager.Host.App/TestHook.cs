@@ -47,6 +47,8 @@ internal sealed class TestHook
     private readonly CommandRouter _router;
     private readonly HotkeyBinder _hotkeys;
     private readonly FeedBroker _feeds;
+    private readonly SimulatedMonitors _monitors;
+    private readonly ShellEvents _shellEvents;
     private JsonObject? _lastInvoke;
     private int _settingsUiRuns;
     private string? _lastSettingsUi;
@@ -60,9 +62,11 @@ internal sealed class TestHook
     public TestHook(string directory, App app, HostOptions options, Locations locations, ThemeEngine theme, SurfaceManager surfaces,
         IPluginSupervisor supervisor, WorkerLauncher launcher, IPackageCatalog catalog, DispatcherQueue dispatcher,
         DispatcherWatchdog watchdog, GuardianLink? guardian, CommandRouter router, HotkeyBinder hotkeys,
-        FeedBroker feeds)
+        FeedBroker feeds, SimulatedMonitors monitors, ShellEvents shellEvents)
     {
         _feeds = feeds;
+        _monitors = monitors;
+        _shellEvents = shellEvents;
         _router = router;
         _hotkeys = hotkeys;
         _watchdog = watchdog;
@@ -184,6 +188,11 @@ internal sealed class TestHook
                 Post(() => RunInvoke(invoke));
             }
 
+            if (Take("monitors") is { } monitors)
+            {
+                Post(() => SetMonitors(string.Join('\n', monitors)));
+            }
+
             if (Take("focus-panel") is { Length: > 0 } focus)
             {
                 Post(() => _surfaces.FocusPanel(focus[0].Trim()));
@@ -201,6 +210,17 @@ internal sealed class TestHook
         {
             Volatile.Write(ref _reading, 0);
         }
+    }
+
+    /// <summary>Replaces the simulated monitors with <c>{ "monitors": [{ id, left, top, right, bottom, dpi }] }</c>.</summary>
+    private void SetMonitors(string json)
+    {
+        var monitors = JsonNode.Parse(json)?["monitors"]?.AsArray() ?? [];
+        _monitors.Set(monitors.OfType<JsonObject>().Select(m =>
+        {
+            var bounds = new RectInt((int)m["left"]!, (int)m["top"]!, (int)m["right"]!, (int)m["bottom"]!);
+            return new MonitorInfo((string)m["id"]!, 0, bounds, bounds, (uint)(int)m["dpi"]!, false);
+        }));
     }
 
     /// <summary>Reads and deletes a request file, or returns null when there is none.</summary>
@@ -313,7 +333,7 @@ internal sealed class TestHook
     {
         var panels = new JsonArray();
         // Ready once every template has been applied, so tests never read a half-built tree.
-        var ready = _surfaces.Panels.Count > 0;
+        var ready = _surfaces.Panels.Count > 0 || _surfaces.LayoutApplied;
         foreach (var window in _surfaces.Panels)
         {
             var placeholders = new JsonArray();
@@ -343,6 +363,9 @@ internal sealed class TestHook
                 ["id"] = window.Definition.Id.ToString(),
                 ["handle"] = (long)window.Handle,
                 ["monitor"] = window.Monitor.StableId,
+                ["primary"] = window.Monitor.IsPrimary,
+                ["topmost"] = window.IsTopmost,
+                ["collapsed"] = window.Collapsed,
                 ["scale"] = window.Monitor.Scale,
                 ["edge"] = window.Panel.Edge,
                 ["behaviour"] = window.Panel.Behaviour,
@@ -365,6 +388,15 @@ internal sealed class TestHook
             ["dataRoot"] = _locations.DataRoot,
             ["contentRoot"] = _locations.ContentRoot,
             ["workArea"] = Rect(MonitorService.PrimaryWorkArea()),
+            ["shellEventsWindow"] = (long)_shellEvents.Handle,
+            ["monitors"] = new JsonArray(_monitors.Monitors.Select(monitor => (JsonNode?)new JsonObject
+            {
+                ["id"] = monitor.StableId,
+                ["primary"] = monitor.IsPrimary,
+                ["dpi"] = monitor.Dpi,
+                ["bounds"] = Rect(monitor.Bounds),
+                ["workArea"] = Rect(monitor.WorkArea),
+            }).ToArray()),
             ["theme"] = new JsonObject
             {
                 ["id"] = _theme.Current.ThemeId,

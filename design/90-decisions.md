@@ -14,6 +14,20 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S12: monitors, DPI, full screen and Explorer restarts
+- **Context:** panels have to follow monitors coming and going, keep their size in DIP on every scale, step aside for full-screen windows, survive Explorer restarts, and the `autoHide` and `desktop` behaviours have to work, all without the tests touching the real display configuration.
+- **Chosen:**
+  - A hidden `ShellEvents` window receives `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE` and `TaskbarCreated`. `MonitorService` turns display changes into one debounced `TopologyChanged`, and the surface manager rebuilds every panel for the monitors there are then, behind one gate shared with layout applies.
+  - `monitor: "all"` gives one panel per monitor; the primary keeps the panel's ids and every other monitor gets ids derived from the panel id and the monitor's stable id, so instance settings and storage stay apart.
+  - Full screen is polled every 250 ms (the foreground window covering a whole monitor); panels on that monitor lose topmost and get it back when it leaves. `TaskbarCreated` renews every app bar (`ABM_NEW` then the position again).
+  - `autoHide` panels collapse to a 2 px strip at their edge after the pointer has been away 1 s (popup and focus count as present) and expand when the pointer touches the strip, polled every 50 ms. Panel windows are subclassed so the size asked for is the size given; Windows otherwise holds them at about 6 px.
+  - `desktop` panels are not topmost and every z-order change they get is rewritten to the bottom, so activating one never lifts it.
+  - Tests add simulated monitors through the test hook; a simulated monitor has no handle and the shell refuses app bars on it (`AppBarRefused`, shown as overlay).
+- **Rejected:**
+  - Disabling a real monitor through DisplayConfig in tests, because it changes the user's own display configuration.
+  - `SetWinEventHook` for full screen, because the poll is simpler, bounded and covers windows that go full screen without a foreground change.
+- **Known gap:** no physical second monitor or 150 % display in the automated runs, and the manual rows in `docs/test-matrix.md` are not run yet; Win+D may still hide `desktop` panels; a topology change rebuilds every panel and closes open popups; settings saved on the derived instances of an `all` panel are not persisted to the layout; the Explorer restart is simulated.
+
 ## 2026-11-02 — S11: install, place and remove plugins
 - **Context:** a plugin has to go from a package file to an item on a panel, and back out again, from the settings window and without a host restart, and a bad or half-copied package must never leave a broken folder behind.
 - **Chosen:**
