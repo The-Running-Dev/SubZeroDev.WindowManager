@@ -371,6 +371,7 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
                 CoreErrorCode.PackageInvalid => PlaceholderReason.Invalid,
                 CoreErrorCode.ModeUnsupported => PlaceholderReason.NotSupportedInMode,
                 CoreErrorCode.HostApiMismatch => PlaceholderReason.Incompatible,
+                CoreErrorCode.PluginDisabled => PlaceholderReason.Disabled,
                 _ when _supervisor.GetStatus(pluginId).State == PluginState.Unavailable => PlaceholderReason.Unavailable,
                 _ => PlaceholderReason.Faulted,
             };
@@ -490,9 +491,22 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
                 CreateWaiting(status.PluginId);
                 return Task.CompletedTask;
             case PluginState.Starting:
-                foreach (var entry in entries.Where(entry => entry.Reason == PlaceholderReason.Unavailable))
+                foreach (var entry in entries.Where(entry => entry.Reason is PlaceholderReason.Unavailable or PlaceholderReason.Disabled))
                 {
                     Publish(entry, PlaceholderReason.Starting, null);
+                }
+
+                return Task.CompletedTask;
+            case PluginState.Discovered:
+                // Enabled again: its instances start. Only disabled ones, so a missing package does not loop.
+                if (entries.Any(entry => entry.Reason == PlaceholderReason.Disabled))
+                {
+                    foreach (var entry in entries.Where(entry => entry.Reason == PlaceholderReason.Disabled))
+                    {
+                        Publish(entry, PlaceholderReason.Starting, null);
+                    }
+
+                    Start(status.PluginId);
                 }
 
                 return Task.CompletedTask;
@@ -514,6 +528,14 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
             if (status.State is PluginState.Stopped or PluginState.Stopping)
             {
                 Publish(entry, PlaceholderReason.Starting, null);
+            }
+        }
+
+        if (status.State == PluginState.Disabled)
+        {
+            foreach (var entry in entries.Where(entry => entry.Reason != PlaceholderReason.Missing))
+            {
+                Publish(entry, PlaceholderReason.Disabled, $"{status.PluginId} is disabled.");
             }
         }
 

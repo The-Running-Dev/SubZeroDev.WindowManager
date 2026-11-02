@@ -26,6 +26,7 @@ public enum CoreErrorCode
     Cancelled,
     Undeclared,
     CommandFailed,
+    PluginDisabled,
 }
 
 public sealed record CoreError(CoreErrorCode Code, string Detail, bool Retryable);

@@ -48,6 +48,8 @@ internal sealed class TestHook
     private readonly HotkeyBinder _hotkeys;
     private readonly FeedBroker _feeds;
     private JsonObject? _lastInvoke;
+    private int _settingsUiRuns;
+    private string? _lastSettingsUi;
     private readonly HashSet<WmPanel> _watched = [];
     private long _lastPointerPress;
     private int _writing;
@@ -186,6 +188,11 @@ internal sealed class TestHook
             {
                 Post(() => _surfaces.FocusPanel(focus[0].Trim()));
             }
+
+            if (Take("settings-ui") is { Length: > 0 } settingsUi)
+            {
+                Post(() => RunSettingsUi(settingsUi));
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -252,6 +259,27 @@ internal sealed class TestHook
             : InvocationSource.Keyboard;
         var args = lines.Length > 2 && !string.IsNullOrWhiteSpace(lines[2]) ? JsonNode.Parse(lines[2]) as JsonObject : null;
         _ = InvokeAsync(commandId, args, source);
+    }
+
+    /// <summary>One JSON request per line for the settings window, which opens first when it is not yet created.</summary>
+    private void RunSettingsUi(string[] lines)
+    {
+        var window = _app.Settings ?? _app.OpenSettings(null, null);
+        var results = new List<string>();
+        foreach (var line in lines.Where(line => !string.IsNullOrWhiteSpace(line)))
+        {
+            try
+            {
+                results.Add(window.Drive(JsonNode.Parse(line) as JsonObject ?? []) ?? "ok");
+            }
+            catch (Exception e) when (e is System.Text.Json.JsonException or InvalidOperationException or FormatException)
+            {
+                results.Add($"{e.GetType().Name}: {e.Message}");
+            }
+        }
+
+        _lastSettingsUi = string.Join(" | ", results);
+        _settingsUiRuns++;
     }
 
     private async Task InvokeAsync(string commandId, JsonObject? args, InvocationSource source)
@@ -374,6 +402,9 @@ internal sealed class TestHook
                 ["available"] = feed.Available,
             }).ToArray()),
             ["workerMessages"] = WorkerChannel.MessagesSent,
+            ["settingsWindow"] = _app.Settings?.Snapshot(),
+            ["lastSettingsUi"] = _lastSettingsUi,
+            ["settingsUiRuns"] = _settingsUiRuns,
             ["panels"] = panels,
             ["contributions"] = new JsonArray(_surfaces.Views.Select(view => (JsonNode?)new JsonObject
             {

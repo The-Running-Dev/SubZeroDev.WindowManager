@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using SubZeroDev.WindowManager.Host.Core;
 using SubZeroDev.WindowManager.Host.Core.Diagnostics;
 using SubZeroDev.WindowManager.Host.Platform;
+using SubZeroDev.WindowManager.Host.Settings;
 using SubZeroDev.WindowManager.Host.Surfaces;
 using SubZeroDev.WindowManager.Host.Theming;
 using SubZeroDev.WindowManager.Protocol;
@@ -35,6 +36,7 @@ public sealed partial class App : Application
     private HotkeyBinder? _hotkeys;
     private string _layoutId = HostSettingsDocument.DefaultPreset;
     private TestHook? _testHook;
+    private SettingsWindow? _settingsWindow;
     private DispatcherWatchdog? _watchdog;
     private GuardianLink? _guardian;
     private RecoveryJournal? _journal;
@@ -142,6 +144,7 @@ public sealed partial class App : Application
             settings.RestartPolicy);
         var pluginSettings = new PluginSettingsStore(config, _locations, _pluginLogs);
         _supervisor.PluginSettings = pluginSettings;
+        _supervisor.Enablement = new PluginEnablement(config, _catalog);
         var settingsService = _settingsService = new SettingsService(_catalog, _supervisor, config, pluginSettings, () => _layoutId);
         _feeds = new FeedBroker(_supervisor, _catalog, _pluginLogs);
         _supervisor.WorkerNotifications = _feeds.OnNotification;
@@ -155,6 +158,8 @@ public sealed partial class App : Application
             _ => _router.ServeWorkerAsync(pluginId, request),
         };
         AddBuiltIns(_router, foreground, dispatcher);
+        _supervisor.StatusChanged += (_, _) => dispatcher.TryEnqueue(RefreshSettingsWindow);
+        _catalog.Changed += (_, _) => dispatcher.TryEnqueue(RefreshSettingsWindow);
 
         var monitors = new MonitorService();
         var checkpoint = string.IsNullOrWhiteSpace(hookDirectory) ? null : TestHook.Checkpoint(hookDirectory);
@@ -209,7 +214,42 @@ public sealed partial class App : Application
             var applied = await ApplyPresetAsync(id, ct);
             return applied.Ok ? CommandOutcome.Success(new CommandResult(null)) : CommandOutcome.Fail(applied.Error!);
         });
+        router.AddBuiltIn("host.settings.open", "Open settings", (args, _) =>
+        {
+            var page = args?["page"] is JsonValue p && p.TryGetValue<string>(out var text) ? text : null;
+            var pluginId = args?["pluginId"] is JsonValue v && v.TryGetValue<string>(out var id) ? id : null;
+            return Task.FromResult(dispatcher.TryEnqueue(() => OpenSettings(page, pluginId))
+                ? CommandOutcome.Success(new CommandResult(null))
+                : CommandOutcome.Fail(CoreErrorCode.CommandFailed, "The host is shutting down."));
+        });
     }
+
+    /// <summary>Opens the settings window, creating it the first time. Call on the UI thread.</summary>
+    public SettingsWindow OpenSettings(string? page, string? pluginId)
+    {
+        _settingsWindow ??= new SettingsWindow(new SettingsServices(_catalog!, _supervisor!, _pluginLogs!, _settingsService!,
+            PresetNames, () => ActivePresetId, ApplyPresetAsync, ReapplyLayoutAsync));
+        _settingsWindow.Open(page, pluginId);
+        return _settingsWindow;
+    }
+
+    public SettingsWindow? Settings => _settingsWindow;
+
+    private void RefreshSettingsWindow()
+    {
+        if (_settingsWindow is { IsOpen: true } window && Volatile.Read(ref _exiting) == 0)
+        {
+            window.Refresh();
+        }
+    }
+
+    /// <summary>Every preset that parses, by id, with its display name.</summary>
+    private IReadOnlyList<(string Id, string Name)> PresetNames() =>
+        [.. _config!.List(DocumentKind.Preset).Select(id => _config.Get(id)).Where(state => state is { Health: DocumentHealth.Valid, Content: not null })
+            .Select(state => Documents.ParsePreset(state.Content!, state.Id.Id, []))
+            .OfType<PresetDocument>()
+            .OrderBy(preset => preset.Id, StringComparer.Ordinal)
+            .Select(preset => (preset.Id, preset.DisplayName))];
 
     private static async Task<CommandOutcome> WindowCommandAsync(JsonObject? args, Func<nint, CancellationToken, Task<Core.Outcome>> act,
         CancellationToken ct)
@@ -254,9 +294,12 @@ public sealed partial class App : Application
         await _surfaces!.ApplyLayoutAsync(LoadLayout(_config!, _layoutId, _log!), CancellationToken.None);
         foreach (var panel in _surfaces.Panels)
         {
+            var settings = new MenuFlyoutItem { Text = "Settings" };
+            settings.Click += (_, _) => OpenSettings(null, null);
             var exit = new MenuFlyoutItem { Text = "Exit SubZeroDev.WindowManager" };
             exit.Click += (_, _) => _ = ShutdownAsync();
             var menu = new MenuFlyout();
+            menu.Items.Add(settings);
             menu.Items.Add(exit);
             panel.Panel.ContextFlyout = menu;
         }
@@ -284,6 +327,7 @@ public sealed partial class App : Application
     private async Task StopAsync()
     {
         StopAppearanceWatching();
+        _settingsWindow?.Close();
         _hotkeys?.Dispose();
         _hotkeyService?.Dispose();
         _config?.Dispose();

@@ -17,6 +17,7 @@ internal sealed class HostRun : IDisposable
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(30);
 
     private readonly DateTime _created = DateTime.Now;
+    private readonly List<string> _copiedPlugins = [];
 
     private HostRun(string root)
     {
@@ -120,6 +121,7 @@ internal sealed class HostRun : IDisposable
 
     public Process Start(string exe, params string[] args)
     {
+        EnableCopiedPlugins();
         var start = new ProcessStartInfo(exe) { UseShellExecute = false };
         foreach (var arg in args)
         {
@@ -234,7 +236,58 @@ internal sealed class HostRun : IDisposable
         edit?.Invoke(manifest);
 
         File.WriteAllText(Path.Combine(target, "plugin.json"), manifest.ToJsonString());
+        _copiedPlugins.Add(id);
         return target;
+    }
+
+    /// <summary>Enables a user plugin that will be copied in while the host runs, as a user would beforehand.</summary>
+    public void EnableBeforeCopy(string pluginId) => _copiedPlugins.Add(pluginId);
+
+    /// <summary>
+    /// A user plugin is disabled until the map in <c>settings.json</c> enables it: a copied plugin is enabled
+    /// there before each start, unless the map already names it. A settings file that does not parse is left alone.
+    /// </summary>
+    private void EnableCopiedPlugins()
+    {
+        if (_copiedPlugins.Count == 0)
+        {
+            return;
+        }
+
+        var path = Path.Combine(DataRoot, "settings.json");
+        JsonObject? settings;
+        try
+        {
+            settings = File.Exists(path)
+                ? JsonNode.Parse(File.ReadAllText(path)) as JsonObject
+                : new JsonObject { ["schemaVersion"] = 1, ["activePreset"] = "subzerodev.default" };
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return;
+        }
+
+        if (settings is null)
+        {
+            return;
+        }
+
+        if (settings["plugins"] is not JsonObject plugins)
+        {
+            settings["plugins"] = plugins = [];
+        }
+
+        var changed = !File.Exists(path);
+        foreach (var id in _copiedPlugins.Where(id => !plugins.ContainsKey(id)))
+        {
+            plugins[id] = new JsonObject { ["enabled"] = true };
+            changed = true;
+        }
+
+        if (changed)
+        {
+            File.WriteAllText(path, settings.ToJsonString());
+        }
     }
 
     /// <summary>Writes <c>&lt;data&gt;\layouts\subzerodev.default.json</c>: one bottom panel whose end zone holds these instances.</summary>

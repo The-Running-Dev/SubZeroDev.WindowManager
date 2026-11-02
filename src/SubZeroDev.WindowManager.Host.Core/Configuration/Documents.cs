@@ -46,11 +46,14 @@ public sealed record HostSettingsDocument(string ActivePreset, bool StartAtSignI
     /// <summary>Command id → key chord, or null for unbound. Overrides the manifest's <c>defaultHotkey</c>.</summary>
     public IReadOnlyDictionary<string, string?> Hotkeys { get; init; } = new Dictionary<string, string?>(StringComparer.Ordinal);
 
+    /// <summary>Plugin id → enabled. A plugin absent from the map is enabled when built in, disabled when user-installed.</summary>
+    public IReadOnlyDictionary<string, bool> Plugins { get; init; } = new Dictionary<string, bool>(StringComparer.Ordinal);
+
     public JsonObject ToJson() => new()
     {
         ["schemaVersion"] = ConfigStore.SupportedSchemaVersion,
         ["activePreset"] = ActivePreset,
-        ["plugins"] = new JsonObject(),
+        ["plugins"] = new JsonObject(Plugins.Select(p => KeyValuePair.Create(p.Key, (JsonNode?)new JsonObject { ["enabled"] = p.Value }))),
         ["commandProviders"] = new JsonObject(CommandProviders.Select(p => KeyValuePair.Create(p.Key, (JsonNode?)p.Value))),
         ["hotkeys"] = new JsonObject(Hotkeys.Select(h => KeyValuePair.Create(h.Key, h.Value is null ? null : (JsonNode?)h.Value))),
         ["startAtSignIn"] = StartAtSignIn,
@@ -155,9 +158,29 @@ public static partial class Documents
             problems.Add("hotkeys: must be an object.");
         }
 
+        var plugins = new Dictionary<string, bool>(StringComparer.Ordinal);
+        if (json["plugins"] is JsonObject pluginMap)
+        {
+            foreach (var (plugin, value) in pluginMap)
+            {
+                if (value is JsonObject entry && entry["enabled"] is JsonValue e && e.TryGetValue<bool>(out var enabled))
+                {
+                    plugins[plugin] = enabled;
+                }
+                else
+                {
+                    problems.Add($"plugins.{plugin}: must be {{ enabled: bool }}.");
+                }
+            }
+        }
+        else if (json["plugins"] is not null)
+        {
+            problems.Add("plugins: must be an object.");
+        }
+
         return problems.Count > start
             ? null
-            : new HostSettingsDocument(preset!, startAtSignIn, policy) { CommandProviders = providers, Hotkeys = hotkeys };
+            : new HostSettingsDocument(preset!, startAtSignIn, policy) { CommandProviders = providers, Hotkeys = hotkeys, Plugins = plugins };
     }
 
     public static PresetDocument? ParsePreset(JsonObject json, string expectedId, List<string> problems)

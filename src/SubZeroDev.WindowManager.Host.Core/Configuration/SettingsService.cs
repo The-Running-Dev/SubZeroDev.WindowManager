@@ -4,6 +4,9 @@ using SubZeroDev.WindowManager.Protocol;
 
 namespace SubZeroDev.WindowManager.Host.Core;
 
+/// <summary>A contribution instance in the active layout, with its schema and its settings (defaults filled in).</summary>
+public sealed record InstanceSettings(string InstanceId, string Contribution, string ContributionName, JsonObject? Schema, JsonObject Settings);
+
 /// <summary>
 /// Serves <c>settings.save</c> from workers and tells a running worker when its plugin-level settings change
 /// on disk. Plugin scope goes to <see cref="PluginSettingsStore"/>; instance scope rewrites the instance's
@@ -44,6 +47,37 @@ public sealed class SettingsService(IPackageCatalog catalog, IPluginSupervisor s
             : RpcMessage.Failure(request.Id, WorkerChannel.WireCodeOf(outcome.Error!.Code), outcome.Error.Detail,
                 new JsonObject { ["retryable"] = outcome.Error.Retryable });
     }
+
+    /// <summary>The plugin's instances in the active layout, in layout order; empty when the layout is not usable.</summary>
+    public IReadOnlyList<InstanceSettings> InstancesOf(string pluginId)
+    {
+        if (catalog.GetManifest(pluginId) is not { } manifest
+            || config.Get(new DocumentId(DocumentKind.Layout, activeLayoutId())).Content is not { } layout)
+        {
+            return [];
+        }
+
+        return [.. Instances(layout).Where(instance => Text(instance, "plugin") == pluginId).Select(instance =>
+        {
+            var contribution = Text(instance, "contribution") ?? string.Empty;
+            var schema = manifest.ContributionSettingsSchema(contribution);
+            var settings = instance["settings"] as JsonObject ?? [];
+            var text = Text(instance, "id") ?? string.Empty;
+            var id = Guid.TryParse(text, out var guid) ? guid.ToString("D") : text;
+            return new InstanceSettings(id, contribution,
+                manifest.Contributions.FirstOrDefault(declared => declared.Id == contribution)?.DisplayName ?? contribution,
+                schema?.DeepClone() as JsonObject,
+                SettingsSchemaSubset.Validate(schema, settings).Count == 0
+                    ? SettingsSchemaSubset.WithDefaults(schema, settings)
+                    : SettingsSchemaSubset.Defaults(schema));
+        })];
+    }
+
+    /// <summary>Saves an instance's settings into the active layout, as <c>settings.save</c> with instance scope does.</summary>
+    public Task<Outcome> SaveInstanceAsync(string pluginId, string instanceId, JsonObject settings, CancellationToken ct) =>
+        catalog.GetManifest(pluginId) is { } manifest
+            ? SaveInstanceAsync(manifest, instanceId, settings, ct)
+            : Task.FromResult(Outcome.Fail(CoreErrorCode.NotFound, $"{pluginId} has no valid manifest."));
 
     /// <summary>Sends <c>plugin.settingsChanged</c> to the running worker when its settings file changed outside the host.</summary>
     public void OnDocumentChanged(DocumentChangedEventArgs e)

@@ -38,9 +38,12 @@ public sealed record PluginStatus(string PluginId, PluginState State, int? Proce
 
 public enum FaultReason { Exited, PipeBroken, HeartbeatTimeout, HandshakeTimeout, ProtocolViolation, Flood, StartFailed }
 
+/// <summary>A fault the supervisor recorded: when, why and what it said.</summary>
+public sealed record PluginFault(DateTimeOffset At, FaultReason Reason, string Detail);
+
 /// <summary>
-/// The S3 part of the contract's <c>IPluginSupervisor</c>: start on demand, stop, restart after a
-/// fault and retry. Enable, disable and debug-attach arrive with their slices.
+/// The contract's <c>IPluginSupervisor</c>: start on demand, stop, restart after a fault, retry, enable
+/// and disable. Debug-attach arrives with its slice.
 /// </summary>
 public interface IPluginSupervisor
 {
@@ -56,6 +59,23 @@ public interface IPluginSupervisor
 
     /// <summary>Unavailable or Faulted → Starting, with the restart budget reset; otherwise InvalidState.</summary>
     Task<Outcome> RetryAsync(string pluginId, CancellationToken ct);
+
+    /// <summary>Persists <c>enabled: true</c>; a Disabled plugin becomes Discovered, so it starts when an instance needs it.</summary>
+    Task<Outcome> EnableAsync(string pluginId, CancellationToken ct) =>
+        Task.FromResult(Outcome.Fail(CoreErrorCode.InvalidState, "This supervisor cannot enable plugins."));
+
+    /// <summary>Persists <c>enabled: false</c>, then stops the worker as <see cref="StopAsync"/> does; the plugin is Disabled.</summary>
+    Task<Outcome> DisableAsync(string pluginId, CancellationToken ct) =>
+        Task.FromResult(Outcome.Fail(CoreErrorCode.InvalidState, "This supervisor cannot disable plugins."));
+
+    /// <summary>
+    /// The status, except that a plugin that has not started (or has stopped) shows why it would not start:
+    /// Invalid, Incompatible or Disabled, with its problems.
+    /// </summary>
+    PluginStatus Describe(string pluginId) => GetStatus(pluginId);
+
+    /// <summary>The plugin's most recent faults since the host started, oldest first, with their reasons.</summary>
+    IReadOnlyList<PluginFault> FaultsOf(string pluginId) => [];
 
     Task StopAllAsync(CancellationToken ct);
 

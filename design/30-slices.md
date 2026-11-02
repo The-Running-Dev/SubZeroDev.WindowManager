@@ -149,7 +149,7 @@ Acceptance:
 Out of scope: generated settings forms (S10).
 
 ## S10 — Settings window and plugin manager
-Status: todo
+Status: done
 Delivers: Ben can open one settings window to see every plugin and its health, enable, disable, retry and configure plugins, read their logs, and pick a preset, with no file editing.
 Touches: Host.Settings (window, plugin manager, schema-generated forms, appearance picker); Host.Core (`EnableAsync`, `DisableAsync`, status and problem reporting, `Incompatible` and `Invalid` reasons); `host.settings.open`, `host.preset.apply`
 Depends on: S5, S9
