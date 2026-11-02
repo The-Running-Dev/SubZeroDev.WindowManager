@@ -24,11 +24,12 @@ public sealed partial class SettingsTests
         var status = await run.WaitForAsync(s => PluginPid(s, Clock) is not null && ClockText(s) is { } t && Minutes().IsMatch(t), Startup);
         var pid = PluginPid(status, Clock);
 
+        await run.WaitForQuietAsync();
         var edited = Stopwatch.StartNew();
         run.WriteDefaultLayout((instance, Clock, "clock", new JsonObject { ["format"] = "HH:mm:ss" }));
         status = await run.WaitForAsync(s => ClockText(s) is { } t && Seconds().IsMatch(t), TimeSpan.FromSeconds(4));
 
-        Assert.True(edited.Elapsed < TimeSpan.FromSeconds(2), $"Seconds showed after {edited.Elapsed}.");
+        Assert.True(edited.Elapsed < TimeSpan.FromSeconds(2), $"Seconds showed after {edited.Elapsed}.{Environment.NewLine}{run.HostLogTail()}");
         Assert.Equal(pid, PluginPid(status, Clock));
         Assert.Equal(0, await run.StopAsync());
     }

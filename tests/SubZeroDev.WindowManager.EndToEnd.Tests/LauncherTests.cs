@@ -93,10 +93,22 @@ public sealed partial class LauncherTests
         try
         {
             Interactive.Press(Interactive.Enter);
-            await run.WaitForAsync(s => !Open(s) && Pids("charmap").Except(before).Contains(Interactive.ForegroundProcessId()),
-                TimeSpan.FromSeconds(10));
-            // The worker closes the popup, unless the new window took the foreground first.
-            Assert.Contains((string?)Popup(await run.WaitForStatusAsync())["lastCloseReason"], new[] { "Requested", "LightDismiss" });
+            try
+            {
+                await run.WaitForAsync(s => !Open(s) && Pids("charmap").Except(before).Contains(Interactive.ForegroundProcessId()),
+                    TimeSpan.FromSeconds(10));
+            }
+            catch (TimeoutException e)
+            {
+                // Says whether the launch never started or started without the foreground.
+                var foreground = Interactive.ForegroundProcessId();
+                var name = Process.GetProcesses().FirstOrDefault(p => p.Id == foreground)?.ProcessName;
+                throw new TimeoutException(
+                    $"New charmap pids: [{string.Join(", ", Pids("charmap").Except(before))}]; foreground: {foreground} ({name}).{Environment.NewLine}{e.Message}", e);
+            }
+            // The worker closes the popup, unless the new window took the foreground first. The reason is recorded once
+            // the worker has heard of the close, so it can trail the hide.
+            await run.WaitForAsync(s => (string?)Popup(s)["lastCloseReason"] is "Requested" or "LightDismiss", Reaction);
         }
         finally
         {

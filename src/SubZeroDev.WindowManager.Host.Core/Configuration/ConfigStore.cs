@@ -15,7 +15,7 @@ namespace SubZeroDev.WindowManager.Host.Core;
 /// </summary>
 public sealed class ConfigStore : IConfigStore, IDisposable
 {
-    public static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(300);
+    public static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(250);
 
     public const int SupportedSchemaVersion = 1;
 

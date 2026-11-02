@@ -184,7 +184,8 @@ public sealed class DesktopTests
             Assert.Contains($"desktop-show restore 0x{fixture[kind]:X}", actions);
         }
 
-        Assert.Contains("Show desktop restored", run.HostLog());
+        // The host logs the restore once every window is back, so the line can trail the windows by a moment.
+        await WaitUntilAsync(() => run.HostLog().Contains("Show desktop restored", StringComparison.Ordinal), "the host to log the restore");
         Assert.Equal(0, await run.StopAsync());
     }
 

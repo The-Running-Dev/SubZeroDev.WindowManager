@@ -19,6 +19,7 @@ internal sealed class DispatcherWatchdog : IDisposable
     private readonly CancellationTokenSource _stop = new();
     private long _stalls;
     private long _longestMs;
+    private long _lastStallUtcMs;
 
     public DispatcherWatchdog(DispatcherQueue dispatcher, IHostLog log)
     {
@@ -32,6 +33,9 @@ internal sealed class DispatcherWatchdog : IDisposable
 
     /// <summary>The longest wait seen so far, in milliseconds.</summary>
     public long LongestMs => Interlocked.Read(ref _longestMs);
+
+    /// <summary>When the UI thread was last seen stalled, in Unix milliseconds; 0 before the first stall.</summary>
+    public long LastStallUtcMs => Interlocked.Read(ref _lastStallUtcMs);
 
     public void Dispose()
     {
@@ -57,6 +61,7 @@ internal sealed class DispatcherWatchdog : IDisposable
                 while (await Task.WhenAny(ran.Task, Task.Delay(Threshold * 20, token)).ConfigureAwait(false) != ran.Task)
                 {
                     token.ThrowIfCancellationRequested();
+                    Interlocked.Exchange(ref _lastStallUtcMs, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                     _log.Write(LogLevel.Warning, "watchdog", $"The UI thread has not run for {Environment.TickCount64 - posted} ms.");
                 }
 
@@ -84,6 +89,7 @@ internal sealed class DispatcherWatchdog : IDisposable
         if (waitedMs > Threshold.TotalMilliseconds)
         {
             Interlocked.Increment(ref _stalls);
+            Interlocked.Exchange(ref _lastStallUtcMs, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             _log.Write(LogLevel.Warning, "watchdog", $"UI thread stalled for {waitedMs} ms.");
         }
     }

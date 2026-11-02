@@ -205,8 +205,21 @@ internal sealed class HostRun : IDisposable
             await Task.Delay(50);
         }
 
-        throw new TimeoutException($"Condition not met within {timeout}. Last status: {last?.ToJsonString()}");
+        throw new TimeoutException($"Condition not met within {timeout}. Last status: {last?.ToJsonString()}{Environment.NewLine}{HostLogTail()}");
     }
+
+    /// <summary>
+    /// Waits until the host's UI thread has gone a second without a stall, by a status written in the last
+    /// half second. A slow machine can stall the UI thread as the workers start; a test that times a reaction
+    /// starts its clock after that.
+    /// </summary>
+    public Task<JsonObject> WaitForQuietAsync() =>
+        WaitForAsync(s =>
+        {
+            var now = (long)s["nowUtcMs"]!;
+            return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - now <= 500
+                && now - (long)s["watchdog"]!["lastStallUtcMs"]! >= 1000;
+        }, TimeSpan.FromSeconds(15));
 
     /// <summary>Texts shown by each contribution of <paramref name="plugin"/>, one list per instance.</summary>
     public static List<string[]> Texts(JsonObject status, string plugin) =>
@@ -447,6 +460,13 @@ internal sealed class HostRun : IDisposable
             using var reader = new StreamReader(stream);
             return reader.ReadToEnd();
         }));
+    }
+
+    /// <summary>The host log's last lines, so a failure on CI says what the host was doing.</summary>
+    public string HostLogTail(int lines = 30)
+    {
+        var all = HostLog().Split(Environment.NewLine);
+        return "Host log:" + Environment.NewLine + string.Join(Environment.NewLine, all.Skip(Math.Max(0, all.Length - lines)));
     }
 
     private static string Metadata(string key) =>
