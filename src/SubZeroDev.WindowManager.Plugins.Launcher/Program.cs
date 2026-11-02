@@ -34,6 +34,7 @@ public sealed class LauncherPlugin : Plugin
     private PopupSurface _popup = null!;
     private string _mode = "search";
     private string _query = string.Empty;
+    private string? _selected;
     private int _refreshing;
 
     protected override async Task OnStartAsync(CancellationToken ct)
@@ -70,6 +71,11 @@ public sealed class LauncherPlugin : Plugin
                 ShowResults(Text(e.Value));
                 break;
             case { ElementId: "results", Kind: ElementEventKind.SelectionChanged, ItemKey: { } key }:
+                lock (_gate)
+                {
+                    _selected = key;
+                }
+
                 popup.SetState("selected", key);
                 break;
             case { ElementId: "command", Kind: ElementEventKind.TextSubmitted }:
@@ -205,6 +211,7 @@ public sealed class LauncherPlugin : Plugin
         {
             _mode = mode;
             _query = string.Empty;
+            _selected = null;
         }
 
         _popup.SetView(mode == "run"
@@ -233,9 +240,14 @@ public sealed class LauncherPlugin : Plugin
         return View.Button("app", "Application", launch, Prop<string>.Item("name"), Prop<IconRef>.Item("icon"), null, "result");
     }
 
+    /// <summary>
+    /// Shows the matches for the query. A new query selects the first match; the same query again (after a
+    /// background rebuild) keeps the user's selection while it is still among the matches.
+    /// </summary>
     private void ShowResults(string query)
     {
         IReadOnlyList<AppEntry> index;
+        string? kept;
         lock (_gate)
         {
             if (_mode != "search")
@@ -243,11 +255,17 @@ public sealed class LauncherPlugin : Plugin
                 return;
             }
 
+            kept = query == _query ? _selected : null;
             _query = query;
             index = _index;
         }
 
         var matches = AppIndex.Search(index, query);
+        var selected = matches.Any(entry => entry.Key == kept) ? kept : matches.Count > 0 ? matches[0].Key : null;
+        lock (_gate)
+        {
+            _selected = selected;
+        }
         var items = new JsonArray();
         foreach (var entry in matches)
         {
@@ -258,7 +276,7 @@ public sealed class LauncherPlugin : Plugin
 
         _popup.SetState("query", query);
         _popup.SetState("items", items);
-        _popup.SetState("selected", matches.Count > 0 ? matches[0].Key : null);
+        _popup.SetState("selected", selected);
     }
 
     /// <summary>Rebuilds the index unless a rebuild is already running, then publishes it and refreshes the results shown.</summary>
