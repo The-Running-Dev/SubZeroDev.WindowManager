@@ -180,7 +180,15 @@ public sealed partial class CommandTests
     private static string[] Lines(string data, string file)
     {
         var path = Path.Combine(data, file);
-        return File.Exists(path) ? File.ReadAllLines(path) : [];
+        if (!File.Exists(path))
+        {
+            return [];
+        }
+
+        // The worker may be appending while this reads, so share write access rather than demand it be closed.
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line => line.TrimEnd('\r')).ToArray();
     }
 
     private static async Task WaitForLinesAsync(string data, string file, int count)

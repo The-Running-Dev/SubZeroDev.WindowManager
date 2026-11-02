@@ -91,6 +91,9 @@ public sealed class ContributionView
     /// <summary>The placeholder reason shown now, or null while a view is shown.</summary>
     public string? Reason { get; private set; }
 
+    /// <summary>When the current live view was first shown (Unix ms, UTC), or null while a placeholder or nothing is shown.</summary>
+    public long? LiveSinceUtcMs { get; private set; }
+
     /// <summary>The placeholder shown now, or null while a view is shown.</summary>
     public WmPlaceholder? Placeholder => Root.Content as WmPlaceholder;
 
@@ -141,6 +144,7 @@ public sealed class ContributionView
             Reset();
             _revision = -1;
             Root.Content = null;
+            LiveSinceUtcMs = null;
             return;
         }
 
@@ -152,9 +156,15 @@ public sealed class ContributionView
         _state = state;
         if (restyle || Reason is not null || Root.Content is null || revision != _revision)
         {
+            var wasLive = Reason is null && Root.Content is not null;
             Reset();
             _revision = revision;
             Root.Content = Build(view, _root);
+            if (!wasLive)
+            {
+                LiveSinceUtcMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            }
+
             return;
         }
 
@@ -175,6 +185,7 @@ public sealed class ContributionView
         Reset();
         _revision = -1;
         Reason = reason.ToString();
+        LiveSinceUtcMs = null;
         var placeholder = new WmPlaceholder
         {
             PluginName = PluginId,

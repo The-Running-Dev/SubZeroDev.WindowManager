@@ -67,3 +67,29 @@ jobs:
           name: crash-dumps
           path: ${{ runner.temp }}/dumps
           if-no-files-found: ignore
+
+  budgets:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Build
+        run: dotnet build SubZeroDev.WindowManager.slnx -c Release
+      - name: Startup and idle against the CI budgets
+        shell: pwsh
+        env:
+          SUBZERODEV_WM_BUDGETS: ci
+          SUBZERODEV_WM_BUDGET_OUT: ${{ runner.temp }}/budgets
+        run: |
+          $tests = 'tests/SubZeroDev.WindowManager.EndToEnd.Tests/bin/Release/net10.0-windows10.0.26100.0/win-x64/SubZeroDev.WindowManager.EndToEnd.Tests.exe'
+          & $tests -class SubZeroDev.WindowManager.EndToEnd.Tests.BudgetTests
+          exit $LASTEXITCODE
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: budgets
+          path: ${{ runner.temp }}/budgets
+          if-no-files-found: ignore

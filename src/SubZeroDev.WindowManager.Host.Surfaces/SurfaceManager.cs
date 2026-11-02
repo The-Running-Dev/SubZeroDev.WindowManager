@@ -48,6 +48,7 @@ public sealed class SurfaceManager : ISurfaceManager
     private const int AutoHideStripPx = 2;
     private static readonly TimeSpan AutoHidePoll = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan AutoHideLinger = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan TopmostPoll = TimeSpan.FromSeconds(1);
 
     private readonly IConfigStore _config;
     private readonly IMonitorService _monitors;
@@ -70,6 +71,7 @@ public sealed class SurfaceManager : ISurfaceManager
     private readonly HashSet<string> _fullscreenMonitors = new(StringComparer.Ordinal);
     private readonly Dictionary<PanelWindow, DateTime> _lastNeeded = [];
     private readonly DispatcherQueueTimer _autoHide;
+    private readonly DispatcherQueueTimer _topmost;
     private LayoutDocument? _layout;
 
     public SurfaceManager(IConfigStore config, IMonitorService monitors, IAppBarService appBars, IThemeEngine theme,
@@ -97,6 +99,18 @@ public sealed class SurfaceManager : ISurfaceManager
         _autoHide = _dispatcher.CreateTimer();
         _autoHide.Interval = AutoHidePoll;
         _autoHide.Tick += (_, _) => AutoHide();
+
+        // Windows and the presenter can drop WS_EX_TOPMOST after a show or a move between monitors; put it back.
+        _topmost = _dispatcher.CreateTimer();
+        _topmost.Interval = TopmostPoll;
+        _topmost.Tick += (_, _) =>
+        {
+            foreach (var window in _panels)
+            {
+                window.ApplyTopmost();
+            }
+        };
+        _topmost.Start();
     }
 
     /// <summary>Raised for each panel window as it is made, before it is shown.</summary>
@@ -703,6 +717,7 @@ public sealed class SurfaceManager : ISurfaceManager
     private async Task ShutdownCoreAsync(CancellationToken ct)
     {
         _autoHide.Stop();
+        _topmost.Stop();
         _lastNeeded.Clear();
         foreach (var window in _panels)
         {

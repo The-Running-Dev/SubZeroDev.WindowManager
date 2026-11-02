@@ -9,10 +9,31 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 - **Arm64**: in scope? Default: x64 only.
 - **Prototype checks**: runtime XAML templates with visual states, transparent shaped panels with backdrops, and app bars from WinUI 3. A failure is a new entry here.
 - **Windows App SDK release**: pinned in the foundation slice.
-- **Performance budgets**: set after the first working prototype.
 - **Per-user shell value on build 26200**: honoured by Windows? Default until S17's check: yes; otherwise the per-user Custom User Interface value.
 
 ---
+
+## 2026-11-02 — S16: performance budgets
+- **Context:** the open question "performance budgets" waited for a working prototype. S16 measures one and sets budgets from it, so a later change cannot make startup, idle cost or reaction worse without a red check.
+- **Chosen:**
+  - **Measurement:** `BudgetTests` measures ten runs of the guardian with the clock, the running-windows strip and the launcher.
+    - **Startup:** guardian start until the last view goes live. The host stamps `liveSinceUtcMs` per contribution, so the test's 250 ms status polling does not round it.
+    - **Idle:** after 60 s idle, the host's CPU over that minute and the private bytes of the host and each worker.
+    - **Hotkey:** the time to the launcher's second open.
+    - **Click:** the time from a click on a minimised window's item until that window is in the foreground.
+  - **Budgets:** each budget is p90 + 20%, rounded down.
+    - Reference p90s: startup 1941 ms; host 95.0 MiB; clock 11.1, running-windows 12.1 and launcher 15.8 MiB; idle CPU 6.8%; hotkey 22 ms; click 77 ms.
+    - CI p90s: startup 2006 ms; host 61.1 MiB; clock 9.5, running-windows 9.9 and launcher 13.9 MiB; idle CPU 5.4%; hotkey 23 ms; click 77 ms.
+    - The values are in `docs/budgets.md`.
+  - **CI check:** the `budgets` job runs startup and idle three times on every pull request against the CI column. It fails when a median is more than 10% over its budget. A median rather than one run keeps a single slow start on a shared runner from failing a pull request.
+  - **Separate CI budgets:** a hosted runner differs from the reference machine in scale, monitor and load. Checking it against the reference column would either always pass or always fail.
+- **Rejected:**
+  - A dedicated benchmark library such as BenchmarkDotNet: it measures in-process methods, not a guardian, a host and three workers starting on a desktop.
+  - Running the interaction measurements on every pull request: they need the launcher hotkey free and a real click, and they add little over S8.1's and S7's latency asserts.
+- **Known gap:**
+  - The idle CPU includes the test hook writing `status.json` every 250 ms, so it overstates a released build.
+  - About 6% of one core at idle is high for a shell, and no optimisation is in scope for this slice.
+  - The budgets are only as good as one machine on one day. Measure again after a change that is meant to move them.
 
 ## 2026-11-02 — S15: release, SDK package and install
 - **Context:** a release has to run on a machine without .NET, install and remove itself without administrator rights, and give plugin authors the SDK and `wm-pack` as packages that build the sample with nothing from `src\`.

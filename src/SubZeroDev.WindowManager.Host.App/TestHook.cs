@@ -452,6 +452,7 @@ internal sealed class TestHook
                 ["instanceId"] = view.Instance.Id.ToString("D"),
                 ["plugin"] = view.Instance.Plugin,
                 ["reason"] = view.Reason,
+                ["liveSinceUtcMs"] = view.LiveSinceUtcMs,
                 ["hasRetry"] = view.Placeholder?.RetryCommand is not null,
                 ["texts"] = new JsonArray(view.Texts().Select(text => (JsonNode?)text).ToArray()),
                 ["textItems"] = new JsonArray(view.TextElements().Select(item => (JsonNode?)new JsonObject
