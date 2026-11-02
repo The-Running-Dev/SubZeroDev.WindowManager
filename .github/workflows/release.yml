@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'build/**'
+      - 'samples/**'
+      - 'src/SubZeroDev.WindowManager.Sdk/**'
+      - 'src/SubZeroDev.WindowManager.Protocol/**'
+      - 'src/SubZeroDev.WindowManager.PackTool/**'
+      - 'src/SubZeroDev.WindowManager.Guardian/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Version
+        shell: pwsh
+        run: |
+          $version = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}'.TrimStart('v') } else { '0.1.0-ci.${{ github.run_number }}' }
+          "VERSION=$version" >> $env:GITHUB_ENV
+      - name: Release, packages and the sample (S15.1, S15.2)
+        shell: pwsh
+        run: ./build/release.ps1 -Version $env:VERSION
+      - name: Built-in plugins match wm-pack (S15.4)
+        shell: pwsh
+        run: ./build/release.ps1 -Version $env:VERSION -Verify
+      - name: Build the end-to-end tests
+        run: dotnet build tests/SubZeroDev.WindowManager.EndToEnd.Tests -c Release
+      - name: The released host installs the sample (S15.3)
+        shell: pwsh
+        run: |
+          $env:SUBZERODEV_WM_RELEASE_DIR = (Resolve-Path artifacts/release).Path
+          $env:SUBZERODEV_WM_SAMPLE_PACKAGE = (Resolve-Path artifacts/sample/example.hello.zip).Path
+          dotnet test tests/SubZeroDev.WindowManager.EndToEnd.Tests -c Release --no-build --filter "FullyQualifiedName~SubZeroDev.WindowManager.EndToEnd.Tests.ReleaseTests" --logger "console;verbosity=normal"
+      - name: Keep the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ env.VERSION }}
+          path: |
+            artifacts/SubZeroDev.WindowManager-*.zip
+            artifacts/packages/*.nupkg
+      - name: Publish the GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create '${{ github.ref_name }}' --title '${{ github.ref_name }}' --generate-notes `
+            "artifacts/SubZeroDev.WindowManager-$env:VERSION-win-x64.zip" `
+            (Get-ChildItem artifacts/packages/*.nupkg).FullName

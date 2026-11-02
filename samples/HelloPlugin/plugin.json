@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "id": "example.hello",
+  "version": "1.0.0",
+  "displayName": "Hello",
+  "publisher": "Example",
+  "description": "A third-party sample: shows a greeting on a panel.",
+  "hostApi": "^1.0",
+  "entry": { "path": "Example.Hello.exe", "args": [] },
+  "capabilities": [],
+  "modes": [ "coexistence", "replacement" ],
+  "requiresExplorer": false,
+  "contributions": [
+    { "id": "hello", "kind": "panelItem", "displayName": "Hello", "multiInstance": true, "settingsSchema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "default": "world" }
+        }
+      } }
+  ],
+  "settingsVersion": 1
+}

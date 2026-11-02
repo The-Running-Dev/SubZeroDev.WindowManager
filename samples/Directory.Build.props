@@ -1,0 +1,9 @@
+<Project>
+  <!-- The samples stand alone, the way a third-party plugin repository would: nothing is inherited from the
+       app's own build, and the SDK comes only as a package (S15.2). -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

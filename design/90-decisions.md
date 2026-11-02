@@ -14,6 +14,22 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S15: release, SDK package and install
+- **Context:** a release has to run on a machine without .NET, install and remove itself without administrator rights, and give plugin authors the SDK and `wm-pack` as packages that build the sample with nothing from `src\`.
+- **Chosen:**
+  - `build/release.ps1` builds everything into `artifacts\`: the guardian at the root, the host in `host\`, and the newest installed .NET 10 runtime with its host resolver in `runtime\`. Both app hosts find it through `AppHostDotNetSearch=AppRelative`, so neither is self-contained and both share one runtime.
+  - Workers start from the host's environment, so the host sets `DOTNET_ROOT` and `DOTNET_ROOT_X64` to the bundled runtime before any worker starts. It does this only when neither is set and there is no machine-wide .NET in Program Files.
+  - The Sdk package carries the Protocol assembly inside it (a private project reference copied into `lib\`), so authors reference one package. The built-in plugins name Protocol themselves, because a private reference does not flow to them.
+  - Built-in plugins in the release are the `wm-pack` output, extracted. `-Verify` packs them again and fails on any byte difference in the zip or the extracted files.
+  - `--first-run` adds the Start-menu shortcut, and the HKCU Run value when `startAtSignIn` is set. `--uninstall` removes both and leaves the user's data. A failed registration is logged and the app still starts.
+  - The host sets `EnableMsixTooling`, without which an unpackaged publish leaves out the `.pri` files the settings window loads, and marks its plugin project references `Private="false"`, so their `plugin.json` files stay out of its output.
+  - The release workflow runs on tags, on pull requests that touch the release inputs, and by hand. It publishes the GitHub release only on a tag.
+- **Rejected:**
+  - Self-contained guardian and host: two copies of the runtime, and plugin workers still need one of their own.
+  - Separate Protocol package: two packages to keep in step, for a library authors never use on its own.
+  - Publishing to nuget.org: needs Ben's account (see Open).
+- **Known gap:** shell registration and unregistration belong to S17, so `--uninstall` does not touch a shell value yet; the bundled runtime is whatever .NET 10 the build machine has, not a pinned version.
+
 ## 2026-11-02 — S14: two sample looks
 - **Context:** two shipped presets have to show how far the theming moves one desktop: panel shape, backdrop, font, accent, button transitions and icons all differ, and switching between them must not restart a worker or touch plugin settings.
 - **Chosen:**

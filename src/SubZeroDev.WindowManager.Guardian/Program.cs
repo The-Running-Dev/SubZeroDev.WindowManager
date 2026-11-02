@@ -36,6 +36,19 @@ public static partial class Program
 
     public static async Task<int> Main(string[] args)
     {
+        var guardian = new Guardian(args);
+        if (args.Contains("--uninstall"))
+        {
+            // Runs even while the app is running, and leaves the data folder. Unregistering the shell comes with S17.
+            Registration(guardian, () => Install.Unregister(guardian.Log));
+            return Normal;
+        }
+
+        if (args.Contains("--first-run"))
+        {
+            Registration(guardian, () => Install.Register(Environment.ProcessPath!, guardian.DataRoot, guardian.Log));
+        }
+
         var suffix = Environment.GetEnvironmentVariable(InstanceVariable) ?? string.Empty;
         using var mutex = new Mutex(initiallyOwned: true, @"Local\SubZeroDev.WindowManager.Guardian" + suffix, out var created);
         if (!created)
@@ -43,7 +56,6 @@ public static partial class Program
             return AlreadyRunning;
         }
 
-        var guardian = new Guardian(args);
         try
         {
             return await guardian.RunAsync();
@@ -51,6 +63,19 @@ public static partial class Program
         finally
         {
             guardian.Log("Guardian exiting.");
+        }
+    }
+
+    /// <summary>A failed registration step is logged and does not stop the launch.</summary>
+    private static void Registration(Guardian guardian, Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or COMException or System.Security.SecurityException)
+        {
+            guardian.Log($"Install registration failed: {e.Message}");
         }
     }
 
@@ -78,6 +103,8 @@ public static partial class Program
             using var self = Process.GetCurrentProcess();
             _sessionId = self.SessionId;
         }
+
+        public string DataRoot => _dataRoot;
 
         public async Task<int> RunAsync()
         {

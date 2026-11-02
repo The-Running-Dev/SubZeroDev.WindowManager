@@ -3,13 +3,29 @@
     <TargetFramework>net10.0</TargetFramework>
     <TargetPlatformMinVersion></TargetPlatformMinVersion>
     <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
+    <!-- A plain AnyCPU library, so the package carries no runtime-specific folder. -->
+    <RuntimeIdentifier></RuntimeIdentifier>
+    <PlatformTarget>AnyCPU</PlatformTarget>
     <RootNamespace>SubZeroDev.WindowManager.Sdk</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>SubZeroDev.WindowManager.Sdk</PackageId>
+    <Authors>SubZeroDev</Authors>
+    <Description>Build plugins for SubZeroDev.WindowManager: the plugin runtime, views and the wire protocol.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeProtocolInPackage</TargetsForTfmSpecificBuildOutput>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\SubZeroDev.WindowManager.Protocol\SubZeroDev.WindowManager.Protocol.csproj" />
+    <!-- Protocol ships inside this package (decision 2026-11-02, S15), not as a package of its own. -->
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Protocol\SubZeroDev.WindowManager.Protocol.csproj" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="SubZeroDev.WindowManager.TestPlugin" />
   </ItemGroup>
+  <Target Name="IncludeProtocolInPackage" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths->WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
+    </ItemGroup>
+  </Target>
 </Project>

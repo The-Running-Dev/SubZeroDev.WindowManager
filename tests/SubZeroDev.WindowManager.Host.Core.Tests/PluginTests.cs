@@ -34,7 +34,32 @@ public sealed partial class PluginTests
         }
 
         var clock = plugins.Single(path => path.EndsWith("SubZeroDev.WindowManager.Plugins.Clock.csproj", StringComparison.Ordinal));
-        Assert.Equal(["SubZeroDev.WindowManager.Sdk"], DirectReferences(clock).Select(Path.GetFileNameWithoutExtension));
+        // Protocol ships inside the Sdk package (S15); the Sdk keeps it private, so a source build names it too.
+        Assert.Equal(["SubZeroDev.WindowManager.Protocol", "SubZeroDev.WindowManager.Sdk"],
+            DirectReferences(clock).Select(Path.GetFileNameWithoutExtension).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void S15_2_the_sample_plugin_uses_only_the_Sdk_package()
+    {
+        var root = RepositoryRoot();
+        var samples = Directory.EnumerateFiles(Path.Combine(root, "samples"), "*.csproj", SearchOption.AllDirectories).ToList();
+        Assert.NotEmpty(samples);
+
+        foreach (var project in samples)
+        {
+            var document = XDocument.Load(project);
+            Assert.Empty(document.Descendants("ProjectReference"));
+            Assert.Contains(document.Descendants("PackageReference"),
+                reference => (string?)reference.Attribute("Include") == "SubZeroDev.WindowManager.Sdk");
+        }
+
+        // The samples restore SubZeroDev.* packages from the release feed only.
+        var config = XDocument.Load(Path.Combine(root, "samples", "NuGet.config"));
+        var mapped = config.Descendants("packageSource").Single(source => source.Elements("package")
+            .Any(package => (string?)package.Attribute("pattern") == "SubZeroDev.*"));
+        var feed = config.Descendants("add").Single(add => (string?)add.Attribute("key") == (string?)mapped.Attribute("key"));
+        Assert.Equal("../artifacts/packages", (string?)feed.Attribute("value"));
     }
 
     [Fact]

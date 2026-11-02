@@ -52,6 +52,8 @@ public static class Program
             return ExitCodes.AlreadyRunning;
         }
 
+        // Before any worker starts: a release without a machine-wide .NET runs plugins on its own runtime.
+        Core.Plugins.BundledRuntime.Apply();
         Application.Start(callback =>
         {
             SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
