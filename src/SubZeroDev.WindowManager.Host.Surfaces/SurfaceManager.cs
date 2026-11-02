@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.UI.Dispatching;
@@ -31,15 +33,22 @@ public interface ISurfaceManager
 }
 
 /// <summary>
-/// Creates one <see cref="PanelWindow"/> per panel in the active layout and places it. Places on the
-/// primary monitor only and treats every behaviour other than <c>reserve</c> as an overlay. Each
-/// contribution gets a <see cref="ContributionView"/>; the placements go to the contribution host, and
-/// its instance changes are rendered on the UI thread. Each plugin popup gets one
-/// <see cref="PopupWindow"/>, made on first open and hidden between uses. Call on the UI thread, except
-/// <see cref="ServeWorkerAsync"/>.
+/// Creates one <see cref="PanelWindow"/> per panel and monitor in the active layout and places it: on the
+/// primary monitor, on the named device, or on every monitor (each copy beyond the primary's gets ids derived
+/// from the monitor). The layout is applied again whenever the monitors change. A <c>reserve</c> panel claims
+/// its space and is registered again when the shell restarts; an <c>autoHide</c> panel shrinks to a strip at
+/// its edge and grows back when the pointer touches it; a <c>desktop</c> panel sits below every window.
+/// Panels drop out of topmost while a full-screen window covers their monitor. Each contribution gets a
+/// <see cref="ContributionView"/>; the placements go to the contribution host, and its instance changes are
+/// rendered on the UI thread. Each plugin popup gets one <see cref="PopupWindow"/>, made on first open and
+/// hidden between uses. Call on the UI thread, except <see cref="ServeWorkerAsync"/>.
 /// </summary>
 public sealed class SurfaceManager : ISurfaceManager
 {
+    private const int AutoHideStripPx = 2;
+    private static readonly TimeSpan AutoHidePoll = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan AutoHideLinger = TimeSpan.FromSeconds(1);
+
     private readonly IConfigStore _config;
     private readonly IMonitorService _monitors;
     private readonly IAppBarService _appBars;
@@ -57,6 +66,11 @@ public sealed class SurfaceManager : ISurfaceManager
     private readonly Lock _pendingGate = new();
     private readonly HashSet<Guid> _pending = [];
     private readonly HashSet<(string Plugin, string Popup)> _pendingPopups = [];
+    private readonly SemaphoreSlim _applyGate = new(1, 1);
+    private readonly HashSet<string> _fullscreenMonitors = new(StringComparer.Ordinal);
+    private readonly Dictionary<PanelWindow, DateTime> _lastNeeded = [];
+    private readonly DispatcherQueueTimer _autoHide;
+    private LayoutDocument? _layout;
 
     public SurfaceManager(IConfigStore config, IMonitorService monitors, IAppBarService appBars, IThemeEngine theme,
         IContributionHost contributions, IHostLog log, Action<string>? retry = null, IElementActions? actions = null,
@@ -77,9 +91,21 @@ public sealed class SurfaceManager : ISurfaceManager
         _contributions.InstanceChanged += (_, snapshot) => QueueRender(snapshot.InstanceId);
         _contributions.PopupChanged += (_, snapshot) => QueuePopupRender((snapshot.PluginId, snapshot.PopupId));
         _contributions.PopupOwnerStopped += (_, pluginId) => _dispatcher.TryEnqueue(() => OwnerStopped(pluginId));
+        _monitors.TopologyChanged += (_, _) => _dispatcher.TryEnqueue(() => _ = ReapplyAsync());
+        _appBars.FullscreenChanged += (_, change) => _dispatcher.TryEnqueue(() => Fullscreen(change));
+        _appBars.ShellRestarted += (_, _) => _dispatcher.TryEnqueue(() => _ = RenewAsync());
+        _autoHide = _dispatcher.CreateTimer();
+        _autoHide.Interval = AutoHidePoll;
+        _autoHide.Tick += (_, _) => AutoHide();
     }
 
+    /// <summary>Raised for each panel window as it is made, before it is shown.</summary>
+    public event EventHandler<PanelWindow>? PanelCreated;
+
     public IReadOnlyList<PanelWindow> Panels => _panels;
+
+    /// <summary>A layout has been applied in full, even one that places no panel on the monitors there are.</summary>
+    public bool LayoutApplied { get; private set; }
 
     public IReadOnlyCollection<ContributionView> Views => _views.Values;
 
@@ -379,8 +405,46 @@ public sealed class SurfaceManager : ISurfaceManager
 
     public async Task ApplyLayoutAsync(LayoutDocument layout, CancellationToken ct)
     {
-        await ShutdownAsync(ct);
-        var primary = _monitors.Monitors.FirstOrDefault(m => m.IsPrimary) ?? _monitors.Monitors.FirstOrDefault();
+        ArgumentNullException.ThrowIfNull(layout);
+        await _applyGate.WaitAsync(ct);
+        try
+        {
+            _layout = layout;
+            await ApplyCoreAsync(layout, ct);
+            LayoutApplied = true;
+        }
+        finally
+        {
+            _applyGate.Release();
+        }
+    }
+
+    /// <summary>The monitors changed: every panel is made again for the monitors there are now.</summary>
+    private async Task ReapplyAsync()
+    {
+        await _applyGate.WaitAsync();
+        try
+        {
+            if (_layout is { } layout)
+            {
+                await ApplyCoreAsync(layout, CancellationToken.None);
+            }
+        }
+        catch (Exception e)
+        {
+            _log.Write(LogLevel.Error, "surfaces", $"Applying the layout to the new monitors failed: {e}");
+        }
+        finally
+        {
+            _applyGate.Release();
+        }
+    }
+
+    private async Task ApplyCoreAsync(LayoutDocument layout, CancellationToken ct)
+    {
+        await ShutdownCoreAsync(ct);
+        var monitors = _monitors.Monitors;
+        var primary = monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors.FirstOrDefault();
         if (primary is null)
         {
             _log.Write(LogLevel.Error, "surfaces", "No monitor is connected.");
@@ -388,11 +452,11 @@ public sealed class SurfaceManager : ISurfaceManager
         }
 
         var placements = new List<InstancePlacement>();
-        foreach (var definition in layout.Panels)
+        foreach (var (definition, monitor) in layout.Panels.SelectMany(panel => Place(panel, monitors, primary)))
         {
             var edge = definition.Placement.Edge ?? PanelEdge.Bottom;
             var axis = edge is PanelEdge.Left or PanelEdge.Right ? Orientation.Vertical : Orientation.Horizontal;
-            var context = new SurfaceContext(primary.StableId, primary.Scale, axis, edge);
+            var context = new SurfaceContext(monitor.StableId, monitor.Scale, axis, edge);
             var panel = new WmPanel
             {
                 Edge = edge.ToString().ToLowerInvariant(),
@@ -402,37 +466,189 @@ public sealed class SurfaceManager : ISurfaceManager
                 End = BuildZone(definition, "end", context, placements),
             };
 
-            var window = new PanelWindow(definition, primary, edge, panel);
+            var window = new PanelWindow(definition, monitor, edge, panel);
             window.Closed += (_, _) => ReleaseSpace(window);
             _panels.Add(window);
             Style(window);
             window.SetBackdrop(_theme.CurrentBackdrop);
+            if (_fullscreenMonitors.Contains(monitor.StableId))
+            {
+                window.SetTopmost(false);
+            }
 
+            window.Home = OverlayRect(monitor.WorkArea, edge, window.ThicknessPx);
             if (definition.Behaviour == PanelBehaviour.Reserve)
             {
-                var granted = await _appBars.RegisterAsync(window.Handle, primary.StableId, edge, window.ThicknessPx, ct);
+                var granted = await _appBars.RegisterAsync(window.Handle, monitor.StableId, edge, window.ThicknessPx, ct);
                 if (granted.Ok)
                 {
                     window.AppBarRect = granted.Value;
-                    window.MoveTo(granted.Value);
+                    window.Home = granted.Value;
                 }
                 else
                 {
                     window.ReserveError = granted.Error!.Code.ToString();
                     window.Panel.Behaviour = "overlay";
                     _log.Write(LogLevel.Error, "surfaces", $"Panel {definition.Id} could not reserve space, shown as overlay: {granted.Error}");
-                    window.MoveTo(OverlayRect(primary.Bounds, edge, window.ThicknessPx));
+                    window.Home = OverlayRect(monitor.Bounds, edge, window.ThicknessPx);
                 }
+            }
+
+            if (definition.Behaviour == PanelBehaviour.AutoHide)
+            {
+                window.Collapsed = true;
+                window.MoveTo(OverlayRect(monitor.WorkArea, edge, AutoHideStripPx));
+                _autoHide.Start();
             }
             else
             {
-                window.MoveTo(OverlayRect(primary.WorkArea, edge, window.ThicknessPx));
+                window.MoveTo(window.Home);
             }
 
+            PanelCreated?.Invoke(this, window);
             window.Show();
         }
 
         _contributions.SetPlacements(placements);
+    }
+
+    /// <summary>The monitors a panel goes on, with the definition each copy uses.</summary>
+    private IEnumerable<(PanelDefinition Definition, MonitorInfo Monitor)> Place(PanelDefinition definition,
+        IReadOnlyList<MonitorInfo> monitors, MonitorInfo primary)
+    {
+        switch (definition.Monitor.Kind)
+        {
+            case MonitorSelectorKind.All:
+                yield return (definition, primary);
+                foreach (var monitor in monitors.Where(m => m.StableId != primary.StableId))
+                {
+                    yield return (Derive(definition, monitor.StableId), monitor);
+                }
+
+                break;
+            case MonitorSelectorKind.Device:
+                var device = monitors.FirstOrDefault(m => m.StableId == definition.Monitor.Device);
+                if (device is null)
+                {
+                    _log.Write(LogLevel.Info, "surfaces", $"Panel {definition.Id} waits for monitor '{definition.Monitor.Device}'.");
+                    yield break;
+                }
+
+                yield return (definition, device);
+                break;
+            default:
+                yield return (definition, primary);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The copy of an <c>all</c> panel on another monitor: the panel and its instances get ids derived from the
+    /// originals and the monitor, so they stay the same from one apply to the next.
+    /// </summary>
+    private static PanelDefinition Derive(PanelDefinition definition, string monitorId) => definition with
+    {
+        Id = DerivedId(definition.Id, monitorId),
+        Zones = definition.Zones.ToDictionary(zone => zone.Key, zone => (IReadOnlyList<ContributionInstance>)
+            [.. zone.Value.Select(instance => instance with
+            {
+                Id = DerivedId(instance.Id, monitorId),
+                Settings = (JsonObject)instance.Settings.DeepClone(),
+            })]),
+    };
+
+    private static Guid DerivedId(Guid id, string monitorId) =>
+        new(SHA256.HashData(Encoding.UTF8.GetBytes(id.ToString("D") + "/" + monitorId)).AsSpan(0, 16));
+
+    private void Fullscreen(FullscreenChangedEventArgs change)
+    {
+        if (change.IsFullscreen)
+        {
+            _fullscreenMonitors.Add(change.MonitorId);
+        }
+        else
+        {
+            _fullscreenMonitors.Remove(change.MonitorId);
+        }
+
+        foreach (var window in _panels.Where(window => window.Monitor.StableId == change.MonitorId))
+        {
+            window.SetTopmost(!change.IsFullscreen);
+        }
+    }
+
+    /// <summary>The shell restarted and forgot every app bar: each reserve panel claims its space again.</summary>
+    private async Task RenewAsync()
+    {
+        await _applyGate.WaitAsync();
+        try
+        {
+            foreach (var window in _panels.Where(window => window.AppBarRect is not null).ToList())
+            {
+                var granted = await _appBars.RenewAsync(window.Handle, window.Monitor.StableId, window.Edge, window.ThicknessPx,
+                    CancellationToken.None);
+                if (granted.Ok)
+                {
+                    window.AppBarRect = granted.Value;
+                    window.Home = granted.Value;
+                    window.MoveTo(granted.Value);
+                }
+                else
+                {
+                    _log.Write(LogLevel.Error, "surfaces", $"Panel {window.Definition.Id} could not reserve space again: {granted.Error}");
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            _log.Write(LogLevel.Error, "surfaces", $"Registering panels again after the shell restarted failed: {e}");
+        }
+        finally
+        {
+            _applyGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Grows an auto-hide panel when the pointer touches its strip, and shrinks it once the pointer has been
+    /// off it for a second while it is not the foreground window and no popup is open.
+    /// </summary>
+    private void AutoHide()
+    {
+        if (!GetCursorPos(out var cursor))
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        var foreground = GetForegroundWindow();
+        var popupOpen = _popups.Values.Any(popup => popup.IsOpen);
+        foreach (var window in _panels.Where(window => window.Definition.Behaviour == PanelBehaviour.AutoHide))
+        {
+            var area = window.Collapsed ? OverlayRect(window.Monitor.WorkArea, window.Edge, AutoHideStripPx) : window.Home;
+            var inside = cursor.X >= area.Left && cursor.X < area.Right && cursor.Y >= area.Top && cursor.Y < area.Bottom;
+            if (window.Collapsed)
+            {
+                if (inside)
+                {
+                    window.Collapsed = false;
+                    _lastNeeded[window] = now;
+                    window.MoveTo(window.Home);
+                }
+
+                continue;
+            }
+
+            if (inside || popupOpen || foreground == window.Handle)
+            {
+                _lastNeeded[window] = now;
+            }
+            else if (now - _lastNeeded.GetValueOrDefault(window, now) >= AutoHideLinger)
+            {
+                window.Collapsed = true;
+                window.MoveTo(OverlayRect(window.Monitor.WorkArea, window.Edge, AutoHideStripPx));
+            }
+        }
     }
 
     public void FocusPanel(string panelId)
@@ -465,9 +681,26 @@ public sealed class SurfaceManager : ISurfaceManager
         });
     }
 
-    /// <summary>Gives back reserved space and closes every panel.</summary>
+    /// <summary>Gives back reserved space and closes every panel; the layout is not applied again until asked.</summary>
     public async Task ShutdownAsync(CancellationToken ct)
     {
+        await _applyGate.WaitAsync(ct);
+        try
+        {
+            _layout = null;
+            LayoutApplied = false;
+            await ShutdownCoreAsync(ct);
+        }
+        finally
+        {
+            _applyGate.Release();
+        }
+    }
+
+    private async Task ShutdownCoreAsync(CancellationToken ct)
+    {
+        _autoHide.Stop();
+        _lastNeeded.Clear();
         foreach (var window in _panels)
         {
             if (window.AppBarRect is not null)

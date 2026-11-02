@@ -40,6 +40,9 @@ public sealed partial class App : Application
     private DispatcherWatchdog? _watchdog;
     private GuardianLink? _guardian;
     private RecoveryJournal? _journal;
+    private ShellEvents? _shellEvents;
+    private MonitorService? _monitorService;
+    private AppBarService? _appBarService;
     private int _exiting;
 
     public App(HostOptions options)
@@ -162,10 +165,16 @@ public sealed partial class App : Application
         _supervisor.StatusChanged += (_, _) => dispatcher.TryEnqueue(RefreshSettingsWindow);
         _catalog.Changed += (_, _) => dispatcher.TryEnqueue(RefreshSettingsWindow);
 
-        var monitors = new MonitorService();
+        _shellEvents = new ShellEvents();
+        _monitorService = new MonitorService(_shellEvents);
+        // Tests add simulated monitors through the hook; the real display configuration is never touched.
+        var simulated = string.IsNullOrWhiteSpace(hookDirectory) ? null : new SimulatedMonitors(_monitorService);
+        IMonitorService monitors = simulated is null ? _monitorService : simulated;
         var checkpoint = string.IsNullOrWhiteSpace(hookDirectory) ? null : TestHook.Checkpoint(hookDirectory);
-        _surfaces = new SurfaceManager(config, monitors, new AppBarService(monitors, _journal, checkpoint), _theme, _contributions, _log, Retry,
+        _appBarService = new AppBarService(monitors, _journal, checkpoint, _shellEvents);
+        _surfaces = new SurfaceManager(config, monitors, _appBarService, _theme, _contributions, _log, Retry,
             new ElementActions(_router, _contributions), foreground, new IconResolver(new IconService()));
+        _surfaces.PanelCreated += (_, panel) => panel.Panel.ContextFlyout = PanelMenu();
         _layoutId = preset.Layout;
         await ApplyLayoutAsync();
 
@@ -190,7 +199,7 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!, _guardian, _router, _hotkeys, _feeds);
+                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents);
             _testHook.Start();
         }
     }
@@ -290,20 +299,19 @@ public sealed partial class App : Application
         });
     }
 
-    private async Task ApplyLayoutAsync()
+    private Task ApplyLayoutAsync() =>
+        _surfaces!.ApplyLayoutAsync(LoadLayout(_config!, _layoutId, _log!), CancellationToken.None);
+
+    private MenuFlyout PanelMenu()
     {
-        await _surfaces!.ApplyLayoutAsync(LoadLayout(_config!, _layoutId, _log!), CancellationToken.None);
-        foreach (var panel in _surfaces.Panels)
-        {
-            var settings = new MenuFlyoutItem { Text = "Settings" };
-            settings.Click += (_, _) => OpenSettings(null, null);
-            var exit = new MenuFlyoutItem { Text = "Exit SubZeroDev.WindowManager" };
-            exit.Click += (_, _) => _ = ShutdownAsync();
-            var menu = new MenuFlyout();
-            menu.Items.Add(settings);
-            menu.Items.Add(exit);
-            panel.Panel.ContextFlyout = menu;
-        }
+        var settings = new MenuFlyoutItem { Text = "Settings" };
+        settings.Click += (_, _) => OpenSettings(null, null);
+        var exit = new MenuFlyoutItem { Text = "Exit SubZeroDev.WindowManager" };
+        exit.Click += (_, _) => _ = ShutdownAsync();
+        var menu = new MenuFlyout();
+        menu.Items.Add(settings);
+        menu.Items.Add(exit);
+        return menu;
     }
 
     private async Task ReapplyLayoutAsync()
@@ -347,6 +355,10 @@ public sealed partial class App : Application
         {
             await _surfaces.ShutdownAsync(CancellationToken.None);
         }
+
+        _appBarService?.Dispose();
+        _monitorService?.Dispose();
+        _shellEvents?.Dispose();
 
         if (_pluginLogs is not null)
         {

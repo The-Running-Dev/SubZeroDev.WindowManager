@@ -179,7 +179,7 @@ Acceptance:
 Out of scope: a marketplace or download from URLs; drag and drop between monitors (keyboard and buttons only are required).
 
 ## S12 — Monitors, DPI, full screen and Explorer restarts
-Status: todo
+Status: done
 Delivers: Ben's panels follow the screens: they appear on the right monitors at the right size, step aside for full-screen games and presentations, and come back after Explorer restarts.
 Touches: Host.Platform (`IMonitorService` topology and stable ids, DPI, `FullscreenChanged`, `ShellRestarted`); Host.Surfaces (per-monitor panels, `monitor: all | {device}`, `overlay`, `autoHide`, `desktop` behaviours, z-order); `docs/test-matrix.md`
 Depends on: S4

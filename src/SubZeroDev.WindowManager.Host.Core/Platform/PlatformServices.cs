@@ -30,6 +30,9 @@ public interface IAppBarService
 
     Task<Outcome<RectInt>> UpdateAsync(nint hwnd, string monitorId, PanelEdge edge, int thicknessPx, CancellationToken ct);
 
+    /// <summary>Registers again after the shell restarted (<see cref="ShellRestarted"/>) and claims the space anew.</summary>
+    Task<Outcome<RectInt>> RenewAsync(nint hwnd, string monitorId, PanelEdge edge, int thicknessPx, CancellationToken ct);
+
     Task<Outcome> RemoveAsync(nint hwnd, CancellationToken ct);   // reverts, then ends the journal entry
 
     /// <summary>

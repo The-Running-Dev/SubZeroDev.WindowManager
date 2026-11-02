@@ -21,7 +21,7 @@ namespace SubZeroDev.WindowManager.TestPlugin;
 /// with <c>count</c> one higher and appends "saved &lt;ok|code&gt;"; <c>save-invalid</c> does the same but saves
 /// <c>count</c> as a string; <c>migrate-throws</c> appends "start &lt;settings&gt;" and throws from
 /// <c>MigrateSettingsAsync</c>. All three show "ok".
-/// <c>fixture-windows</c> is not a plugin at all: see <see cref="Fixture"/>.
+/// <c>fixture-windows</c> and <c>fixture-fullscreen</c> are not plugins at all: see <see cref="Fixture"/>.
 /// Every scenario appends "created &lt;instance&gt;" and "destroyed &lt;instance&gt;" to <c>instances.log</c> in its
 /// data folder as instances come and go.
 /// </summary>
@@ -44,6 +44,11 @@ public static class Program
         if (Scenario == "fixture-windows")
         {
             return Task.FromResult(Fixture.Run(args.Length > 1 ? args[1] : "fixture"));
+        }
+
+        if (Scenario == "fixture-fullscreen")
+        {
+            return Task.FromResult(Fixture.RunFullscreen(args[1..5]));
         }
 
         return PluginRuntime.RunAsync<ProbePlugin>(args);

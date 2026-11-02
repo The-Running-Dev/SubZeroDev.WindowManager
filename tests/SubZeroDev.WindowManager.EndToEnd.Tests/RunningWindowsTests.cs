@@ -188,7 +188,7 @@ public sealed partial class RunningWindowsTests
     }
 
     /// <summary>The test plugin in <c>fixture-windows</c> mode, killed on dispose.</summary>
-    private sealed class FixtureWindows : IDisposable
+    internal sealed class FixtureWindows : IDisposable
     {
         private readonly Process _process;
         private readonly Dictionary<string, nint> _windows = new(StringComparer.Ordinal);

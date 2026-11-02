@@ -5,11 +5,28 @@ using SubZeroDev.WindowManager.Host.Core;
 namespace SubZeroDev.WindowManager.Host.Platform;
 
 /// <summary>
-/// Monitors as Windows reports them. S1 reads the list once per call and raises no topology changes;
-/// the stable id is the GDI device name until the multi-monitor slice replaces it.
+/// Monitors as Windows reports them; the stable id is the GDI device name. With <see cref="ShellEvents"/>
+/// it raises <see cref="TopologyChanged"/> 250 ms after the last display change, and only when a monitor
+/// came, went, moved, changed scale or became primary (work-area changes alone do not count).
 /// </summary>
-public sealed unsafe class MonitorService : IMonitorService
+public sealed unsafe class MonitorService : IMonitorService, IDisposable
 {
+    private static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(250);
+
+    private readonly Timer? _debounce;
+    private readonly Lock _gate = new();
+    private string _shape = string.Empty;
+
+    public MonitorService(ShellEvents? events = null)
+    {
+        _shape = Shape(Monitors);
+        if (events is not null)
+        {
+            _debounce = new Timer(_ => Check());
+            events.DisplayChanged += (_, _) => _debounce.Change(Debounce, Timeout.InfiniteTimeSpan);
+        }
+    }
+
     public IReadOnlyList<MonitorInfo> Monitors
     {
         get
@@ -29,11 +46,29 @@ public sealed unsafe class MonitorService : IMonitorService
         }
     }
 
-    public event EventHandler TopologyChanged
+    public event EventHandler? TopologyChanged;
+
+    public void Dispose() => _debounce?.Dispose();
+
+    private void Check()
     {
-        add { }
-        remove { }
+        var shape = Shape(Monitors);
+        lock (_gate)
+        {
+            if (shape == _shape)
+            {
+                return;
+            }
+
+            _shape = shape;
+        }
+
+        TopologyChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    private static string Shape(IEnumerable<MonitorInfo> monitors) =>
+        string.Join("|", monitors.OrderBy(m => m.StableId, StringComparer.Ordinal)
+            .Select(m => FormattableString.Invariant($"{m.StableId} {m.Bounds} {m.Dpi} {m.IsPrimary}")));
 
     /// <summary>The primary monitor's work area as <c>SPI_GETWORKAREA</c> reports it.</summary>
     public static RectInt PrimaryWorkArea()
