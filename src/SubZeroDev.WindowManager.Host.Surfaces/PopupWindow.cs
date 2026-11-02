@@ -138,13 +138,18 @@ public sealed class PopupWindow
     /// </summary>
     public void FocusContent()
     {
+        Fit();
         _focusPending = true;
         _focusRetries = 0;
         TryFocus();
     }
 
-    /// <summary>Retries a pending <see cref="FocusContent"/> after the view rendered again.</summary>
-    public void ViewRendered() => TryFocus();
+    /// <summary>Fits the window to the view after it rendered again, and retries a pending <see cref="FocusContent"/>.</summary>
+    public void ViewRendered()
+    {
+        Fit();
+        TryFocus();
+    }
 
     private void TryFocus()
     {
@@ -210,10 +215,16 @@ public sealed class PopupWindow
             return;
         }
 
+        // Measured without a height limit: the frame's own height is capped by the window's, so a window
+        // first sized for a view that had not rendered yet would otherwise never grow to fit it.
         var width = double.IsNaN(Frame.Width) ? DefaultWidth : Frame.Width;
-        var height = Math.Max(Frame.ActualHeight, MinimumHeight);
+        Frame.Measure(new Windows.Foundation.Size(width, double.PositiveInfinity));
+        var height = Math.Max(Frame.DesiredSize.Height, MinimumHeight);
         var rect = _place((int)Math.Round(width * _monitor.Scale), (int)Math.Round(height * _monitor.Scale));
-        _window.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(rect.Left, rect.Top, rect.Width, rect.Height));
+        if (rect != Bounds)
+        {
+            _window.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(rect.Left, rect.Top, rect.Width, rect.Height));
+        }
     }
 
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)

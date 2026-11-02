@@ -300,7 +300,7 @@ Acceptance:
 Out of scope: placing icons by dragging (the view model has no drag); shell context menus on icons.
 
 ## S21 — Windows key and session commands
-Status: todo
+Status: done
 Delivers: In replacement mode the Windows key opens Ben's launcher, the usual Windows-key shortcuts still work, and he can lock, sign out, restart, shut down or sleep from the panel.
 Touches: Host.Platform (`IWindowsKeyHook` on its own thread, `ISessionService`); Host.Core (`host.session.*`, default bindings); plugin `subzerodev.launcher` (`run` mode); plugin `subzerodev.session`
 Depends on: S18, S8

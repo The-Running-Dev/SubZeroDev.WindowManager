@@ -47,6 +47,7 @@ public sealed partial class App : Application
     private TrayHost? _trayHost;
     private DesktopSurface? _desktop;
     private ShowDesktop? _showDesktop;
+    private WindowsKeyHook? _windowsKeys;
     private string? _hooked;
     private int _exiting;
 
@@ -192,6 +193,11 @@ public sealed partial class App : Application
                 new TrayAppBars(monitors, workArea, PrimaryTaskbar));
             _trayHost.IconsChanged += (_, _) => feeds.PublishHost(TrayFeed.FeedId, TrayFeed.Snapshot(_trayHost.Icons));
             feeds.PublishHost(TrayFeed.FeedId, TrayFeed.Snapshot(_trayHost.Icons));
+
+            // Nothing else answers the Windows key without Explorer (S21).
+            _windowsKeys = WindowsKeyHook.Start(hooked is not null, WindowsKeyBindings.KeysWithWin(WindowsKeyBindings.Defaults),
+                line => log.Write(LogLevel.Warning, "keys", line));
+            _windowsKeys.Pressed += (_, chord) => _ = OnWindowsKeyAsync(chord);
         }
         else
         {
@@ -253,7 +259,7 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost, Desktop = _desktop };
+                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost, Desktop = _desktop, WindowsKeys = _windowsKeys };
             _testHook.Start();
         }
     }
@@ -312,15 +318,33 @@ public sealed partial class App : Application
             _log?.Write(LogLevel.Info, "desktop", $"Show desktop {(restored ? "restored" : "minimised")} {count} window(s).");
             return CommandOutcome.Success(new CommandResult(null));
         });
+        router.AddBuiltIn("host.desktop.minimizeAll", "Minimise all windows", async (_, _) =>
+        {
+            var count = await Task.Run(_showDesktop!.MinimiseAll);
+            _log?.Write(LogLevel.Info, "desktop", $"Minimise all minimised {count} window(s).");
+            return CommandOutcome.Success(new CommandResult(null));
+        });
         router.AddBuiltIn("host.files.open", "Open folder", (args, _) =>
         {
-            if (args?["path"] is not JsonValue value || !value.TryGetValue<string>(out var path) || path.Length == 0)
+            var path = ThisPc;
+            if (args?["path"] is { } node)
             {
-                return Task.FromResult(CommandOutcome.Fail(CoreErrorCode.CommandFailed, "host.files.open needs { path: string }."));
+                if (node is not JsonValue value || !value.TryGetValue<string>(out var given) || given.Length == 0)
+                {
+                    return Task.FromResult(CommandOutcome.Fail(CoreErrorCode.CommandFailed, "host.files.open takes { path?: string }."));
+                }
+
+                path = given;
             }
 
             return Task.FromResult(OpenFolder(path));
         });
+        var session = _hooked is null ? (ISessionService)new SessionService() : new RecordingSessionService(_hooked);
+        AddSessionCommand(router, "host.session.lock", "Lock", session.Lock);
+        AddSessionCommand(router, "host.session.signOut", "Sign out", session.SignOut);
+        AddSessionCommand(router, "host.session.restart", "Restart", session.Restart);
+        AddSessionCommand(router, "host.session.shutdown", "Shut down", session.Shutdown);
+        AddSessionCommand(router, "host.session.sleep", "Sleep", session.Sleep);
         router.AddBuiltIn("host.window.activate", "Activate window", (args, ct) => WindowCommandAsync(args, foreground.ActivateWindowAsync, ct));
         router.AddBuiltIn("host.window.minimize", "Minimise window", (args, ct) => WindowCommandAsync(args, foreground.MinimizeWindowAsync, ct));
         router.AddBuiltIn("host.preset.apply", "Apply preset", async (args, ct) =>
@@ -343,10 +367,36 @@ public sealed partial class App : Application
         });
     }
 
+    /// <summary>Runs the command a Windows-key chord is bound to, as a hotkey would.</summary>
+    private async Task OnWindowsKeyAsync(KeyChord chord)
+    {
+        if (WindowsKeyBindings.Defaults.FirstOrDefault(b => b.Chord == chord) is not { } binding || _router is not { } router)
+        {
+            return;
+        }
+
+        var outcome = await router.InvokeAsync(binding.CommandId, binding.Args?.DeepClone().AsObject(), InvocationSource.Hotkey, null, CancellationToken.None);
+        if (!outcome.Ok)
+        {
+            _log?.Write(LogLevel.Warning, "keys", $"{chord} ran {binding.CommandId}: {outcome.Error!.Detail}");
+        }
+    }
+
+    /// <summary>This PC, where Win+E opens.</summary>
+    private const string ThisPc = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}";
+
+    /// <summary>A session command, run off the UI thread; a refusal keeps its code.</summary>
+    private static void AddSessionCommand(CommandRouter router, string commandId, string title, Func<Host.Core.Outcome> action) =>
+        router.AddBuiltIn(commandId, title, async (_, _) =>
+        {
+            var outcome = await Task.Run(action);
+            return outcome.Ok ? CommandOutcome.Success(new CommandResult(null)) : CommandOutcome.Fail(outcome.Error!);
+        });
+
     /// <summary>
     /// Opens a folder in a file manager window. Explorer started with a path opens just that window and never
     /// takes the shell roles, so this works when the app is the shell. Under the test hook it is recorded in
-    /// <c>desktop-actions.log</c> instead.
+    /// <c>desktop-actions.log</c> instead. A shell namespace (<c>::{…}</c> or <c>shell:…</c>) passes as it is.
     /// </summary>
     private static CommandOutcome OpenFolder(string path)
     {
@@ -358,7 +408,8 @@ public sealed partial class App : Application
         }
 
         var expanded = Environment.ExpandEnvironmentVariables(path);
-        if (!Directory.Exists(expanded))
+        var shellPath = expanded.StartsWith("::", StringComparison.Ordinal) || expanded.StartsWith("shell:", StringComparison.OrdinalIgnoreCase);
+        if (!shellPath && !Directory.Exists(expanded))
         {
             return CommandOutcome.Fail(CoreErrorCode.CommandFailed, $"The folder '{path}' does not exist.");
         }
@@ -579,6 +630,7 @@ public sealed partial class App : Application
     {
         StopAppearanceWatching();
         _settingsWindow?.Close();
+        _windowsKeys?.Dispose();
         _hotkeys?.Dispose();
         _hotkeyService?.Dispose();
         _config?.Dispose();

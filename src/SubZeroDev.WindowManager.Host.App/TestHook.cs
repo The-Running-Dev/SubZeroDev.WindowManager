@@ -95,6 +95,9 @@ internal sealed class TestHook
     /// <summary>The desktop and its wallpaper in replacement mode; null otherwise.</summary>
     public DesktopSurface? Desktop { get; init; }
 
+    /// <summary>The Windows-key hook in replacement mode.</summary>
+    public WindowsKeyHook? WindowsKeys { get; init; }
+
     public void Start()
     {
         Directory.CreateDirectory(_directory);
@@ -180,6 +183,12 @@ internal sealed class TestHook
             if (Take("hang") is not null)
             {
                 Post(() => Thread.Sleep(TimeSpan.FromMinutes(2)));
+            }
+
+            // Holds the UI thread for the given milliseconds: the Windows-key hook must not wait for it (S21.3).
+            if (Take("block") is { Length: > 0 } block && int.TryParse(block[0].Trim(), out var blockMs))
+            {
+                Post(() => Thread.Sleep(blockMs));
             }
 
             if (Take("retry") is { Length: > 0 } retry)
@@ -436,6 +445,12 @@ internal sealed class TestHook
                     ["image"] = w.ImagePath,
                     ["fit"] = w.Fit.ToString(),
                 }).ToArray()),
+            },
+            ["keyHook"] = WindowsKeys is null ? null : new JsonObject
+            {
+                ["installed"] = WindowsKeys.Installed,
+                ["events"] = WindowsKeys.Events,
+                ["maxAnswerMs"] = WindowsKeys.SlowestAnswer.TotalMilliseconds,
             },
             ["monitors"] = new JsonArray(_monitors.Monitors.Select(monitor => (JsonNode?)new JsonObject
             {

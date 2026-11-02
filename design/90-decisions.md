@@ -13,6 +13,23 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S21: the Windows key and session commands
+- **Context:** as the shell nothing answers the Windows key, so Start never opens, and nothing offers lock, sign out, restart, shut down or sleep. Tests must never let a lone or unmarked Windows key reach the real system, type into the user's applications, or really end, lock or suspend the user's session.
+- **Chosen:**
+  - **Hook:** a `WH_KEYBOARD_LL` hook, installed in replacement mode only, on a thread of its own with a message loop, so a busy UI thread never holds a key back. A pure `WindowsKeyTracker` decides each event and the hook raises completed chords on the thread pool. They go through the command router with source `hotkey`, like a registered hotkey.
+  - **Chords:** a lone Windows key (pressed and released with no key between, and none held before it) and Ctrl+Esc invoke `launcher.open`. Win+R invokes `launcher.open {mode: "run"}`, Win+E `host.files.open`, Win+D `host.desktop.show`, and Win+M the new `host.desktop.minimizeAll`. A bound key is swallowed, down, repeats and up. Any other key with Windows, or a bound key with another modifier, passes to Windows untouched, so Win+L still locks.
+  - **Start menu mask:** when Windows saw only the Windows key go down and up, because the key between was swallowed or the press was lone, the hook sends the unassigned virtual key `0xE8` before the release, so no Start menu opens. Its own keys carry a marker and pass unseen.
+  - **Test mode:** under the test hook the hook acts only on events a test injected with the `dwExtraInfo` marker `0x535A574B` and swallows every one of them, so no injected key reaches Windows or another program and no mask is sent. Every unmarked event passes. The status carries `keyHook {installed, events, maxAnswerMs}`, and the `block` hook file holds the UI thread for the given milliseconds.
+  - **Session:** `ISessionService` uses `LockWorkStation`, `ExitWindowsEx` without force (`SHTDN_REASON_FLAG_PLANNED`) and `SetSuspendState`. A refused sign-out, restart or shut-down is `SessionCommandRefused`. Under the test hook a recording service writes `session-<name>` to `desktop-actions.log`, and refuses the names in the `session-refuse` hook file.
+  - **Power menu:** the `subzerodev.session` plugin, replacement mode only. A `power` panel item opens the `menu` popup with five buttons. Sign out, restart and shut down ask first, with Cancel going back. A refusal is shown in the menu, and a success closes it.
+  - **Popup height:** a popup window now measures its view with no height limit after every render. Before, the frame's height was capped by the window's own, so a popup first fitted before its view rendered stayed at the 40 DIP minimum.
+- **Rejected:**
+  - **`RegisterHotKey` for the Windows key:** it cannot register a lone modifier, and Windows reserves most Win+letter chords.
+  - **Hooking on the UI thread:** a stalled UI thread would delay every key in the session, and Windows silently removes a hook that answers too slowly.
+  - **Forced sign-out or shut-down (`EWX_FORCE`):** it loses unsaved work.
+  - **Letting tests inject real Windows keys:** an unmasked release opens the user's Start menu.
+- **Known gap:** the real Windows key, the Start-menu mask and each of the five commands on a real session are checked by hand (S21.6). Win+Tab, virtual-desktop keys and the Win+X menu are not handled.
+
 ## 2026-11-02 — S20: desktop, wallpaper and icons
 - **Context:** as the shell nothing else draws the desktop, so the host must draw the wallpaper behind every window and show the Desktop folders. Tests must never minimise the user's windows, open the user's Desktop files or depend on the user's real wallpaper. This supersedes S13's known gap that `wallpapers` are read past and not applied.
 - **Chosen:**

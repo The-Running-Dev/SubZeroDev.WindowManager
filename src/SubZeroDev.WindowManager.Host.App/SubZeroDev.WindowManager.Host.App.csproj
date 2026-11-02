@@ -28,6 +28,7 @@
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Launcher\SubZeroDev.WindowManager.Plugins.Launcher.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Tray\SubZeroDev.WindowManager.Plugins.Tray.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.DesktopIcons\SubZeroDev.WindowManager.Plugins.DesktopIcons.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Session\SubZeroDev.WindowManager.Plugins.Session.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
   <ItemGroup>
     <!-- Built-in themes, layouts and presets ship beside the host. They are None, not Content, so the
@@ -42,11 +43,13 @@
       <LauncherFiles Include="..\SubZeroDev.WindowManager.Plugins.Launcher\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
       <TrayFiles Include="..\SubZeroDev.WindowManager.Plugins.Tray\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
       <DesktopIconsFiles Include="..\SubZeroDev.WindowManager.Plugins.DesktopIcons\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
+      <SessionFiles Include="..\SubZeroDev.WindowManager.Plugins.Session\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(ClockFiles)" DestinationFiles="@(ClockFiles->'$(OutDir)content\plugins\subzerodev.clock\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(RunningWindowsFiles)" DestinationFiles="@(RunningWindowsFiles->'$(OutDir)content\plugins\subzerodev.running-windows\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(LauncherFiles)" DestinationFiles="@(LauncherFiles->'$(OutDir)content\plugins\subzerodev.launcher\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(TrayFiles)" DestinationFiles="@(TrayFiles->'$(OutDir)content\plugins\subzerodev.tray\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(DesktopIconsFiles)" DestinationFiles="@(DesktopIconsFiles->'$(OutDir)content\plugins\subzerodev.desktop-icons\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(SessionFiles)" DestinationFiles="@(SessionFiles->'$(OutDir)content\plugins\subzerodev.session\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

@@ -40,16 +40,7 @@ public sealed class ShowDesktop(string? hookDirectory)
                 return (remembered.Count, true);
             }
 
-            var allowed = AllowedProcesses();
-            var windows = new List<nint>();
-            for (var window = GetTopWindow(0); window != 0; window = GetWindow(window, GwHwndNext))
-            {
-                if (Eligible(window, allowed))
-                {
-                    windows.Add(window);
-                }
-            }
-
+            var windows = EligibleWindows();
             foreach (var window in windows)
             {
                 ShowWindowAsync(window, SwShowMinNoActive);
@@ -59,6 +50,42 @@ public sealed class ShowDesktop(string? hookDirectory)
             _minimised = windows;
             return (windows.Count, false);
         }
+    }
+
+    /// <summary>
+    /// <c>host.desktop.minimizeAll</c>, as Win+M: minimises every ordinary application window and remembers
+    /// nothing, so a later <see cref="Toggle"/> starts afresh. Returns how many windows it minimised.
+    /// </summary>
+    public int MinimiseAll()
+    {
+        lock (_gate)
+        {
+            _minimised = [];
+            var windows = EligibleWindows();
+            foreach (var window in windows)
+            {
+                ShowWindowAsync(window, SwShowMinNoActive);
+                Record($"desktop-minimize-all 0x{window:X}");
+            }
+
+            return windows.Count;
+        }
+    }
+
+    /// <summary>The windows Show desktop acts on, top first.</summary>
+    private List<nint> EligibleWindows()
+    {
+        var allowed = AllowedProcesses();
+        var windows = new List<nint>();
+        for (var window = GetTopWindow(0); window != 0; window = GetWindow(window, GwHwndNext))
+        {
+            if (Eligible(window, allowed))
+            {
+                windows.Add(window);
+            }
+        }
+
+        return windows;
     }
 
     /// <summary>The processes a test lets this touch, or null outside the hook (any process).</summary>
