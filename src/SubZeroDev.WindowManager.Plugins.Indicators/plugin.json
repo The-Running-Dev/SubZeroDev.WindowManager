@@ -1,0 +1,21 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.indicators",
+  "version": "0.1.0",
+  "displayName": "System indicators",
+  "publisher": "SubZeroDev",
+  "description": "Volume, network and battery, each with a popup: a mute toggle and level slider, or the state and a link to Settings.",
+  "hostApi": "^1.0",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.Indicators.exe", "args": [] },
+  "capabilities": [],
+  "modes": [ "coexistence", "replacement" ],
+  "requiresExplorer": false,
+  "contributions": [
+    { "id": "volume", "kind": "panelItem", "displayName": "Volume", "multiInstance": true },
+    { "id": "network", "kind": "panelItem", "displayName": "Network", "multiInstance": true },
+    { "id": "battery", "kind": "panelItem", "displayName": "Battery", "multiInstance": true }
+  ],
+  "commands": [],
+  "popups": [ { "id": "volume" }, { "id": "network" }, { "id": "battery" } ],
+  "settingsVersion": 1
+}

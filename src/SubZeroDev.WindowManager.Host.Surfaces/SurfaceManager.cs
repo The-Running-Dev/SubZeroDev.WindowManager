@@ -378,7 +378,9 @@ public sealed class SurfaceManager : ISurfaceManager
             {
                 var hadInput = window.View.TextInputs().Count > 0;
                 window.View.Render(_contributions.DescribePopup(key.Plugin, key.Popup));
-                if (window.IsOpen && !hadInput)
+                // Focus moves only for a first TextInput or when the focused element went away, so a state
+                // update never pulls it back from where the user moved it.
+                if (window.IsOpen && ((!hadInput && window.View.TextInputs().Count > 0) || !window.HasFocusWithin))
                 {
                     window.FocusContent();
                 }

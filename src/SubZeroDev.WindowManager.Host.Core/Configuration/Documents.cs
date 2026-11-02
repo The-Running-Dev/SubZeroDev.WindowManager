@@ -38,6 +38,22 @@ public enum WallpaperFit { Fill, Fit, Stretch, Center }
 /// <summary>An asset-pack wallpaper (its relative path or file stem) and how it fills the monitor.</summary>
 public sealed record PresetWallpaper(string Image, WallpaperFit Fit);
 
+/// <summary>The built-in layouts the host swaps by mode.</summary>
+public static class BuiltInLayouts
+{
+    public const string Default = "subzerodev.default";
+
+    /// <summary>The default layout plus what Explorer's taskbar had: running windows, tray, indicators and power.</summary>
+    public const string Shell = "subzerodev.shell";
+
+    /// <summary>
+    /// The layout shown for a preset's: in replacement mode the built-in default becomes the shell layout,
+    /// unless the user saved their own copy of the default, which is shown as they left it.
+    /// </summary>
+    public static string ForMode(string layoutId, HostMode mode, bool defaultSaved) =>
+        mode == HostMode.Replacement && layoutId == Default && !defaultSaved ? Shell : layoutId;
+}
+
 public sealed record RestartPolicy(int MaxRestarts, int WindowSeconds)
 {
     public static RestartPolicy Default { get; } = new(3, 300);

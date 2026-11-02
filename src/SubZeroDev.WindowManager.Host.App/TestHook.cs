@@ -528,9 +528,11 @@ internal sealed class TestHook
                 ["interactive"] = new JsonArray(view.InteractiveElements().Select(element => (JsonNode?)new JsonObject
                 {
                     ["id"] = element.Name,
-                    ["kind"] = element is WmToggle ? "toggle" : "button",
+                    ["kind"] = element switch { WmToggle => "toggle", WmSlider => "slider", _ => "button" },
                     ["label"] = element switch { WmButton b => b.Label, WmToggle t => t.Label, _ => null },
                     ["checked"] = (element as WmToggle)?.Checked,
+                    ["value"] = (element as WmSlider)?.Value,
+                    ["visible"] = element.Visibility == Microsoft.UI.Xaml.Visibility.Visible,
                     ["active"] = (element as WmButton)?.Active,
                     ["attention"] = (element as WmButton)?.Attention,
                     ["activeState"] = element is WmButton ? CurrentState(element, "ActiveStates") : null,
@@ -559,6 +561,9 @@ internal sealed class TestHook
                 ["focusedInput"] = popup.Frame.XamlRoot is { } root && FocusManager.GetFocusedElement(root) is WmTextInput focused
                     ? focused.Name
                     : null,
+                ["focused"] = popup.Frame.XamlRoot is { } focusRoot && FocusManager.GetFocusedElement(focusRoot) is FrameworkElement focusedElement
+                    ? focusedElement.Name
+                    : null,
                 ["inputs"] = new JsonArray(popup.View.TextInputs().Select(input => (JsonNode?)new JsonObject
                 {
                     ["id"] = input.Name,
@@ -573,6 +578,9 @@ internal sealed class TestHook
                     ["label"] = (element as WmButton)?.Label,
                     ["itemKey"] = popup.View.InfoOf(element)?.ItemKey,
                     ["selected"] = (element as WmButton)?.Selected,
+                    ["checked"] = (element as WmToggle)?.Checked,
+                    ["value"] = (element as WmSlider)?.Value,
+                    ["style"] = popup.View.InfoOf(element)?.StyleKey,
                     ["bounds"] = ScreenBounds(element),
                 }).ToArray()),
                 ["notices"] = new JsonArray(popup.View.Notices().Select(notice => (JsonNode?)new JsonObject

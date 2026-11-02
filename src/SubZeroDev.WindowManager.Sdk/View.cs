@@ -111,6 +111,16 @@ public static class View
         return element with { Props = props };
     }
 
+    /// <summary>The element with a <c>visible</c> prop: false takes it out of the layout.</summary>
+    public static ViewNode WithVisible(this ViewNode element, Prop<bool> visible)
+    {
+        var props = new Dictionary<string, JsonNode?>(element.Props ?? new Dictionary<string, JsonNode?>(), StringComparer.Ordinal)
+        {
+            ["visible"] = visible.ToJson(),
+        };
+        return element with { Props = props };
+    }
+
     public static ViewNode Toggle(string id, string automationName, Prop<bool> isChecked, ElementAction action,
         Prop<string>? label = null, Prop<IconRef>? icon = null, params string[] classes) =>
         Node(id, ElementKind.Toggle, classes,
@@ -132,6 +142,12 @@ public static class View
         string? placeholder = null, string? navigates = null) =>
         Node(id, ElementKind.TextInput, [],
             ("automationName", automationName), ("value", value.ToJson()), ("placeholder", placeholder), ("navigates", navigates));
+
+    /// <summary>A 0..1 value. The action's event fires <c>ValueChanged</c> on release or an arrow key, which moves it by <paramref name="step"/>.</summary>
+    public static ViewNode Slider(string id, string automationName, Prop<double> value, ElementAction action,
+        double step = 0.05, params string[] classes) =>
+        Node(id, ElementKind.Slider, classes, ("automationName", automationName), ("value", value.ToJson()), ("step", step))
+        with { Action = action };
 
     public static ViewNode Image(string id, Prop<IconRef> source, string fit = "contain") =>
         Node(id, ElementKind.Image, [], ("source", source.ToJson()), ("fit", fit));

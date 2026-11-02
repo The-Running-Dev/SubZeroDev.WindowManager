@@ -340,6 +340,9 @@ public sealed class ConfigStore : IConfigStore, IDisposable
         }
     }
 
+    /// <summary>Whether the document has a copy in the data folder, rather than only the built-in one.</summary>
+    public bool IsUserSaved(DocumentId id) => File.Exists(UserPath(id));
+
     internal string UserPath(DocumentId id) => id.Kind switch
     {
         DocumentKind.HostSettings => Path.Combine(_locations.DataRoot, "settings.json"),

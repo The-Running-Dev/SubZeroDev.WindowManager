@@ -315,7 +315,7 @@ Acceptance:
 Out of scope: Task View and virtual-desktop keys (Win+Tab, Win+Ctrl+arrows); the Win+X menu.
 
 ## S22 — System indicators
-Status: todo
+Status: done
 Delivers: In replacement mode, where Windows' own volume, network and battery icons are gone, Ben sees and controls them from his panel.
 Touches: Protocol and Host.Surfaces (the `Slider` element, `ViewValidator`); built-in theme (`Wm.Element.Slider`); plugin `subzerodev.indicators` (Core Audio, Network List Manager, power status)
 Depends on: S17, S8

@@ -216,7 +216,7 @@ public sealed partial class App : Application
             _shellEvents.DisplayChanged += (_, _) => dispatcher.TryEnqueue(() => _desktop?.Refresh());
         }
 
-        _layoutId = preset.Layout;
+        _layoutId = LayoutFor(preset);
         await ApplyLayoutAsync();
 
         if (replacement)
@@ -759,6 +759,10 @@ public sealed partial class App : Application
 
         return preset;
     }
+
+    /// <summary>The layout shown for the preset in this mode (<see cref="BuiltInLayouts.ForMode"/>).</summary>
+    private string LayoutFor(PresetDocument preset) => BuiltInLayouts.ForMode(preset.Layout, _options.Mode,
+        _config!.IsUserSaved(new DocumentId(DocumentKind.Layout, BuiltInLayouts.Default)));
 
     private static LayoutDocument LoadLayout(ConfigStore config, string layoutId, IHostLog log)
     {

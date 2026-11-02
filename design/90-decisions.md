@@ -13,6 +13,24 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S22: system indicators
+- **Context:** as the shell nothing shows volume, network or battery, and nothing lets the user change the volume. Tests must never change the user's real volume, mute state, network or settings.
+- **Chosen:**
+  - **Plugin:** `subzerodev.indicators`, in both modes, with three panel items (`volume`, `network`, `battery`) and a popup each. It reads the default output device's endpoint volume (Core Audio) every 250 ms, and the Network List Manager and `GetSystemPowerStatus` at most once a second or at once after an address change. A reading only reaches the views when it changed. Polling, not Core Audio's change callback, because the 250 ms read is cheap and keeps one path for the fake.
+  - **Volume popup:** a mute toggle, a level slider with `step: 0.02`, the percentage and a Sound settings button. Moving the level unmutes, as Windows' own slider does. The network and battery popups show the state and open `ms-settings:network` or `ms-settings:batterysaver`, then close.
+  - **Battery:** hidden (`visible: false`) when `GetSystemPowerStatus` reports no battery or an unknown one.
+  - **Slider element:** `Slider` with `value` 0..1 and `step`, rendered by `WmSlider`. Arrow keys, Home and End move it by `step` and send `ValueChanged` each time; a drag sends it on release. The built-in theme's `Wm.Element.Slider` gives it 160 DIP and the accent colour; literal sizes and colours are rejected like every other element (I11).
+  - **Replacement layout:** in replacement mode a preset naming the built-in `subzerodev.default` layout is shown with the built-in `subzerodev.shell` instead (launcher, running windows, tray, indicators, clock, power), unless the user saved their own `subzerodev.default`. The coexistence default stays launcher plus clock, because Explorer's own indicators are there.
+  - **Test mode:** under the test hook the plugin reads `indicators.json` from the hook directory, writes the volume and mute state back to it, and records Settings as `settings-open <uri>` in `desktop-actions.log` without opening it.
+  - **Popup focus:** an opened popup focuses its first TextInput, else its first visible, enabled interactive element, retrying until the view is in the tree. A state update moves focus only when it adds the first TextInput or the focused element went away. Before, a popup with no TextInput sometimes got no focus at all, and every state update pulled focus back to its first element.
+  - **Theme type metadata:** `Generic.xaml` names `WmSlider` and `WmTextInput` in keyed styles, so WinUI generates their XAML type information and a theme loaded at run time can target them. Before, the theme's `Wm.Element.Slider` could not resolve and the slider rendered 10 px wide.
+- **Rejected:**
+  - **Hosting Windows' Quick Settings flyout:** it belongs to Explorer and does not run without it.
+  - **Choosing Wi-Fi networks in the popup:** Settings already does it; out of scope.
+  - **Adding the indicators to the coexistence default:** they would duplicate Explorer's.
+  - **Changing the real volume in tests:** the fake file stands in for every device.
+- **Known gap:** the real devices, and whether `ms-settings:` pages open without Explorer, are checked by hand. The items show text labels; the icon ids have no asset-pack images yet.
+
 ## 2026-11-02 — S21: the Windows key and session commands
 - **Context:** as the shell nothing answers the Windows key, so Start never opens, and nothing offers lock, sign out, restart, shut down or sleep. Tests must never let a lone or unmarked Windows key reach the real system, type into the user's applications, or really end, lock or suspend the user's session.
 - **Chosen:**

@@ -184,9 +184,9 @@ public sealed partial class App
                 return;
             }
 
-            if (preset.Layout != _layoutId)
+            if (LayoutFor(preset) != _layoutId)
             {
-                _layoutId = preset.Layout;
+                _layoutId = LayoutFor(preset);
                 await ApplyLayoutAsync();
             }
 

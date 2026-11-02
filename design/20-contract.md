@@ -142,7 +142,7 @@ public sealed record CommandResult(JsonNode? Value);
 
 public sealed record ElementEventParams(string SurfaceId, string ElementId, ElementEventKind Kind,
     string? ItemKey, JsonNode? Value, InvocationSource Source);
-public enum ElementEventKind { Invoked, Toggled, TextChanged, TextSubmitted, SelectionChanged, ItemInvoked }
+public enum ElementEventKind { Invoked, Toggled, TextChanged, TextSubmitted, SelectionChanged, ItemInvoked, ValueChanged }
 
 public sealed record FeedPublishParams(string FeedId, JsonNode Snapshot);
 public sealed record FeedUpdateParams(string FeedId, bool Available, JsonNode? Snapshot);
@@ -639,6 +639,8 @@ public interface ISurfaceManager
     Task<Outcome> ClosePopupAsync(string pluginId, string popupId, PopupCloseReason reason, CancellationToken ct);
     void FocusPanel(string panelId);   // activates the panel's window, then keyboard focus on its first Button or Toggle
 }
+// An opened popup puts keyboard focus on its first TextInput, else its first visible, enabled interactive element.
+// A later view update moves focus only when it adds the first TextInput or the focused element went away.
 public interface IElementActions   // where a Button or Toggle sends what the user did
 {
     Task<Outcome<CommandResult>> InvokeCommandAsync(string commandId, JsonObject? args, InvocationSource source);
@@ -678,7 +680,7 @@ Icon sizes: the theme sets `Wm.IconSize.Small|Medium|Large` (`x:Double`, DIPs). 
 | Path | Key | Constraints | Existing data |
 |---|---|---|---|
 | `settings.json` | singleton | `schemaVersion: 1`; `activePreset` names an existing preset, else the built-in default is used and a diagnostic is raised; `restartPolicy.maxRestarts` 0–10 (default 3); `windowSeconds` 30–3600 (default 300) | Absent on first run → defaults written |
-| `layouts\<id>.json` | `id` = file stem | Panel `id` unique within the layout; instance `id` unique across all layouts; `thickness` 16–512 DIP; `zones` keys only `start`, `center`, `end` | None; built-in layouts are copied here the first time the user edits one |
+| `layouts\<id>.json` | `id` = file stem | Panel `id` unique within the layout; instance `id` unique across all layouts; `thickness` 16–512 DIP; `zones` keys only `start`, `center`, `end` | None; built-in layouts are copied here the first time the user edits one. In replacement mode a preset naming the built-in `subzerodev.default` is shown with the built-in `subzerodev.shell` (launcher, running windows, tray, indicators, clock, power), unless `layouts\subzerodev.default.json` exists here |
 | `presets\<id>.json` | `id` = file stem | `palette` is either a string or `{ light, dark }`; `assetPacks` may be empty; `wallpaper` (optional) is `{ image: <asset-pack image id>, fit: "fill"\|"fit"\|"stretch"\|"center" }` | Same as layouts |
 | `plugin-settings\<pluginId>.json` | plugin id | `{ pluginId, settingsVersion, settings }`; `settings` validates against the manifest `settingsSchema` | Migrated through `settings.migrate`; the prior file is kept once as `.v<N>.bak` |
 | `plugins\<id>\plugin.json` (+ package files) | manifest `id` = folder name | See the manifest below | Install replaces the folder atomically |

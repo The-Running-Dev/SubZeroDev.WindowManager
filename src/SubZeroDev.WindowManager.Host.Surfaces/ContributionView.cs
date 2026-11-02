@@ -106,7 +106,7 @@ public sealed class ContributionView
         [.. Walk().OfType<WmText>().Select(text => (text, InfoOf(text)?.StyleKey))];
 
     /// <summary>Every Button and Toggle shown now, in tree order.</summary>
-    public IReadOnlyList<Control> InteractiveElements() => [.. Walk().Where(element => element is WmButton or WmToggle).Cast<Control>()];
+    public IReadOnlyList<Control> InteractiveElements() => [.. Walk().Where(element => element is WmButton or WmToggle or WmSlider).Cast<Control>()];
 
     /// <summary>What the view knows about an element it built: its style key, item key and icon source.</summary>
     public ElementInfo? InfoOf(FrameworkElement element) => _info.GetValueOrDefault(element);
@@ -364,6 +364,14 @@ public sealed class ContributionView
                 var toggleAction = element["action"] as JsonObject;
                 toggle.Click += (_, _) => Act(toggle, scope, toggleAction, ElementEventKind.Toggled, JsonValue.Create(!toggle.Checked));
                 built = toggle;
+                break;
+            case "slider":
+                var slider = new WmSlider();
+                Bind(props["step"], scope, value => slider.Step = AsDouble(value, WmSlider.DefaultStep));
+                Bind(props["value"], scope, value => slider.Apply(AsDouble(value, 0)));
+                var sliderAction = element["action"] as JsonObject;
+                slider.Committed += (_, value) => Act(slider, scope, sliderAction, ElementEventKind.ValueChanged, JsonValue.Create(value));
+                built = slider;
                 break;
             default:
                 return Nothing();
@@ -643,7 +651,8 @@ public sealed class ContributionView
     /// Runs an element's action. A click arrives as <c>pointer</c> unless the element had keyboard focus,
     /// as it does after Tab, when Enter or Space produce the click; Enter in a TextInput passes
     /// <c>keyboard</c>. A Toggle never flips itself: it sends the value it asks for and shows whatever the
-    /// plugin's state says next. A popup action opens the plugin's popup anchored to the element.
+    /// plugin's state says next; a Slider sends the value it was moved to. A popup action opens the
+    /// plugin's popup anchored to the element.
     /// </summary>
     private void Act(Control control, Scope scope, JsonObject? action, ElementEventKind kind, JsonNode? toggled,
         InvocationSource? source = null)
@@ -672,7 +681,8 @@ public sealed class ContributionView
                 return;
             }
 
-            pending = _sendEvent(elementId, kind, kind == ElementEventKind.Toggled ? toggled : JsonValue.Create(eventName), from, scope.ItemKey);
+            pending = _sendEvent(elementId, kind,
+                kind is ElementEventKind.Toggled or ElementEventKind.ValueChanged ? toggled : JsonValue.Create(eventName), from, scope.ItemKey);
         }
         else if (action["popup"] is JsonValue popup && popup.TryGetValue<string>(out var popupId))
         {
@@ -769,6 +779,9 @@ public sealed class ContributionView
     };
 
     private static bool AsBool(JsonNode? value) => value is JsonValue scalar && scalar.TryGetValue<bool>(out var flag) && flag;
+
+    private static double AsDouble(JsonNode? value, double fallback) =>
+        value is JsonValue scalar && scalar.TryGetValue<double>(out var number) && double.IsFinite(number) ? number : fallback;
 
     private sealed partial class RetryCommand(Action retry) : System.Windows.Input.ICommand
     {
