@@ -406,6 +406,13 @@ internal sealed class TestHook
                 ["appliedAtUtcMs"] = _theme.AppliedAtUtcMs,
                 ["errors"] = Errors(_app.InitialThemeErrors),
                 ["lastApply"] = _theme.LastApply is { } last ? new JsonObject { ["applied"] = last.Applied, ["errors"] = Errors(last.Errors) } : null,
+                ["assetPacks"] = new JsonArray(_theme.IconChain.Packs.Select(pack => (JsonNode?)new JsonObject
+                {
+                    ["id"] = pack.Id,
+                    ["label"] = pack.Label,
+                    ["health"] = pack.Health.ToString(),
+                    ["problems"] = Errors(pack.Problems),
+                }).ToArray()),
             },
             ["settings"] = new JsonObject
             {

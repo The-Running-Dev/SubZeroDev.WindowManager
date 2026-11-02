@@ -83,6 +83,8 @@ public sealed class IconService : IIconService
         }
     }
 
+    public string? ExecutableOf(long hwnd) => ExecutableOf((nint)hwnd);
+
     private static unsafe string? ExecutableOf(nint hwnd)
     {
         Native.GetWindowThreadProcessId(hwnd, out var processId);

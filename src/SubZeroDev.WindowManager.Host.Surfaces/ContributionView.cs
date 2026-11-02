@@ -535,18 +535,20 @@ public sealed class ContributionView
     }
 
     /// <summary>
-    /// Shows an icon ref. A <c>named</c> id goes to <c>IconName</c> for the theme to map; a <c>window</c>
-    /// or <c>app</c> ref is extracted at <paramref name="sizePx"/> and, failing that, gets the default
-    /// application icon. A newer ref, or the element leaving the view, makes an older answer stale.
+    /// Shows an icon ref through the asset-pack chain. A <c>named</c> id also goes to <c>IconName</c>, so a
+    /// theme can still map one no pack has; a <c>window</c> or <c>app</c> ref falls back to the extracted
+    /// icon at <paramref name="sizePx"/>, then the default application icon. A newer ref, or the element
+    /// leaving the view, makes an older answer stale.
     /// </summary>
     private void SetIcon(FrameworkElement element, ElementInfo info, JsonNode? value, int sizePx, Action<string, ImageSource?> show)
     {
         var request = ++info.IconRequest;
         var reference = IconRef.FromJson(value);
-        if (reference is IconRef.Named named)
+        var name = (reference as IconRef.Named)?.Id ?? string.Empty;
+        if (reference is IconRef.Named && _icons is null)
         {
             info.IconSource = "named";
-            show(named.Id, null);
+            show(name, null);
             return;
         }
 
@@ -561,6 +563,8 @@ public sealed class ContributionView
 
         async Task LoadIconAsync()
         {
+            // A cached or pack icon resolves without awaiting; yield so the element is registered first.
+            await Task.Yield();
             ResolvedIcon resolved;
             try
             {
@@ -568,7 +572,7 @@ public sealed class ContributionView
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
-                resolved = new ResolvedIcon(null, IconOrigin.None);
+                resolved = ResolvedIcon.None;
             }
 
             if (info.IconRequest != request || !_info.ContainsKey(element))
@@ -576,8 +580,8 @@ public sealed class ContributionView
                 return;
             }
 
-            info.IconSource = resolved.Source.ToString().ToLowerInvariant();
-            show(string.Empty, resolved.Image);
+            info.IconSource = resolved.Image is null && name.Length > 0 ? "named" : resolved.Source;
+            show(name, resolved.Image);
         }
     }
 

@@ -101,7 +101,7 @@ public sealed partial class App : Application
         _log = new HostLog(_locations.LogsDirectory);
         _log.Write(LogLevel.Info, "host", $"Starting pid {Environment.ProcessId}, guardian {_options.GuardianPid?.ToString() ?? "none"}.");
 
-        foreach (var folder in new[] { "layouts", "plugins", "themes", "palettes" })
+        foreach (var folder in new[] { "layouts", "plugins", "themes", "palettes", "assetpacks" })
         {
             Directory.CreateDirectory(Path.Combine(_locations.DataRoot, folder));
         }
@@ -173,7 +173,7 @@ public sealed partial class App : Application
         var checkpoint = string.IsNullOrWhiteSpace(hookDirectory) ? null : TestHook.Checkpoint(hookDirectory);
         _appBarService = new AppBarService(monitors, _journal, checkpoint, _shellEvents);
         _surfaces = new SurfaceManager(config, monitors, _appBarService, _theme, _contributions, _log, Retry,
-            new ElementActions(_router, _contributions), foreground, new IconResolver(new IconService()));
+            new ElementActions(_router, _contributions), foreground, new IconResolver(new IconService(), () => _theme!.IconChain));
         _surfaces.PanelCreated += (_, panel) => panel.Panel.ContextFlyout = PanelMenu();
         _layoutId = preset.Layout;
         await ApplyLayoutAsync();

@@ -248,4 +248,7 @@ public interface IIconService
 
     /// <summary>The system's default application icon.</summary>
     Task<Outcome<IconImage>> DefaultAsync(int sizePx, CancellationToken ct);
+
+    /// <summary>The full path of the executable that owns a window, or null when it cannot be read; matches <c>appIcons</c>.</summary>
+    string? ExecutableOf(long hwnd);
 }

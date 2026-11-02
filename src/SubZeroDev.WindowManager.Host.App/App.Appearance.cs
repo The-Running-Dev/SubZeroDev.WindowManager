@@ -80,13 +80,13 @@ public sealed partial class App
         });
         _appMode.Start();
 
-        // Theme and palette files are not config documents, so they get their own watchers. Edits
+        // Theme, palette and asset pack files are not config documents, so they get their own watchers. Edits
         // arrive in bursts (an editor's save, a folder copy); the apply waits until they settle.
         _assetTimer = dispatcher.CreateTimer();
         _assetTimer.Interval = AssetSettle;
         _assetTimer.IsRepeating = false;
-        _assetTimer.Tick += (_, _) => _ = ReapplyAppearanceAsync("A theme or palette file changed");
-        foreach (var folder in new[] { "themes", "palettes" })
+        _assetTimer.Tick += (_, _) => _ = ReapplyAppearanceAsync("A theme, palette or asset pack file changed");
+        foreach (var folder in new[] { "themes", "palettes", "assetpacks" })
         {
             var watcher = new FileSystemWatcher(Path.Combine(_locations!.DataRoot, folder))
             {

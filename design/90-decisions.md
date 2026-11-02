@@ -14,6 +14,18 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S13: icon packs
+- **Context:** named icons and application icons have to come from installed asset packs, in the order the preset lists them, then the theme's own pack, then the host default, then the system icon, and a broken pack must not break the look.
+- **Chosen:**
+  - `AssetPackReader` builds one chain on every appearance apply, off the UI thread: the preset's `assetPacks` (each looked up in the theme's `assetpacks` folder, then the data root, then the content root), the theme's `defaultAssetPack`, then `subzerodev.default`, which ships with the host.
+  - A path that leaves its pack folder makes the whole pack `Invalid` and skipped, with a warning naming it; a missing or unsupported image (only PNG and SVG) drops just that entry. An `appIcons` match needs exactly one of `exe` (a bare name matches the file name, anything with a separator the full path) and `aumid`.
+  - The icon resolver takes the chain as a function and empties its cache when the chain changes. Window icons look up the window's executable for `appIcons`; app refs match on exe or AUMID. Every source is reported as `pack:`, `theme:` or `host:` plus the pack id, `extracted`, `default`, `named` (no image, text only) or `none`.
+  - The `assetpacks` folder is watched with themes and palettes, so an edited pack reapplies without a restart. A restyle rebuilds the retained views, so no worker hears about it.
+- **Rejected:**
+  - `IThemeEngine.ResolveIconAsync` from the contract: resolution stays on `IconResolver`, which the surfaces already hold; the engine only owns the chain.
+  - Matching real `notepad.exe` in the end-to-end test, because it would launch the user's Notepad and its restored session; the test-fixture executable stands in.
+- **Known gap:** the package catalog does not list asset packs yet, so they cannot be installed from the settings window; `wallpapers` are read past and not applied; a pack's `id` is not checked against its folder name; window icons match `appIcons` by executable only, never by AUMID.
+
 ## 2026-11-02 — S12: monitors, DPI, full screen and Explorer restarts
 - **Context:** panels have to follow monitors coming and going, keep their size in DIP on every scale, step aside for full-screen windows, survive Explorer restarts, and the `autoHide` and `desktop` behaviours have to work, all without the tests touching the real display configuration.
 - **Chosen:**
