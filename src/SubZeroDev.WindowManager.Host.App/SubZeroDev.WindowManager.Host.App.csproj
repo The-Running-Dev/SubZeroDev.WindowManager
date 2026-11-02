@@ -25,8 +25,9 @@
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Launcher\SubZeroDev.WindowManager.Plugins.Launcher.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Built-in themes, layouts and presets ship beside the host. -->
-    <Content Include="..\..\content\**\*" LinkBase="content" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Built-in themes, layouts and presets ship beside the host. They are None, not Content, so the
+         PRI indexer does not read folder names such as "sample-retro" as resource qualifiers. -->
+    <None Include="..\..\content\**\*" LinkBase="content" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- Built-in plugins run as workers from <content>\plugins\<id>. -->
   <Target Name="CopyBuiltInPlugins" AfterTargets="Build">

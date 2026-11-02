@@ -14,6 +14,17 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S14: two sample looks
+- **Context:** two shipped presets have to show how far the theming moves one desktop: panel shape, backdrop, font, accent, button transitions and icons all differ, and switching between them must not restart a worker or touch plugin settings.
+- **Chosen:**
+  - Both presets use one new layout, `subzerodev.sample` (launcher, window list, clock on a bottom panel), so a switch never reapplies the layout and the screenshots compare like with like.
+  - `subzerodev.sample-glass`: a floating rounded pill inset from the edge, acrylic, Segoe UI Variable Display, a cyan accent, eased storyboard fades on every button state group, and smooth outline icons.
+  - `subzerodev.sample-retro`: square and edge to edge with a raised bevel from two custom tokens (`highlight`, `shadow`), no backdrop, Tahoma, a navy accent, instant state changes (`GeneratedDuration="0"`) with a pushed-in content offset, and pixel icons.
+  - Built-in content ships as `None` items rather than `Content`, because the PRI indexer read `sample-retro` as a resource qualifier and warned.
+  - A panel that should be topmost and is not once shown is raised with `SetWindowPos(HWND_TOPMOST)`: the presenter's always-on-top flag set before the first show did not always reach the window, which made S12.3 fail twice in full runs. The test hook now reports `wantsTopmost` per panel and `fullscreenMonitors`, so a repeat says whether the host meant it.
+- **Rejected:** a different panel edge per sample, because that changes the layout, and with it the panel ids and every instance's settings, which S14.3 forbids.
+- **Known gap:** the screenshots in `docs/samples.md` are manual (S14.4) and still to be taken; the palettes carry only the ten host tokens, so the retro bevel colours cannot be changed from a palette.
+
 ## 2026-11-02 — S13: icon packs
 - **Context:** named icons and application icons have to come from installed asset packs, in the order the preset lists them, then the theme's own pack, then the host default, then the system icon, and a broken pack must not break the look.
 - **Chosen:**

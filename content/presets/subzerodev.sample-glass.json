@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "subzerodev.sample-glass",
+  "displayName": "SubZeroDev sample: glass",
+  "layout": "subzerodev.sample",
+  "theme": "subzerodev.sample-glass",
+  "palette": "subzerodev.sample-glass",
+  "assetPacks": ["subzerodev.sample-glass"]
+}

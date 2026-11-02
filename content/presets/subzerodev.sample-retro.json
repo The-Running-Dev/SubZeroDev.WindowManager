@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "subzerodev.sample-retro",
+  "displayName": "SubZeroDev sample: retro",
+  "layout": "subzerodev.sample",
+  "theme": "subzerodev.sample-retro",
+  "palette": "subzerodev.sample-retro",
+  "assetPacks": ["subzerodev.sample-retro"]
+}

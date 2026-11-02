@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "subzerodev.sample",
+  "displayName": "SubZeroDev sample",
+  "panels": [
+    {
+      "id": "f6b7faa2-4ce0-4e66-aa23-8fcb3eb2c99d",
+      "monitor": "primary",
+      "placement": { "edge": "bottom" },
+      "thickness": 44,
+      "behaviour": "reserve",
+      "zones": {
+        "start": [
+          { "id": "d88fcdf2-3fce-4c49-82ad-5a6a56211ab8", "plugin": "subzerodev.launcher", "contribution": "launcher" }
+        ],
+        "center": [
+          { "id": "34360279-0eeb-423d-8f0e-9750ab958cce", "plugin": "subzerodev.running-windows", "contribution": "windows" }
+        ],
+        "end": [
+          { "id": "6ec12054-2021-4735-9328-11c39916e5e8", "plugin": "subzerodev.clock", "contribution": "clock" }
+        ]
+      }
+    }
+  ]
+}

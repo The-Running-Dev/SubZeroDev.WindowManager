@@ -104,6 +104,9 @@ public sealed class SurfaceManager : ISurfaceManager
 
     public IReadOnlyList<PanelWindow> Panels => _panels;
 
+    /// <summary>The monitors a full-screen window covers right now, whose panels are not topmost.</summary>
+    public IReadOnlyCollection<string> FullscreenMonitors => _fullscreenMonitors;
+
     /// <summary>A layout has been applied in full, even one that places no panel on the monitors there are.</summary>
     public bool LayoutApplied { get; private set; }
 

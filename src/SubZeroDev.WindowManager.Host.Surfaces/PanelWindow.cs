@@ -42,7 +42,8 @@ public sealed unsafe class PanelWindow
         // An auto-hide panel collapses to a strip a couple of pixels thick.
         _presenter.PreferredMinimumHeight = 0;
         _presenter.PreferredMinimumWidth = 0;
-        _presenter.IsAlwaysOnTop = definition.Behaviour != PanelBehaviour.Desktop;
+        WantsTopmost = definition.Behaviour != PanelBehaviour.Desktop;
+        _presenter.IsAlwaysOnTop = WantsTopmost;
         _window.AppWindow.SetPresenter(_presenter);
         _window.AppWindow.IsShownInSwitchers = false;
         // Panels are shell surfaces: Alt+F4 and WM_CLOSE from elsewhere do not close them.
@@ -65,6 +66,7 @@ public sealed unsafe class PanelWindow
     private const uint SwpNoZOrder = 0x4;
     private const uint SwpNoActivate = 0x10;
     private static readonly nint HwndBottom = 1;
+    private static readonly nint HwndTopmost = -1;
 
     /// <summary>Raised while the window closes, before its handle is destroyed.</summary>
     public event EventHandler? Closed;
@@ -96,9 +98,15 @@ public sealed unsafe class PanelWindow
     /// <summary>Whether the window has <c>WS_EX_TOPMOST</c> right now.</summary>
     public bool IsTopmost => (GetWindowLongPtrW(Handle, GwlExStyle) & WsExTopmost) != 0;
 
+    /// <summary>Whether the panel should be topmost: false for a desktop panel and while its monitor is full-screen.</summary>
+    public bool WantsTopmost { get; private set; }
+
     /// <summary>Puts the panel above or among ordinary windows; a desktop panel is never topmost.</summary>
-    public void SetTopmost(bool topmost) =>
-        _presenter.IsAlwaysOnTop = topmost && Definition.Behaviour != PanelBehaviour.Desktop;
+    public void SetTopmost(bool topmost)
+    {
+        WantsTopmost = topmost && Definition.Behaviour != PanelBehaviour.Desktop;
+        _presenter.IsAlwaysOnTop = WantsTopmost;
+    }
 
     public RectInt Bounds
     {
@@ -122,7 +130,18 @@ public sealed unsafe class PanelWindow
         }
     }
 
-    public void Show() => _window.AppWindow.Show(activateWindow: false);
+    /// <summary>
+    /// Shows the panel without taking focus. The presenter's always-on-top flag set before the first show does
+    /// not always reach the window, so a panel that should be topmost and is not is raised once shown.
+    /// </summary>
+    public void Show()
+    {
+        _window.AppWindow.Show(activateWindow: false);
+        if (WantsTopmost && !IsTopmost)
+        {
+            SetWindowPos(Handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+        }
+    }
 
     public void Close()
     {

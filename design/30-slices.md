@@ -206,7 +206,7 @@ Acceptance:
 Out of scope: wallpapers, icon pack authoring tools.
 
 ## S14 — Two distinct sample looks
-Status: todo
+Status: done
 Delivers: Ben can flip between two very different desktop looks, using the same clock, launcher and window list, to show what the theming can do.
 Touches: content only — two themes, palettes, asset packs and presets (`subzerodev.sample-glass`, `subzerodev.sample-retro`), plus screenshots in `docs/`
 Depends on: S8, S13
