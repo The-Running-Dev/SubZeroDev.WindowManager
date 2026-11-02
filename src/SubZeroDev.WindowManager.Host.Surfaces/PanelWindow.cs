@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Composition.SystemBackdrops;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
@@ -67,6 +68,7 @@ public sealed unsafe class PanelWindow
     private const uint SwpNoActivate = 0x10;
     private static readonly nint HwndBottom = 1;
     private static readonly nint HwndTopmost = -1;
+    private static readonly nint HwndNoTopmost = -2;
 
     /// <summary>Raised while the window closes, before its handle is destroyed.</summary>
     public event EventHandler? Closed;
@@ -106,6 +108,7 @@ public sealed unsafe class PanelWindow
     {
         WantsTopmost = topmost && Definition.Behaviour != PanelBehaviour.Desktop;
         _presenter.IsAlwaysOnTop = WantsTopmost;
+        ApplyTopmost();
     }
 
     public RectInt Bounds
@@ -132,14 +135,22 @@ public sealed unsafe class PanelWindow
 
     /// <summary>
     /// Shows the panel without taking focus. The presenter's always-on-top flag set before the first show does
-    /// not always reach the window, so a panel that should be topmost and is not is raised once shown.
+    /// not always reach the window, so the flag is applied directly once shown, and again once the queue is
+    /// idle because the presenter can apply its own state after the show returns.
     /// </summary>
     public void Show()
     {
         _window.AppWindow.Show(activateWindow: false);
-        if (WantsTopmost && !IsTopmost)
+        ApplyTopmost();
+        _window.DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, ApplyTopmost);
+    }
+
+    /// <summary>Makes <c>WS_EX_TOPMOST</c> match <see cref="WantsTopmost"/>.</summary>
+    private void ApplyTopmost()
+    {
+        if (!_closeRequested && WantsTopmost != IsTopmost)
         {
-            SetWindowPos(Handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+            SetWindowPos(Handle, WantsTopmost ? HwndTopmost : HwndNoTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
         }
     }
 

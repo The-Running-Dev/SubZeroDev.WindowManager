@@ -49,6 +49,17 @@ public sealed partial class BudgetTests
     }
 
     [Fact]
+    public void S16_2_the_budget_table_sets_every_metric()
+    {
+        var reference = ReadBudgets("reference");
+        var missing = Interaction.Where(metric => !reference.ContainsKey(metric)).ToList();
+        Assert.True(missing.Count == 0, $"docs/budgets.md has no reference budget for: {string.Join(", ", missing)}.");
+
+        var ci = ReadBudgets("ci");
+        Assert.All(reference.Values.Concat(ci.Values), budget => Assert.True(budget > 0));
+    }
+
+    [Fact]
     public async Task S16_3_startup_and_idle_stay_within_budget()
     {
         var column = Environment.GetEnvironmentVariable(ModeVariable);
@@ -251,7 +262,7 @@ public sealed partial class BudgetTests
     internal static Dictionary<string, double> ReadBudgets(string column, string? path = null)
     {
         path ??= Path.Combine(RepositoryRoot(), "docs", "budgets.md");
-        var index = column == "reference" ? 3 : 4;
+        var index = column == "reference" ? 2 : 3;
         var budgets = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var line in File.ReadLines(path))
         {

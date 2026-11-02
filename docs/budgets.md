@@ -1,17 +1,17 @@
 # Performance budgets
 
-Each budget is the 90th percentile of ten measured runs plus 20%. The reference column comes from the reference machine; the CI column comes from the `budgets` job on a GitHub `windows-latest` runner, which is slower and noisier, so it has budgets of its own.
+Each budget is the 90th percentile of ten measured runs plus 20%, rounded down. The reference column comes from the reference machine (16 logical processors, Windows 11 26200, one 3440×1440 monitor at 125%), measured on 2 November 2026. The CI column comes from the `budgets` job on a GitHub `windows-latest` runner on the same day. The runner's numbers differ enough from the reference machine's that it has budgets of its own: memory is lower at 100% scale and startup is noisier.
 
 | Metric | What is measured | Reference | CI |
 | --- | --- | --- | --- |
-| `startupMs` | Guardian start until all three built-in plugins show a live view (ms) | — | — |
-| `hostPrivateMb` | Host private bytes after 60 s idle (MiB) | — | — |
-| `clockPrivateMb` | Clock worker private bytes after 60 s idle (MiB) | — | — |
-| `runningWindowsPrivateMb` | Running-windows worker private bytes after 60 s idle (MiB) | — | — |
-| `launcherPrivateMb` | Launcher worker private bytes after 60 s idle (MiB) | — | — |
-| `hostIdleCpuPercent` | Host CPU over 60 s idle (% of one core) | — | — |
-| `hotkeyToPopupMs` | Launcher hotkey until the popup is shown with the query focused, second open (ms) | — | — |
-| `clickToForegroundMs` | Click on a minimised window's item until it is the foreground window (ms) | — | — |
+| `startupMs` | Guardian start until all three built-in plugins show a live view (ms) | 2300 | 2400 |
+| `hostPrivateMb` | Host private bytes after 60 s idle (MiB) | 114 | 73 |
+| `clockPrivateMb` | Clock worker private bytes after 60 s idle (MiB) | 13.3 | 11.3 |
+| `runningWindowsPrivateMb` | Running-windows worker private bytes after 60 s idle (MiB) | 14.5 | 11.9 |
+| `launcherPrivateMb` | Launcher worker private bytes after 60 s idle (MiB) | 19 | 16.6 |
+| `hostIdleCpuPercent` | Host CPU over 60 s idle (% of one core) | 8.1 | 6.5 |
+| `hotkeyToPopupMs` | Launcher hotkey until the popup is shown with the query focused, second open (ms) | 26 | 27 |
+| `clickToForegroundMs` | Click on a minimised window's item until it is the foreground window (ms) | 92 | 92 |
 
 ## How they are measured
 

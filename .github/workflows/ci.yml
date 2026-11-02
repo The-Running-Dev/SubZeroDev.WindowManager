@@ -80,7 +80,7 @@ jobs:
       - name: Startup and idle against the CI budgets
         shell: pwsh
         env:
-          SUBZERODEV_WM_BUDGETS: measure
+          SUBZERODEV_WM_BUDGETS: ci
           SUBZERODEV_WM_BUDGET_OUT: ${{ runner.temp }}/budgets
         run: |
           $tests = 'tests/SubZeroDev.WindowManager.EndToEnd.Tests/bin/Release/net10.0-windows10.0.26100.0/win-x64/SubZeroDev.WindowManager.EndToEnd.Tests.exe'

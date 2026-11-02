@@ -231,7 +231,7 @@ Acceptance:
 Out of scope: nuget.org publication (open question 3), auto-update, MSIX.
 
 ## S16 — Performance budgets
-Status: todo
+Status: done
 Delivers: Ben has measured numbers for how fast the desktop starts, how little it uses at rest, and how quickly it reacts, plus a check that fails when a change makes them worse.
 Touches: a benchmark harness under `tests/`; CI job; `docs/budgets.md`; `90-decisions.md` entry with the chosen budgets
 Depends on: S12, S14
