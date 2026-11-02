@@ -27,4 +27,7 @@
     <Project Path="tests/SubZeroDev.WindowManager.EndToEnd.Tests/SubZeroDev.WindowManager.EndToEnd.Tests.csproj" />
     <Project Path="tests/SubZeroDev.WindowManager.TestPlugin/SubZeroDev.WindowManager.TestPlugin.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/SubZeroDev.WindowManager.NotificationProbe/SubZeroDev.WindowManager.NotificationProbe.csproj" />
+  </Folder>
 </Solution>
