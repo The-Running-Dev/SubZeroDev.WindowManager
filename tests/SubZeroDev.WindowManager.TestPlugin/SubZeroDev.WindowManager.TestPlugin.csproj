@@ -11,6 +11,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Sdk\SubZeroDev.WindowManager.Sdk.csproj" />
+    <!-- The Sdk keeps Protocol private (it ships inside the Sdk package), so a source build names it too. -->
+    <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Protocol\SubZeroDev.WindowManager.Protocol.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" />

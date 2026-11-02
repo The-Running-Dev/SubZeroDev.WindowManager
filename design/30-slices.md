@@ -218,7 +218,7 @@ Acceptance:
 Out of scope: a theme editor.
 
 ## S15 — Release, SDK package and a third-party sample
-Status: todo
+Status: done
 Delivers: Another developer can download the SDK, build a plugin in their own project, package it, and install it into a released build of the app, and Ben can install that release on a clean machine without admin rights.
 Touches: CI release workflow; Sdk and Protocol NuGet package; PackTool .NET tool; a `samples/` plugin solution consuming only the package from a local feed; Guardian `--first-run`, `--uninstall`, Run key; install layout
 Depends on: S11

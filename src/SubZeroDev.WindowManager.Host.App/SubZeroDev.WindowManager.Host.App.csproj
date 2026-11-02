@@ -6,6 +6,8 @@
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- Without it, publish leaves out the .pri and compiled XAML that the settings window loads. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
@@ -19,10 +21,11 @@
     <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Theming\SubZeroDev.WindowManager.Host.Theming.csproj" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Surfaces\SubZeroDev.WindowManager.Host.Surfaces.csproj" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Settings\SubZeroDev.WindowManager.Host.Settings.csproj" />
-    <!-- Built first so its output can ship as a built-in plugin; the host never loads it. -->
-    <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Clock\SubZeroDev.WindowManager.Plugins.Clock.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.RunningWindows\SubZeroDev.WindowManager.Plugins.RunningWindows.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
-    <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Launcher\SubZeroDev.WindowManager.Plugins.Launcher.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
+    <!-- Built first so its output can ship as a built-in plugin; the host never loads it. Private="false" keeps
+         each plugin's plugin.json out of the host's own output and publish folders. -->
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Clock\SubZeroDev.WindowManager.Plugins.Clock.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.RunningWindows\SubZeroDev.WindowManager.Plugins.RunningWindows.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Launcher\SubZeroDev.WindowManager.Plugins.Launcher.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
   <ItemGroup>
     <!-- Built-in themes, layouts and presets ship beside the host. They are None, not Content, so the
