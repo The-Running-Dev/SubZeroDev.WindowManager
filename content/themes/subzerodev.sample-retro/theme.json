@@ -1,0 +1,24 @@
+{
+  "id": "subzerodev.sample-retro",
+  "displayName": "SubZeroDev sample: retro",
+  "version": "0.1.0",
+  "themeApi": 1,
+  "tokens": {
+    "surface": "#FFC0C0C0",
+    "surfaceAlt": "#FFD8D8D8",
+    "text": "#FF000000",
+    "textMuted": "#FF404040",
+    "accent": "#FF000080",
+    "accentText": "#FFFFFFFF",
+    "border": "#FF808080",
+    "attention": "#FFFFFF00",
+    "warning": "#FF808000",
+    "danger": "#FF800000",
+    "highlight": "#FFFFFFFF",
+    "shadow": "#FF404040"
+  },
+  "panelBackdrop": "none",
+  "resources": [
+    "Panel.xaml"
+  ]
+}

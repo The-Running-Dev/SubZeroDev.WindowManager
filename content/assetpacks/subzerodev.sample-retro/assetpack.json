@@ -1,0 +1,18 @@
+{
+  "id": "subzerodev.sample-retro",
+  "version": "0.1.0",
+  "displayName": "SubZeroDev sample: retro icons",
+  "icons": {
+    "launcher": "icons/launcher.png",
+    "app.launcher": "icons/launcher.png",
+    "action.search": "icons/action.search.png",
+    "action.settings": "icons/action.settings.png",
+    "action.close": "icons/action.close.png",
+    "action.run": "icons/action.run.png",
+    "app.default": "icons/app.default.png",
+    "clock": "icons/clock.png",
+    "window": "icons/window.png"
+  },
+  "appIcons": [],
+  "wallpapers": []
+}

@@ -365,6 +365,7 @@ internal sealed class TestHook
                 ["monitor"] = window.Monitor.StableId,
                 ["primary"] = window.Monitor.IsPrimary,
                 ["topmost"] = window.IsTopmost,
+                ["wantsTopmost"] = window.WantsTopmost,
                 ["collapsed"] = window.Collapsed,
                 ["scale"] = window.Monitor.Scale,
                 ["edge"] = window.Panel.Edge,
@@ -445,6 +446,7 @@ internal sealed class TestHook
             ["lastSettingsUi"] = _lastSettingsUi,
             ["settingsUiRuns"] = _settingsUiRuns,
             ["panels"] = panels,
+            ["fullscreenMonitors"] = new JsonArray(_surfaces.FullscreenMonitors.Order(StringComparer.Ordinal).Select(id => (JsonNode?)id).ToArray()),
             ["contributions"] = new JsonArray(_surfaces.Views.Select(view => (JsonNode?)new JsonObject
             {
                 ["instanceId"] = view.Instance.Id.ToString("D"),

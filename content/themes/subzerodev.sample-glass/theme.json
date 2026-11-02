@@ -1,0 +1,23 @@
+{
+  "id": "subzerodev.sample-glass",
+  "displayName": "SubZeroDev sample: glass",
+  "version": "0.1.0",
+  "themeApi": 1,
+  "tokens": {
+    "surface": "#B0161C26",
+    "surfaceAlt": "#30FFFFFF",
+    "text": "#FFF5FAFF",
+    "textMuted": "#FFB4C3D6",
+    "accent": "#FF5CE1E6",
+    "accentText": "#FF001A1C",
+    "border": "#40FFFFFF",
+    "attention": "#FFFFC857",
+    "warning": "#FFFF9F43",
+    "danger": "#FFFF5C7A",
+    "glow": "#605CE1E6"
+  },
+  "panelBackdrop": "acrylic",
+  "resources": [
+    "Panel.xaml"
+  ]
+}

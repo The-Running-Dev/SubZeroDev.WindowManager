@@ -1,0 +1,199 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:wm="using:SubZeroDev.WindowManager.Host.Surfaces.Controls">
+
+    <!-- Retro: a square, bevelled bar edge to edge; states switch at once, as they did in 1995. -->
+
+    <Style x:Key="Wm.Panel" TargetType="wm:WmPanel">
+        <Setter Property="FontFamily" Value="Tahoma" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmPanel">
+                    <Border Background="{ThemeResource Wm.Brush.surface}" BorderBrush="{ThemeResource Wm.Brush.surfaceAlt}" BorderThickness="0,1,0,0">
+                        <Border BorderBrush="{ThemeResource Wm.Brush.highlight}" BorderThickness="0,1,0,0">
+                            <Grid Padding="2,2" ColumnSpacing="4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Center" Content="{TemplateBinding Start}" />
+                                <ContentPresenter Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Content="{TemplateBinding Center}" />
+                                <Border Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Padding="8,3"
+                                        BorderBrush="{ThemeResource Wm.Brush.border}" BorderThickness="1,1,0,0">
+                                    <Border BorderBrush="{ThemeResource Wm.Brush.highlight}" BorderThickness="0,0,1,1" Margin="0,0,-8,-3" Padding="0,0,8,3">
+                                        <ContentPresenter Content="{TemplateBinding End}" />
+                                    </Border>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Wm.Element.Text" TargetType="wm:WmText">
+        <Setter Property="FontFamily" Value="Tahoma" />
+        <Setter Property="Foreground" Value="{ThemeResource Wm.Brush.text}" />
+    </Style>
+
+    <Style x:Key="Wm.Element.Text.primary" TargetType="wm:WmText">
+        <Setter Property="FontFamily" Value="Tahoma" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{ThemeResource Wm.Brush.accent}" />
+    </Style>
+
+    <Style x:Key="Wm.Element.Text.compact" TargetType="wm:WmText">
+        <Setter Property="FontFamily" Value="Tahoma" />
+        <Setter Property="Foreground" Value="{ThemeResource Wm.Brush.textMuted}" />
+        <Setter Property="FontSize" Value="11" />
+    </Style>
+
+    <Style x:Key="Wm.Element.Button" TargetType="wm:WmButton">
+        <Setter Property="FontFamily" Value="Tahoma" />
+        <Setter Property="Foreground" Value="{ThemeResource Wm.Brush.text}" />
+        <Setter Property="Background" Value="{ThemeResource Wm.Brush.surface}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Padding" Value="6,2" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="MinWidth" Value="28" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmButton">
+                    <Grid x:Name="Root" Background="{TemplateBinding Background}">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualStateGroup.Transitions>
+                                    <VisualTransition GeneratedDuration="0" />
+                                </VisualStateGroup.Transitions>
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver" />
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="Pushed.Visibility" Value="Visible" />
+                                        <Setter Target="Content.Margin" Value="1,1,-1,-1" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Target="Content.Opacity" Value="0.5" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="FocusStates">
+                                <VisualState x:Name="Focused" />
+                                <VisualState x:Name="Unfocused" />
+                                <VisualState x:Name="PointerFocused" />
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="ActiveStates">
+                                <VisualStateGroup.Transitions>
+                                    <VisualTransition GeneratedDuration="0" />
+                                </VisualStateGroup.Transitions>
+                                <VisualState x:Name="Inactive" />
+                                <VisualState x:Name="Active">
+                                    <VisualState.Setters>
+                                        <Setter Target="Sunken.Visibility" Value="Visible" />
+                                        <Setter Target="Label.FontWeight" Value="Bold" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="AttentionStates">
+                                <VisualStateGroup.Transitions>
+                                    <VisualTransition GeneratedDuration="0" />
+                                </VisualStateGroup.Transitions>
+                                <VisualState x:Name="Calm" />
+                                <VisualState x:Name="Attention">
+                                    <VisualState.Setters>
+                                        <Setter Target="Flash.Visibility" Value="Visible" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="SelectionStates">
+                                <VisualStateGroup.Transitions>
+                                    <VisualTransition GeneratedDuration="0" />
+                                </VisualStateGroup.Transitions>
+                                <VisualState x:Name="Unselected" />
+                                <VisualState x:Name="Selected">
+                                    <VisualState.Setters>
+                                        <Setter Target="Selection.Visibility" Value="Visible" />
+                                        <Setter Target="Label.Foreground" Value="{ThemeResource Wm.Brush.accentText}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <!-- Raised: light top-left, dark bottom-right. -->
+                        <Border BorderBrush="{ThemeResource Wm.Brush.highlight}" BorderThickness="1,1,0,0" />
+                        <Border BorderBrush="{ThemeResource Wm.Brush.shadow}" BorderThickness="0,0,1,1" />
+                        <!-- Sunken (the active window) and pushed (the pointer is down): the bevel turns over. -->
+                        <Grid x:Name="Sunken" Visibility="Collapsed" Background="{ThemeResource Wm.Brush.surfaceAlt}">
+                            <Border BorderBrush="{ThemeResource Wm.Brush.shadow}" BorderThickness="1,1,0,0" />
+                            <Border BorderBrush="{ThemeResource Wm.Brush.highlight}" BorderThickness="0,0,1,1" />
+                        </Grid>
+                        <Grid x:Name="Pushed" Visibility="Collapsed">
+                            <Border BorderBrush="{ThemeResource Wm.Brush.shadow}" BorderThickness="1,1,0,0" />
+                            <Border BorderBrush="{ThemeResource Wm.Brush.highlight}" BorderThickness="0,0,1,1" />
+                        </Grid>
+                        <Border x:Name="Selection" Visibility="Collapsed" Margin="2" Background="{ThemeResource Wm.Brush.accent}" />
+                        <Border x:Name="Flash" Visibility="Collapsed" Margin="2" BorderBrush="{ThemeResource Wm.Brush.attention}" BorderThickness="2" />
+                        <Grid x:Name="Content" Padding="{TemplateBinding Padding}" ColumnSpacing="4" VerticalAlignment="Center">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Image Source="{TemplateBinding Icon}" MaxHeight="16" MaxWidth="16" Stretch="Uniform" />
+                            <TextBlock x:Name="Label" Grid.Column="1" Foreground="{TemplateBinding Foreground}" FontFamily="{TemplateBinding FontFamily}"
+                                       FontSize="{TemplateBinding FontSize}" VerticalAlignment="Center" MaxWidth="160" TextTrimming="CharacterEllipsis"
+                                       TextWrapping="NoWrap" Text="{TemplateBinding Label}" />
+                            <TextBlock Grid.Column="2" Foreground="{ThemeResource Wm.Brush.danger}" FontSize="10" FontWeight="Bold" VerticalAlignment="Top"
+                                       Text="{TemplateBinding Badge}" />
+                        </Grid>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Wm.Placeholder" TargetType="wm:WmPlaceholder">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmPlaceholder">
+                    <Border x:Name="Root" Padding="6,2" Background="{ThemeResource Wm.Brush.surface}"
+                            BorderBrush="{ThemeResource Wm.Brush.border}" BorderThickness="1">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="ReasonStates">
+                                <VisualState x:Name="Starting" />
+                                <VisualState x:Name="Disabled" />
+                                <VisualState x:Name="Incompatible" />
+                                <VisualState x:Name="Invalid" />
+                                <VisualState x:Name="Faulted">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.BorderBrush" Value="{ThemeResource Wm.Brush.danger}" />
+                                        <Setter Target="Retry.Visibility" Value="Visible" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Unavailable">
+                                    <VisualState.Setters>
+                                        <Setter Target="Retry.Visibility" Value="Visible" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="NotSupportedInMode" />
+                                <VisualState x:Name="Missing" />
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock FontFamily="Tahoma" Foreground="{ThemeResource Wm.Brush.textMuted}" FontSize="11" VerticalAlignment="Center"
+                                       Text="{TemplateBinding PluginName}" />
+                            <Button x:Name="Retry" Visibility="Collapsed" Padding="6,0" MinHeight="0" FontSize="11" Content="Retry"
+                                    Command="{TemplateBinding RetryCommand}" />
+                        </StackPanel>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>
