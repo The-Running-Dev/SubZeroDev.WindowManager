@@ -314,5 +314,7 @@ Decided here with no live alternative worth a paragraph (logged in [90-decisions
    - App-bar registration behaves correctly from a WinUI 3 window.
 
    A failure in any of them is a design change recorded in [90-decisions.md](90-decisions.md), not a silent workaround.
+
+   *Answered:* all three pass on Windows App SDK 1.8.260317003, unpackaged and self-contained (decision "S1: Pin Windows App SDK 1.8.260317003"). Hit-testing that follows a template's shape is still open.
 6. **The per-user shell value on Ben's build.** The design assumes Windows honours the per-user `Winlogon\Shell` value on Windows 11 Enterprise build 26200. S17's prototype check confirms it. If it does not, the fallback is the per-user Custom User Interface value (`HKCU\...\Policies\System\Shell`), which also needs no elevation. Switching to it is a decision entry.
-7. **Explorer-hosted features without Explorer.** Toasts, the notification centre, Quick Settings and Task View are hosted by Explorer or its shell-experience processes. S23's qualification records which of them still work with Explorer absent on Ben's build. The brief keeps them out of scope.
+7. **Explorer-hosted features without Explorer.** Toasts, the notification centre, Quick Settings and Task View are hosted by Explorer or its shell-experience processes. S23's qualification records which of them still work with Explorer absent on Ben's build. The brief keeps them out of scope. *Recorded:* the expected state of each is in `docs/replacement-mode.md`, and a week of daily use confirms it (S23.1, decision "S23: replacement mode qualified for daily use").

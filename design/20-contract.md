@@ -786,9 +786,9 @@ All errors are typed codes with a detail string for logs. None is a bare excepti
 
 ## Unresolved
 
-- The **Windows App SDK release**: pinned in the foundation slice. It may change the template-property mechanics if runtime-loaded templates turn out to be limited (open question 5 in the design).
-- **How transparent, shaped panel windows combine with backdrops.** `PanelBackdrop.Transparent` is declared, but how it is achieved, and whether templates may use non-rectangular hit-testing, waits on the prototype.
+- **Whether templates may use non-rectangular hit-testing.** A translucent panel over an acrylic backdrop works (decision "S1: Pin Windows App SDK 1.8.260317003"); hit-testing that follows a template's shape is not settled.
 - **Exact dependency properties beyond the props table**: anything a theme needs that is not a view prop (for example the panel's monitor scale, or an "is first item" flag) is added after the sample themes are attempted, as theme API 1 additions, before the vocabulary is frozen.
-- **Performance budgets** (startup, idle memory and CPU, interaction latency): set after the first working prototype, per the brief.
-- **The per-user `Winlogon\Shell` value on build 26200** (design open question 6): confirmed by S17's prototype check; the fallback is the per-user Custom User Interface value.
-- **Explorer-hosted features without Explorer** (design open question 7): recorded by S23.
+- **The per-user `Winlogon\Shell` value on build 26200** (design open question 6): to be confirmed on a real sign-in (S17.7); the fallback is the per-user Custom User Interface value.
+- **Explorer-hosted features without Explorer** (design open question 7): the expected state of each is recorded in `docs/replacement-mode.md` (S23); a week of daily use confirms it (S23.1).
+
+Settled since the design: the Windows App SDK release is 1.8.260317003 (decision "S1: Pin Windows App SDK 1.8.260317003"), and the performance budgets are in `docs/budgets.md` (decisions "S16: performance budgets" and "S23: replacement mode qualified for daily use").
