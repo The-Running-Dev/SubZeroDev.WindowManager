@@ -95,7 +95,11 @@ Maintained: a base that keeps being extended with plugins over time.
 
 Ben confirmed the second release's scope, priorities and definition of done on 2026-11-02; they are under *Problem*, *Non-goals* and *Definition of done*. These choices are still open:
 
-- Open: whether Windows delivers other applications' notifications to a shell other than Explorer on build 26200. It decides whether notifications (the second release's first item) can be built at all, so a check on the real machine comes before `/design`.
+- Open: whether Windows delivers other applications' notifications to a shell other than Explorer on build 26200. It decides whether notifications (the second release's first item) can be built at all.
+  - Checked on Ben's machine on 2026-11-03 with Explorer running, using `tools/SubZeroDev.WindowManager.NotificationProbe`. An unpackaged process can raise its own notification, but Windows refuses it access to the notification history (`Denied`, `0x80070005`), even though notification access is allowed for the user and the machine.
+  - Reading other applications' notifications therefore needs package identity, which the first release's packaging deliberately leaves out. Packaged identity can sit beside the existing unpackaged files.
+  - The check without Explorer can run only once the probe has package identity, in replacement mode.
+- Open: how the app gains package identity for notifications. Registering a package needs either a certificate the machine trusts or Developer Mode, and setting up either takes administrator rights once. That conflicts with the first release's requirement that registering needs no administrator rights, unless the requirement covers only the shell registration. This choice decides whether notifications are in the second release.
 - Open: virtual desktops as Windows' own, or as the shell's own sets of windows. Windows' own belong to Explorer, so they are absent in replacement mode. The shell's own work without Explorer, but applications that ask Windows which desktop they are on will not see them. The cost and the behaviour differ materially.
 - Open: whether second-release features also run in coexistence mode, where Explorer already provides them. Win+A, Win+N and Win+Tab would otherwise conflict with Explorer's own handling of those keys.
 - Open: whether these belong in the second release or later: custom plugin UI drawn inside the host's own windows (deferred by the first release's design), a theme editor, and automatic updates. Each one widens the release's scope.
