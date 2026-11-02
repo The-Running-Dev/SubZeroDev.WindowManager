@@ -33,6 +33,37 @@ public sealed class PluginLogs : IPluginLogs, IAsyncDisposable
     public string PathFor(string pluginId, DateTimeOffset day) =>
         Path.Combine(_directory, $"{pluginId}-{day.ToString("yyyyMMdd", CultureInfo.InvariantCulture)}.log");
 
+    /// <summary>
+    /// The last <paramref name="count"/> lines of the plugin's log for yesterday and today, oldest first. Lines still
+    /// queued are not in it yet.
+    /// </summary>
+    public IReadOnlyList<string> Tail(string pluginId, int count = 200)
+    {
+        var now = _clock();
+        var lines = new List<string>();
+        foreach (var day in new[] { now.AddDays(-1), now })
+        {
+            try
+            {
+                using var stream = new FileStream(PathFor(pluginId, day), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var reader = new StreamReader(stream, Utf8NoBom);
+                while (reader.ReadLine() is { } line)
+                {
+                    lines.Add(line);
+                }
+            }
+            catch (IOException)
+            {
+                // No log that day, or it cannot be read now.
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
+        return lines.Count > count ? lines.GetRange(lines.Count - count, count) : lines;
+    }
+
     public void Write(string pluginId, string level, string message)
     {
         var now = _clock();

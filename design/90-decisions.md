@@ -14,6 +14,20 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S10: settings window and plugin manager
+- **Context:** Ben needs one window to see every plugin's health, turn plugins on and off, configure instances, read logs and faults, and pick a preset, without editing files, and every control has to work from the keyboard and screen readers.
+- **Chosen:**
+  - The window lives in its own project, `Host.Settings`, built in code like the rest of the UI, and opens through `host.settings.open { page }` or the panel's context menu. It is created once and hidden on close.
+  - Enablement is the `plugins` map in `settings.json`. Built-in plugins default to enabled, user plugins to disabled, so a package dropped into the folder does nothing until Ben turns it on. Disable writes `enabled: false`, then stops the worker as a normal stop does (kill after 3 s), and the instances show the `Disabled` placeholder.
+  - The supervisor's `Describe` reports why a plugin that is not running would not start (Invalid, Incompatible or Disabled) with its problems, and it keeps each plugin's recent faults with their reasons and times since the host started.
+  - Instance forms are generated from the contribution's `settingsSchema` subset: enums as choice lists, booleans as toggles, integers and numbers as bounded number boxes, other strings as text boxes, string lists as one item per line. Unknown properties are kept. Saving goes through the same path as `settings.save`.
+  - The detail shows the last 200 lines of the plugin's log for today.
+  - The test hook drives the window through a `settings-ui` file (page, select, invoke, set) and the status snapshot reports what it shows; S10.7 walks the window with UI Automation.
+- **Rejected:**
+  - A WebView or XAML-markup UI, because the rest of the shell is code-only and the start-up cost would be paid for one window.
+  - User plugins enabled by default, because a copied folder would run code before Ben agreed to it.
+- **Known gap:** a hand edit of the `plugins` map does not start or stop workers until the next start; enabling starts the worker only when an instance uses it; the log view shows only today's file.
+
 ## 2026-11-02 — S9: settings, saving and migration
 - **Context:** Plugins get settings at two levels: per instance in the layout, and per plugin in `plugin-settings\<id>.json`. Both have to be checked against the manifest's schema, change while the shell runs, and survive a plugin that moves to a newer settings version.
 - **Chosen:**

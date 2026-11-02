@@ -9,6 +9,7 @@
     <Project Path="src/SubZeroDev.WindowManager.Host.Platform/SubZeroDev.WindowManager.Host.Platform.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Host.Theming/SubZeroDev.WindowManager.Host.Theming.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Host.Surfaces/SubZeroDev.WindowManager.Host.Surfaces.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Host.Settings/SubZeroDev.WindowManager.Host.Settings.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Host.App/SubZeroDev.WindowManager.Host.App.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Guardian/SubZeroDev.WindowManager.Guardian.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Sdk/SubZeroDev.WindowManager.Sdk.csproj" />

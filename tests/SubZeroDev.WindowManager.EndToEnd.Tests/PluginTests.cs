@@ -81,6 +81,7 @@ public sealed partial class PluginTests
     {
         HostRun.RequireDesktop();
         using var run = HostRun.Create();
+        run.EnableBeforeCopy("example.clock");
         run.Start(HostRun.HostExe);
         await run.WaitForAsync(s => ClockTexts(s).Count == 1, Startup);
 

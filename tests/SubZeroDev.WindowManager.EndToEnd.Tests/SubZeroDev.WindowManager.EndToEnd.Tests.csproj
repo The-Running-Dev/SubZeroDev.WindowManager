@@ -4,12 +4,17 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- UI Automation (System.Windows.Automation) checks the settings window's accessible names. -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <Using Include="Xunit" />
+    <!-- UseWPF swaps the implicit usings for WPF ones, which leave out System.IO. -->
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
   </ItemGroup>
   <ItemGroup>
     <!-- Built first so the executables exist; nothing is referenced at compile time. -->

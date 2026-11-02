@@ -18,6 +18,7 @@
     <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Platform\SubZeroDev.WindowManager.Host.Platform.csproj" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Theming\SubZeroDev.WindowManager.Host.Theming.csproj" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Surfaces\SubZeroDev.WindowManager.Host.Surfaces.csproj" />
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Host.Settings\SubZeroDev.WindowManager.Host.Settings.csproj" />
     <!-- Built first so its output can ship as a built-in plugin; the host never loads it. -->
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Clock\SubZeroDev.WindowManager.Plugins.Clock.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.RunningWindows\SubZeroDev.WindowManager.Plugins.RunningWindows.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />

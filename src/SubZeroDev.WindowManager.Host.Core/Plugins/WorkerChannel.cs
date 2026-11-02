@@ -245,7 +245,7 @@ public sealed class WorkerChannel : IWorkerChannel, IAsyncDisposable
     /// <summary>The wire code for a host error sent back to a worker.</summary>
     public static int WireCodeOf(CoreErrorCode code) => code switch
     {
-        CoreErrorCode.PluginUnavailable => WireErrorCodes.PluginUnavailable,
+        CoreErrorCode.PluginUnavailable or CoreErrorCode.PluginDisabled => WireErrorCodes.PluginUnavailable,
         CoreErrorCode.CommandNotFound or CoreErrorCode.NotFound => WireErrorCodes.CommandNotFound,
         CoreErrorCode.Timeout => WireErrorCodes.Timeout,
         CoreErrorCode.Cancelled => WireErrorCodes.Cancelled,

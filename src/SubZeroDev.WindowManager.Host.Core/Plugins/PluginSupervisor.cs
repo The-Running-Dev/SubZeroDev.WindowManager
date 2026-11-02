@@ -19,6 +19,7 @@ namespace SubZeroDev.WindowManager.Host.Core;
 /// A running worker is pinged every 5 s and faulted after 10 s without a reply. A faulted worker's
 /// process is killed and awaited before anything else starts (I4), then it is restarted after its
 /// backoff until the restart budget is spent (I17); it is then Unavailable until <see cref="RetryAsync"/>.
+/// A disabled plugin never starts; <see cref="DisableAsync"/> and <see cref="EnableAsync"/> persist the switch.
 /// </summary>
 public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
 {
@@ -27,6 +28,7 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
 
     /// <summary>How long a killed process may take to signal before the supervisor moves on.</summary>
     private static readonly TimeSpan ExitWait = TimeSpan.FromSeconds(5);
+    private const int MaxFaultHistory = 20;
 
     private readonly IPackageCatalog _catalog;
     private readonly IWorkerLauncher _launcher;
@@ -77,6 +79,9 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
     /// </summary>
     public PluginSettingsStore? PluginSettings { get; set; }
 
+    /// <summary>Which plugins are enabled. Set once at startup; without it every plugin counts as enabled.</summary>
+    public PluginEnablement? Enablement { get; set; }
+
     public IReadOnlyList<PluginStatus> All
     {
         get
@@ -94,6 +99,37 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         {
             return _workers.TryGetValue(pluginId, out var worker) ? worker.Status : Discovered(pluginId);
         }
+    }
+
+    public IReadOnlyList<PluginFault> FaultsOf(string pluginId)
+    {
+        Worker? worker;
+        lock (_gate)
+        {
+            _workers.TryGetValue(pluginId, out worker);
+        }
+
+        if (worker is null)
+        {
+            return [];
+        }
+
+        lock (worker.History)
+        {
+            return [.. worker.History];
+        }
+    }
+
+    public PluginStatus Describe(string pluginId)
+    {
+        var status = GetStatus(pluginId);
+        if (status.State is not (PluginState.Discovered or PluginState.Stopped)
+            || Blocked(pluginId, _catalog.GetManifest(pluginId)) is not { } blocked)
+        {
+            return status;
+        }
+
+        return status with { State = blocked.State, Problems = blocked.Problems };
     }
 
     public IWorkerChannel? GetChannel(string pluginId)
@@ -175,6 +211,62 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         }
     }
 
+    public async Task<Outcome> DisableAsync(string pluginId, CancellationToken ct)
+    {
+        var saved = await PersistAsync(pluginId, enabled: false, ct).ConfigureAwait(false);
+        if (!saved.Ok)
+        {
+            return saved;
+        }
+
+        var worker = WorkerFor(pluginId);
+        await worker.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await StopCoreAsync(worker).ConfigureAwait(false);
+            if (worker.Status.State is not (PluginState.Invalid or PluginState.Incompatible))
+            {
+                SetStatus(worker, PluginState.Disabled);
+            }
+
+            _pluginLogs.Write(pluginId, "host", "Disabled.");
+            _log.Write(LogLevel.Info, "plugins", $"{pluginId} disabled.");
+            return Outcome.Success;
+        }
+        finally
+        {
+            worker.Gate.Release();
+        }
+    }
+
+    public async Task<Outcome> EnableAsync(string pluginId, CancellationToken ct)
+    {
+        var saved = await PersistAsync(pluginId, enabled: true, ct).ConfigureAwait(false);
+        if (!saved.Ok)
+        {
+            return saved;
+        }
+
+        var worker = WorkerFor(pluginId);
+        await worker.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (worker.Status.State == PluginState.Disabled)
+            {
+                worker.Budget.Reset();
+                SetStatus(worker, PluginState.Discovered);
+            }
+
+            _pluginLogs.Write(pluginId, "host", "Enabled.");
+            _log.Write(LogLevel.Info, "plugins", $"{pluginId} enabled.");
+            return Outcome.Success;
+        }
+        finally
+        {
+            worker.Gate.Release();
+        }
+    }
+
     public Task StopAllAsync(CancellationToken ct)
     {
         List<string> ids;
@@ -234,36 +326,61 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         StatusChanged?.Invoke(this, status);
     }
 
-    private async Task<Outcome> StartAsync(Worker worker, CancellationToken ct)
+    private Task<Outcome> PersistAsync(string pluginId, bool enabled, CancellationToken ct)
     {
-        var pluginId = worker.Status.PluginId;
-        var manifest = _catalog.GetManifest(pluginId);
+        if (_catalog.All(PackageKind.Plugin).All(package => package.Id != pluginId))
+        {
+            return Task.FromResult(Outcome.Fail(CoreErrorCode.NotFound, $"No plugin package '{pluginId}'."));
+        }
+
+        return Enablement is { } enablement
+            ? enablement.SetAsync(pluginId, enabled, ct)
+            : Task.FromResult(Outcome.Fail(CoreErrorCode.InvalidState, "The enabled switch is not stored by this host."));
+    }
+
+    /// <summary>
+    /// Why the plugin may not start (I16): the status it then has, its problems and the error to return; null when it may.
+    /// </summary>
+    private (PluginState State, IReadOnlyList<CoreError> Problems, CoreError Error)? Blocked(string pluginId, PluginManifest? manifest)
+    {
         if (manifest is null)
         {
             var record = _catalog.All(PackageKind.Plugin).FirstOrDefault(package => package.Id == pluginId);
-            if (record is null)
-            {
-                SetStatus(worker, PluginState.Discovered);
-                return Outcome.Fail(CoreErrorCode.NotFound, $"No plugin package '{pluginId}'.");
-            }
-
-            SetStatus(worker, PluginState.Invalid, problems: record.Problems);
-            return Outcome.Fail(CoreErrorCode.PackageInvalid, string.Join(" ", record.Problems.Select(problem => problem.Detail)));
+            return record is null
+                ? (PluginState.Discovered, [], new CoreError(CoreErrorCode.NotFound, $"No plugin package '{pluginId}'.", false))
+                : (PluginState.Invalid, record.Problems,
+                    new CoreError(CoreErrorCode.PackageInvalid, string.Join(" ", record.Problems.Select(problem => problem.Detail)), false));
         }
 
         if (!manifest.HostApi.IsSatisfiedBy(ProtocolInfo.HostApiVersion))
         {
             var problem = new CoreError(CoreErrorCode.HostApiMismatch,
                 $"{pluginId} needs host API {manifest.HostApi}; this host provides {ProtocolInfo.HostApiVersion}.", false);
-            SetStatus(worker, PluginState.Incompatible, problems: [problem]);
-            return new Outcome(problem);
+            return (PluginState.Incompatible, [problem], problem);
         }
 
         if (!manifest.Supports(_mode))
         {
             var problem = new CoreError(CoreErrorCode.ModeUnsupported, $"{pluginId} does not support {_mode} mode.", false);
-            SetStatus(worker, PluginState.Incompatible, problems: [problem]);
-            return new Outcome(problem);
+            return (PluginState.Incompatible, [problem], problem);
+        }
+
+        if (Enablement?.IsEnabled(pluginId) == false)
+        {
+            return (PluginState.Disabled, [], new CoreError(CoreErrorCode.PluginDisabled, $"{pluginId} is disabled.", false));
+        }
+
+        return null;
+    }
+
+    private async Task<Outcome> StartAsync(Worker worker, CancellationToken ct)
+    {
+        var pluginId = worker.Status.PluginId;
+        var manifest = _catalog.GetManifest(pluginId);
+        if (Blocked(pluginId, manifest) is { } blocked)
+        {
+            SetStatus(worker, blocked.State, problems: blocked.Problems);
+            return new Outcome(blocked.Error);
         }
 
         if (_disposing.IsCancellationRequested)
@@ -275,7 +392,7 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         using var starting = CancellationTokenSource.CreateLinkedTokenSource(ct, _disposing.Token);
         try
         {
-            return await LaunchAsync(worker, manifest, starting.Token).ConfigureAwait(false);
+            return await LaunchAsync(worker, manifest!, starting.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (starting.IsCancellationRequested)
         {
@@ -588,7 +705,17 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         var pluginId = worker.Status.PluginId;
         _pluginLogs.Write(pluginId, "host", $"Faulted ({reason}): {detail}");
         _log.Write(LogLevel.Warning, "plugins", $"{pluginId} faulted ({reason}): {detail}");
-        var backoff = worker.Budget.RecordFault(_clock());
+        var now = _clock();
+        lock (worker.History)
+        {
+            worker.History.Add(new PluginFault(now, reason, detail));
+            if (worker.History.Count > MaxFaultHistory)
+            {
+                worker.History.RemoveAt(0);
+            }
+        }
+
+        var backoff = worker.Budget.RecordFault(now);
         if (backoff is null)
         {
             var spent = $"{_policy.MaxRestarts + 1} faults within {_policy.WindowSeconds} s; the last was {reason}: {detail}";
@@ -721,6 +848,9 @@ public sealed class PluginSupervisor : IPluginSupervisor, IAsyncDisposable
         public PluginStatus Status { get; set; } = status;
 
         public RestartBudget Budget { get; } = budget;
+
+        /// <summary>The last <see cref="MaxFaultHistory"/> faults, oldest first. Lock it to read or write.</summary>
+        public List<PluginFault> History { get; } = [];
 
         public CancellationTokenSource? PendingRestart { get; set; }
 
