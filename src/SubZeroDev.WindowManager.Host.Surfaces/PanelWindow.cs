@@ -12,15 +12,19 @@ using SubZeroDev.WindowManager.Protocol;
 
 namespace SubZeroDev.WindowManager.Host.Surfaces;
 
+/// <summary>How a subclassed window is held in the z-order.</summary>
+internal enum ZPin { None, Desktop, Floor }
+
 /// <summary>
 /// One panel: a borderless WinUI window that never appears in Alt+Tab, holding a <see cref="WmPanel"/>.
-/// It is always on top, except a <c>desktop</c> panel, which is pinned to the bottom of the z-order
-/// (every z-order change is turned into "bottom"). The surface manager decides where it goes; this class
-/// only shows it there.
+/// It is always on top, except a <c>desktop</c> panel, which is pinned to the bottom of the z-order: every
+/// z-order change it is asked to make is turned into "bottom", or, when the desktop floor is up, "just above
+/// the floor". The surface manager decides where it goes; this class only shows it there.
 /// </summary>
 public sealed unsafe class PanelWindow
 {
-    private static readonly ConcurrentDictionary<nint, (nint Previous, bool Pinned)> Subclassed = new();
+    private static readonly ConcurrentDictionary<nint, (nint Previous, ZPin Pin)> Subclassed = new();
+    private static nint[] _floors = [];
 
     private readonly Window _window;
     private readonly OverlappedPresenter _presenter;
@@ -53,7 +57,27 @@ public sealed unsafe class PanelWindow
         Handle = WinRT.Interop.WindowNative.GetWindowHandle(_window);
         // A tool window is left out of window lists, so a panel never lists itself or takes "active" from the app.
         SetWindowLongPtrW(Handle, GwlExStyle, GetWindowLongPtrW(Handle, GwlExStyle) | WsExToolWindow);
-        Subclass(pinned: definition.Behaviour == PanelBehaviour.Desktop);
+        Subclass(Handle, definition.Behaviour == PanelBehaviour.Desktop ? ZPin.Desktop : ZPin.None);
+    }
+
+    /// <summary>
+    /// The desktop floor's windows, which desktop panels sit just above. Setting them sends every desktop panel
+    /// back down to its place. Empty when there is no floor (coexistence mode).
+    /// </summary>
+    internal static IReadOnlyList<nint> Floors
+    {
+        get => Volatile.Read(ref _floors);
+        set
+        {
+            Volatile.Write(ref _floors, [.. value]);
+            foreach (var (hwnd, subclass) in Subclassed)
+            {
+                if (subclass.Pin == ZPin.Desktop)
+                {
+                    SetWindowPos(hwnd, HwndBottom, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+                }
+            }
+        }
     }
 
     private const int GwlExStyle = -20;
@@ -66,6 +90,8 @@ public sealed unsafe class PanelWindow
     private const uint SwpNoMove = 0x2;
     private const uint SwpNoZOrder = 0x4;
     private const uint SwpNoActivate = 0x10;
+    private const uint GwHwndFirst = 0;
+    private const uint GwHwndNext = 2;
     private static readonly nint HwndBottom = 1;
     private static readonly nint HwndTopmost = -1;
     private static readonly nint HwndNoTopmost = -2;
@@ -174,18 +200,46 @@ public sealed unsafe class PanelWindow
 
     /// <summary>
     /// Takes over the window procedure so the window can be any size (Windows otherwise keeps it a few pixels
-    /// tall at least, too thick for an auto-hide strip). A pinned window is also sent to the bottom and kept
-    /// there by rewriting every z-order change it is asked to make.
+    /// tall at least, too thick for an auto-hide strip). A pinned window is also sent to its place and kept
+    /// there by rewriting every z-order change it is asked to make: a floor to the very bottom, a desktop panel
+    /// to the bottom or just above the floor.
     /// </summary>
-    private void Subclass(bool pinned)
+    internal static void Subclass(nint handle, ZPin pin)
     {
         delegate* unmanaged<nint, uint, nuint, nint, nint> procedure = &PanelProcedure;
-        Subclassed[Handle] = (GetWindowLongPtrW(Handle, GwlpWndProc), pinned);
-        SetWindowLongPtrW(Handle, GwlpWndProc, (nint)procedure);
-        if (pinned)
+        Subclassed[handle] = (GetWindowLongPtrW(handle, GwlpWndProc), pin);
+        SetWindowLongPtrW(handle, GwlpWndProc, (nint)procedure);
+        if (pin != ZPin.None)
         {
-            SetWindowPos(Handle, HwndBottom, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+            SetWindowPos(handle, HwndBottom, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
         }
+    }
+
+    /// <summary>
+    /// The window a desktop panel goes just below, so it lands directly above the highest floor window:
+    /// <see cref="HwndBottom"/> with no floor, the panel itself when it is there already, 0 (the top) when
+    /// nothing is above the floor.
+    /// </summary>
+    private static nint AboveFloor(nint panel)
+    {
+        var floors = Volatile.Read(ref _floors);
+        if (floors.Length == 0)
+        {
+            return HwndBottom;
+        }
+
+        nint previous = 0;
+        for (var window = GetWindow(panel, GwHwndFirst); window != 0; window = GetWindow(window, GwHwndNext))
+        {
+            if (Array.IndexOf(floors, window) >= 0)
+            {
+                return previous;
+            }
+
+            previous = window;
+        }
+
+        return HwndBottom;
     }
 
     [UnmanagedCallersOnly]
@@ -199,9 +253,17 @@ public sealed unsafe class PanelWindow
         if (message == WmWindowPosChanging && lParam != 0)
         {
             var position = (WindowPos*)lParam;
-            if (subclass.Pinned && (position->Flags & SwpNoZOrder) == 0)
+            if (subclass.Pin != ZPin.None && (position->Flags & SwpNoZOrder) == 0)
             {
-                position->InsertAfter = HwndBottom;
+                var after = subclass.Pin == ZPin.Floor ? HwndBottom : AboveFloor(hwnd);
+                if (after == hwnd)
+                {
+                    position->Flags |= SwpNoZOrder;
+                }
+                else
+                {
+                    position->InsertAfter = after;
+                }
             }
 
             // The size asked for is the size given: nothing below may hold the window at a minimum height.
@@ -245,6 +307,9 @@ public sealed unsafe class PanelWindow
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(nint hwnd, nint insertAfter, int x, int y, int width, int height, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetWindow(nint hwnd, uint command);
 
     [DllImport("user32.dll")]
     private static extern nint CallWindowProcW(nint previous, nint hwnd, uint message, nuint wParam, nint lParam);

@@ -27,7 +27,16 @@ public sealed record PanelDefinition(
 public sealed record LayoutDocument(string Id, string DisplayName, IReadOnlyList<PanelDefinition> Panels);
 
 public sealed record PresetDocument(string Id, string DisplayName, string Layout, string Theme,
-    string? Palette, string? PaletteLight, string? PaletteDark, IReadOnlyList<string> AssetPacks);
+    string? Palette, string? PaletteLight, string? PaletteDark, IReadOnlyList<string> AssetPacks)
+{
+    /// <summary>The desktop's image in replacement mode, or null for the system wallpaper.</summary>
+    public PresetWallpaper? Wallpaper { get; init; }
+}
+
+public enum WallpaperFit { Fill, Fit, Stretch, Center }
+
+/// <summary>An asset-pack wallpaper (its relative path or file stem) and how it fills the monitor.</summary>
+public sealed record PresetWallpaper(string Image, WallpaperFit Fit);
 
 public sealed record RestartPolicy(int MaxRestarts, int WindowSeconds)
 {
@@ -233,9 +242,47 @@ public static partial class Documents
             problems.Add("assetPacks: must be an array.");
         }
 
+        PresetWallpaper? wallpaper = null;
+        switch (json["wallpaper"])
+        {
+            case JsonObject w:
+                var image = w["image"] is JsonValue iv && iv.TryGetValue<string>(out var i) && !string.IsNullOrWhiteSpace(i) ? i : null;
+                if (image is null)
+                {
+                    problems.Add("wallpaper.image: must be an asset-pack image id.");
+                }
+
+                var fit = WallpaperFit.Fill;
+                if (w["fit"] is not null && !(w["fit"] is JsonValue fv && fv.TryGetValue<string>(out var f) && TryParseFit(f, out fit)))
+                {
+                    problems.Add("wallpaper.fit: must be fill, fit, stretch or center.");
+                }
+
+                wallpaper = image is null ? null : new PresetWallpaper(image, fit);
+                break;
+            case null:
+                break;
+            default:
+                problems.Add("wallpaper: must be { image, fit }.");
+                break;
+        }
+
         return problems.Count > start
             ? null
-            : new PresetDocument(id!, DisplayName(json, id!), layout!, theme!, single, light, dark, packs);
+            : new PresetDocument(id!, DisplayName(json, id!), layout!, theme!, single, light, dark, packs) { Wallpaper = wallpaper };
+    }
+
+    public static bool TryParseFit(string value, out WallpaperFit fit)
+    {
+        fit = value switch
+        {
+            "fill" => WallpaperFit.Fill,
+            "fit" => WallpaperFit.Fit,
+            "stretch" => WallpaperFit.Stretch,
+            "center" => WallpaperFit.Center,
+            _ => (WallpaperFit)(-1),
+        };
+        return fit >= 0;
     }
 
     public static LayoutDocument? ParseLayout(JsonObject json, string expectedId, List<string> problems)

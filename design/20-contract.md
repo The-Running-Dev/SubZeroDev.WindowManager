@@ -203,7 +203,7 @@ Props per kind. Every kind also takes the common props `automationName: string` 
 | Text | `text: string`, `wrap: bool = false` |
 | Icon | `icon: IconRef`, `size: "small"\|"medium"\|"large" = "medium"` |
 | Image | `source: { "file": path } \| { "named": id }`, `fit: "contain"\|"cover" = "contain"` |
-| Button | `label?: string`, `icon?: IconRef`, `active: bool = false`, `attention: bool = false`, `badge?: string` |
+| Button | `label?: string`, `icon?: IconRef`, `active: bool = false`, `attention: bool = false`, `badge?: string`, `invokeOn: "click" \| "doubleClick" = "click"` (a double click or Enter acts, a single click only focuses) |
 | Toggle | `label?: string`, `icon?: IconRef`, `checked: bool` |
 | Stack | `orientation: "horizontal"\|"vertical"\|"panel" = "panel"` (`panel` follows the panel axis) |
 | List | `items: array of objects, each with a unique string "key"`, `orientation: as Stack`, `selection: "none"\|"single" = "none"`, `selectedKey?: string` |
@@ -393,7 +393,7 @@ The public names other plugins may depend on:
 | `subzerodev.launcher` | `launcher.open { mode?: "search"\|"run" }` (default hotkey `Ctrl+Alt+Space`; `run` takes a command line, as Win+R did), `launcher.close`, `applications.launch { exe?: string, aumid?: string, args?: string }` | `applications.index` (array of `{ key, name, exe?, aumid?, args? }`; `key` is the shortcut path, or `aumid:` and the AUMID) | `search` | `launcher` (panelItem: a button that opens `search`) |
 | `subzerodev.running-windows` | `windows.activate { hwnd }`, `windows.minimize { hwnd }` | `windows.running` (array of `{ key, hwnd, title, exe?, aumid?, monitorId, active, minimized }`) | none | `windows` (panelItem, multiInstance; settings: `scope: "allMonitors"\|"thisMonitor"`) |
 | `subzerodev.tray` | none | none (subscribes to `host.tray.icons`) | none | `tray` (panelItem: the notification area). `modes: ["replacement"]` |
-| `subzerodev.desktop-icons` | none | none | none | `icons` (gadget on the desktop layer: the user's and the public Desktop folders) |
+| `subzerodev.desktop-icons` | `desktop.open { path: string }` (`ShellExecute` with `open`) | none | none | `icons` (gadget on the desktop layer: the user's and the public Desktop folders) |
 | `subzerodev.session` | none | none | `menu` | `power` (panelItem: a button opening lock, sign out, restart, shut down and sleep) |
 | `subzerodev.indicators` | none | none | `volume`, `network`, `battery` | `volume`, `network`, `battery` (panelItem each; `battery` is hidden on machines without one) |
 

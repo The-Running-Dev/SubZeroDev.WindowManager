@@ -287,7 +287,7 @@ Acceptance:
 Out of scope: legacy Shell Service Objects (`ShellServiceObjectDelayLoad`); toast notifications and the notification centre; `ITaskbarList` progress and overlays.
 
 ## S20 — Desktop, wallpaper and icons
-Status: todo
+Status: done
 Delivers: In replacement mode Ben's desktop shows his preset's wallpaper and the icons from his Desktop folders, which open on double-click, and Win+D brings it forward.
 Touches: Host.Surfaces (the desktop surface, `host.desktop.show`); Host.Theming (preset `wallpaper`, asset-pack images); plugin `subzerodev.desktop-icons`
 Depends on: S18, S13

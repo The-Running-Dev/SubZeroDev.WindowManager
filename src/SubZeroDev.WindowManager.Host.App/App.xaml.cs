@@ -45,6 +45,9 @@ public sealed partial class App : Application
     private IAppBarService? _appBarService;
     private ShellRoleService? _shellRoles;
     private TrayHost? _trayHost;
+    private DesktopSurface? _desktop;
+    private ShowDesktop? _showDesktop;
+    private string? _hooked;
     private int _exiting;
 
     public App(HostOptions options)
@@ -116,7 +119,7 @@ public sealed partial class App : Application
         _guardian = GuardianLink.Start(_options, dispatcher, _log, settings.RestartPolicy);
         var log = _log;
         var hookDirectory = Environment.GetEnvironmentVariable(TestHook.Variable);
-        var hooked = string.IsNullOrWhiteSpace(hookDirectory) ? null : hookDirectory;
+        var hooked = _hooked = string.IsNullOrWhiteSpace(hookDirectory) ? null : hookDirectory;
         using var self = Process.GetCurrentProcess();
         Recoverer.Recover(_locations.DataRoot, self.SessionId, "startup", hostExited: false, exitCode: null,
             line => log.Write(LogLevel.Warning, "recovery", line), Reverter.ForHook(hooked));
@@ -164,6 +167,7 @@ public sealed partial class App : Application
             Methods.SettingsSave => settingsService.ServeWorkerAsync(pluginId, request),
             _ => _router.ServeWorkerAsync(pluginId, request),
         };
+        _showDesktop = new ShowDesktop(hooked);
         AddBuiltIns(_router, foreground, dispatcher);
         _supervisor.StatusChanged += (_, _) => dispatcher.TryEnqueue(RefreshSettingsWindow);
         _catalog.Changed += (_, _) => dispatcher.TryEnqueue(RefreshSettingsWindow);
@@ -198,6 +202,14 @@ public sealed partial class App : Application
             new ElementActions(_router, _contributions), foreground,
             new IconResolver(new IconService(), () => _theme!.IconChain, (key, size) => _trayHost?.Image(key, size)));
         _surfaces.PanelCreated += (_, panel) => panel.Panel.ContextFlyout = PanelMenu();
+        if (replacement)
+        {
+            // The desktop goes down first so the panels open above it; a wallpaper change in Windows redraws it.
+            _desktop = new DesktopSurface(monitors, ResolveWallpaper, _log);
+            _desktop.Apply();
+            _shellEvents.DisplayChanged += (_, _) => dispatcher.TryEnqueue(() => _desktop?.Refresh());
+        }
+
         _layoutId = preset.Layout;
         await ApplyLayoutAsync();
 
@@ -241,7 +253,7 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost };
+                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost, Desktop = _desktop };
             _testHook.Start();
         }
     }
@@ -293,6 +305,12 @@ public sealed partial class App : Application
             // The owner places its menu at the anchor; the cursor stands in when the caller gives none.
             var (x, y) = invoke.Point ?? TrayHost.CursorPosition();
             return InvokeTrayAsync(tray, invoke.Key, invoke.Action, x, y, ct);
+        });
+        router.AddBuiltIn("host.desktop.show", "Show desktop", async (_, _) =>
+        {
+            var (count, restored) = await Task.Run(_showDesktop!.Toggle);
+            _log?.Write(LogLevel.Info, "desktop", $"Show desktop {(restored ? "restored" : "minimised")} {count} window(s).");
+            return CommandOutcome.Success(new CommandResult(null));
         });
         router.AddBuiltIn("host.files.open", "Open folder", (args, _) =>
         {
@@ -451,6 +469,31 @@ public sealed partial class App : Application
         });
     }
 
+    /// <summary>
+    /// The preset's wallpaper, found by id in the asset pack chain or as a path; without one, or when it cannot be
+    /// found, what Windows is set to.
+    /// </summary>
+    private WallpaperChoice ResolveWallpaper()
+    {
+        if (_preset?.Wallpaper is { } wallpaper)
+        {
+            if (_theme?.IconChain.FindWallpaper(wallpaper.Image) is { } image)
+            {
+                return new WallpaperChoice(image.Path, wallpaper.Fit, "preset");
+            }
+
+            if (Path.IsPathFullyQualified(wallpaper.Image) && File.Exists(wallpaper.Image))
+            {
+                return new WallpaperChoice(wallpaper.Image, wallpaper.Fit, "preset");
+            }
+
+            _log?.Write(LogLevel.Warning, "desktop", $"Wallpaper '{wallpaper.Image}' was not found; using the system wallpaper.");
+        }
+
+        var (system, fit) = SystemWallpaper.Read(_hooked);
+        return new WallpaperChoice(system, fit, "system");
+    }
+
     private Task ApplyLayoutAsync() =>
         _surfaces!.ApplyLayoutAsync(LoadLayout(_config!, _layoutId, _log!), CancellationToken.None);
 
@@ -555,6 +598,7 @@ public sealed partial class App : Application
             await _surfaces.ShutdownAsync(CancellationToken.None);
         }
 
+        _desktop?.Close();
         _trayHost?.Dispose();
         (_appBarService as IDisposable)?.Dispose();
         _shellRoles?.Dispose();

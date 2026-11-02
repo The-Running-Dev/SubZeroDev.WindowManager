@@ -234,6 +234,8 @@ public sealed partial class App
     private async Task<bool> ApplyAppearanceLockedAsync()
     {
         var result = await _theme!.ApplyAsync(AppearanceOf(_preset!), CancellationToken.None);
+        // The preset or its asset packs may name another wallpaper.
+        _desktop?.Refresh();
         if (result.Applied)
         {
             return true;

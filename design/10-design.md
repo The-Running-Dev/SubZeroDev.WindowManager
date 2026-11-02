@@ -44,7 +44,7 @@ Identity conventions: plugins, themes, palettes, asset packs, layouts and preset
 **Asset pack.** `id`, `version`, `displayName`.
 - `icons`: map of named icon id (such as `action.search` or `app.launcher`) → image path.
 - `appIcons`: list of `{ match: { exe? | aumid? }, image }`, overrides for application icons.
-- `wallpapers`: list of image paths. Carried but unused in the first release.
+- `wallpapers`: list of image paths (PNG, JPEG or BMP). A preset's `wallpaper` names one by path or file name; in replacement mode the desktop draws it.
 
 Images are PNG or SVG. Paths are relative to the package; a path that escapes the package root is rejected.
 

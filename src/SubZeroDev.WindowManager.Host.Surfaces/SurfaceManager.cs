@@ -493,6 +493,16 @@ public sealed class SurfaceManager : ISurfaceManager
                 window.SetTopmost(false);
             }
 
+            if (definition.Placement.Float is { } box)
+            {
+                // A floating panel sits where it was put; it neither reserves space nor collapses to an edge.
+                window.Home = FloatRect(monitor, box);
+                window.MoveTo(window.Home);
+                PanelCreated?.Invoke(this, window);
+                window.Show();
+                continue;
+            }
+
             window.Home = OverlayRect(monitor.WorkArea, edge, window.ThicknessPx);
             if (definition.Behaviour == PanelBehaviour.Reserve)
             {
@@ -640,7 +650,7 @@ public sealed class SurfaceManager : ISurfaceManager
         var now = DateTime.UtcNow;
         var foreground = GetForegroundWindow();
         var popupOpen = _popups.Values.Any(popup => popup.IsOpen);
-        foreach (var window in _panels.Where(window => window.Definition.Behaviour == PanelBehaviour.AutoHide))
+        foreach (var window in _panels.Where(window => window.Definition.Behaviour == PanelBehaviour.AutoHide && window.Definition.Placement.Float is null))
         {
             var area = window.Collapsed ? OverlayRect(window.Monitor.WorkArea, window.Edge, AutoHideStripPx) : window.Home;
             var inside = cursor.X >= area.Left && cursor.X < area.Right && cursor.Y >= area.Top && cursor.Y < area.Bottom;
@@ -845,10 +855,23 @@ public sealed class SurfaceManager : ISurfaceManager
         }
     }
 
+    /// <summary>The most specific style the theme has: float or desktop first, then the edge, then <c>Wm.Panel</c>.</summary>
     private static void Style(PanelWindow window)
     {
         var edgeKey = "Wm.Panel." + char.ToUpperInvariant(window.Panel.Edge[0]) + window.Panel.Edge[1..];
-        window.Panel.Style = (Lookup(edgeKey) ?? Lookup("Wm.Panel")) as Style;
+        var placementKey = window.Definition.Placement.Float is not null ? "Wm.Panel.Float"
+            : window.Definition.Behaviour == PanelBehaviour.Desktop ? "Wm.Panel.Desktop"
+            : null;
+        window.Panel.Style = ((placementKey is null ? null : Lookup(placementKey)) ?? Lookup(edgeKey) ?? Lookup("Wm.Panel")) as Style;
+    }
+
+    /// <summary>A <c>float</c> placement: DIPs from the work area's top-left corner, scaled to the monitor.</summary>
+    internal static RectInt FloatRect(MonitorInfo monitor, FloatRect box)
+    {
+        int Px(double dip) => (int)Math.Round(dip * monitor.Dpi / 96.0, MidpointRounding.AwayFromZero);
+        var left = monitor.WorkArea.Left + Px(box.X);
+        var top = monitor.WorkArea.Top + Px(box.Y);
+        return new RectInt(left, top, left + Math.Max(1, Px(box.Width)), top + Math.Max(1, Px(box.Height)));
     }
 
     private static object? Lookup(string key) =>

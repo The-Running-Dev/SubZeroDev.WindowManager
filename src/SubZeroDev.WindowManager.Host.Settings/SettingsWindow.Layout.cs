@@ -170,7 +170,7 @@ public sealed partial class SettingsWindow
             _layoutInstances.SelectedItem = _layoutInstances.Items.OfType<ListViewItem>().FirstOrDefault(item => (string)item.Tag == instance?.ToString("D"));
 
             var items = _services.Catalog.All(PackageKind.Plugin).OrderBy(record => record.Id, StringComparer.Ordinal)
-                .SelectMany(record => _services.Catalog.GetManifest(record.Id)?.Contributions.Where(c => c.Kind == "panelItem")
+                .SelectMany(record => _services.Catalog.GetManifest(record.Id)?.Contributions.Where(c => c.Kind is "panelItem" or "gadget")
                     .Select(c => (Id: $"{record.Id}/{c.Id}", Label: $"{c.DisplayName} ({record.Id})")) ?? [])
                 .ToList();
             Fill(_layoutContribution, items, (_layoutContribution.SelectedItem as ComboBoxItem)?.Tag as string ?? items.FirstOrDefault().Id);

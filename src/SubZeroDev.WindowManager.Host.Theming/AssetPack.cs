@@ -15,6 +15,9 @@ public sealed record AssetPack(
     string Id, string? RootPath, AssetPackOrigin Origin, PackageHealth Health,
     IReadOnlyDictionary<string, string> Icons, IReadOnlyList<AppIconRule> AppIcons, IReadOnlyList<ThemeError> Problems)
 {
+    /// <summary>The pack's <c>wallpapers</c>, in order: each relative path as written, and the full path.</summary>
+    public IReadOnlyList<KeyValuePair<string, string>> Wallpapers { get; init; } = [];
+
     /// <summary>How an icon from this pack is reported: <c>pack:id</c>, <c>theme:id</c> or <c>host:id</c>.</summary>
     public string Label => Origin switch
     {
@@ -68,6 +71,27 @@ public sealed class AssetPackChain(IReadOnlyList<AssetPack> packs)
         return null;
     }
 
+    /// <summary>
+    /// The first wallpaper whose relative path (either slash) or file stem is <paramref name="id"/>, ignoring case.
+    /// </summary>
+    public AssetPackImage? FindWallpaper(string id)
+    {
+        var wanted = id.Replace('\\', '/');
+        foreach (var pack in Packs.Where(p => p.Health == PackageHealth.Valid))
+        {
+            foreach (var (relative, path) in pack.Wallpapers)
+            {
+                if (string.Equals(relative.Replace('\\', '/'), wanted, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(Path.GetFileNameWithoutExtension(relative), wanted, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new AssetPackImage(path, pack);
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static bool Matches(AppIconRule rule, string? exePath, string? aumid)
     {
         if (rule.Aumid is not null)
@@ -98,6 +122,7 @@ public static class AssetPackReader
     public const string FileName = "assetpack.json";
 
     private static readonly string[] ImageExtensions = [".png", ".svg"];
+    private static readonly string[] WallpaperExtensions = [".png", ".jpg", ".jpeg", ".bmp"];
 
     /// <summary>The folder holding a pack: inside the theme first, then the data root, then the built-in content.</summary>
     public static string? Locate(Locations locations, string id, string? themeRoot = null)
@@ -159,8 +184,9 @@ public static class AssetPackReader
         var escaped = false;
         var fullRoot = Path.GetFullPath(root) + Path.DirectorySeparatorChar;
 
-        string? Image(JsonNode? node, string key)
+        string? Image(JsonNode? node, string key, string[]? extensions = null)
         {
+            extensions ??= ImageExtensions;
             if (node is not JsonValue value || !value.TryGetValue<string>(out var relative) || relative.Length == 0)
             {
                 problems.Add(new ThemeError(ThemeErrorCode.AssetMissing, metadataPath, key, "An image must be a relative path."));
@@ -175,9 +201,10 @@ public static class AssetPackReader
                 return null;
             }
 
-            if (!ImageExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+            if (!extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
             {
-                problems.Add(new ThemeError(ThemeErrorCode.AssetMissing, path, key, "Images must be PNG or SVG."));
+                problems.Add(new ThemeError(ThemeErrorCode.AssetMissing, path, key,
+                    extensions == ImageExtensions ? "Images must be PNG or SVG." : "Wallpapers must be PNG, JPEG or BMP."));
                 return null;
             }
 
@@ -220,8 +247,17 @@ public static class AssetPackReader
             }
         }
 
+        var wallpapers = new List<KeyValuePair<string, string>>();
+        foreach (var entry in (metadata["wallpapers"] as JsonArray) ?? [])
+        {
+            if (Image(entry, "wallpapers", WallpaperExtensions) is { } path)
+            {
+                wallpapers.Add(KeyValuePair.Create(Text(entry)!, path));
+            }
+        }
+
         var health = escaped ? PackageHealth.Invalid : PackageHealth.Valid;
-        return new AssetPack(id, root, origin, health, icons, appIcons, problems);
+        return new AssetPack(id, root, origin, health, icons, appIcons, problems) { Wallpapers = wallpapers };
     }
 
     private static string? Text(JsonNode? node) =>

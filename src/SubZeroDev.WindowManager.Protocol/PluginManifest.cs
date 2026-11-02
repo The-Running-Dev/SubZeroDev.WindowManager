@@ -133,9 +133,9 @@ public static partial class PluginManifestReader
             {
                 var contributionId = Text(item, "id");
                 var kind = Text(item, "kind");
-                if (kind != "panelItem")
+                if (kind is not ("panelItem" or "gadget"))
                 {
-                    problems.Add($"contribution '{contributionId}' has kind '{kind}'; only panelItem is defined.");
+                    problems.Add($"contribution '{contributionId}' has kind '{kind}'; only panelItem and gadget are defined.");
                 }
 
                 var multiInstance = false;

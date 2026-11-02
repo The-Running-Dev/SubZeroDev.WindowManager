@@ -92,6 +92,9 @@ internal sealed class TestHook
     /// <summary>The notification area in replacement mode; null otherwise.</summary>
     public TrayHost? Tray { get; init; }
 
+    /// <summary>The desktop and its wallpaper in replacement mode; null otherwise.</summary>
+    public DesktopSurface? Desktop { get; init; }
+
     public void Start()
     {
         Directory.CreateDirectory(_directory);
@@ -338,6 +341,8 @@ internal sealed class TestHook
     private JsonObject Snapshot()
     {
         var panels = new JsonArray();
+        var z = DesktopSurface.ZOrder();
+        int? Z(nint handle) => z.TryGetValue(handle, out var index) ? index : null;
         // Ready once every template has been applied, so tests never read a half-built tree.
         var ready = _surfaces.Panels.Count > 0 || _surfaces.LayoutApplied;
         foreach (var window in _surfaces.Panels)
@@ -368,6 +373,7 @@ internal sealed class TestHook
                     : null,
                 ["id"] = window.Definition.Id.ToString(),
                 ["handle"] = (long)window.Handle,
+                ["z"] = Z(window.Handle),
                 ["monitor"] = window.Monitor.StableId,
                 ["primary"] = window.Monitor.IsPrimary,
                 ["topmost"] = window.IsTopmost,
@@ -417,6 +423,19 @@ internal sealed class TestHook
                 ["window"] = (long)Tray.Window,
                 ["changedAt"] = Tray.LastChanged?.ToUnixTimeMilliseconds(),
                 ["icons"] = TrayFeed.Snapshot(Tray.Icons),
+            },
+            ["desktop"] = Desktop is null ? null : new JsonObject
+            {
+                ["source"] = Desktop.Choice?.Source,
+                ["windows"] = new JsonArray(Desktop.Windows.Select(w => (JsonNode?)new JsonObject
+                {
+                    ["monitor"] = w.Monitor.StableId,
+                    ["handle"] = (long)w.Handle,
+                    ["z"] = Z(w.Handle),
+                    ["bounds"] = Rect(w.Bounds),
+                    ["image"] = w.ImagePath,
+                    ["fit"] = w.Fit.ToString(),
+                }).ToArray()),
             },
             ["monitors"] = new JsonArray(_monitors.Monitors.Select(monitor => (JsonNode?)new JsonObject
             {
