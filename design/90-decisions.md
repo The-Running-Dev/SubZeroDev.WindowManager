@@ -13,6 +13,22 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S17: run as the Windows shell
+- **Context:** replacement mode starts with being the shell at sign-in and never stranding the user without one (I22, I23). Tests must never touch the real `Winlogon\Shell` value or start and stop the real Explorer.
+- **Chosen:**
+  - **Registration:** the per-user `Winlogon\Shell` value, written by the guardian's `--shell on|off|status`. The previous value, or its absence, goes to `shell.json` before anything is written, so `--shell off` restores it exactly.
+  - **Overrides:** a Custom User Interface policy value (HKCU or HKLM) or a Shell Launcher configuration makes `--shell on` exit 5 without writing. Writing a value that Windows then ignores would look like success.
+  - **Test isolation:** `SUBZERODEV_WM_REGISTRY_ROOT` names an HKCU subkey whose `HKCU` and `HKLM` subkeys stand in for the hives. Under the test hook with no root, a fixed test key is used, so a test can never reach the real value. Shift, another shell owner, Explorer starts and exit requests go through hook files and `shell-actions.log`.
+  - **Explorer fallback:** the guardian starts Explorer on Shift at sign-in, on a spent restart budget, when the host does not start, and after `host.shell.restoreExplorer`.
+  - **Shell value swap:** Explorer started while the value names the app may not take the shell role. So the guardian sets the value to `explorer.exe` until Explorer's shell window appears (up to 10 s), then puts the app's value back. A crash in between leaves Explorer registered, the safe direction.
+  - **Taking over:** `--take-over` posts Explorer's own exit message to `Shell_TrayWnd`, so Windows does not restart it. Without it, another shell owner gives exit 6.
+  - **Plugins:** the mode reaches every worker. `requiresExplorer: true` or `modes` without `replacement` makes a plugin `Incompatible`.
+- **Rejected:**
+  - **HKLM `Winlogon\Shell` or Shell Launcher:** both need elevation and affect every user.
+  - **Killing explorer.exe for `--take-over`:** Windows restarts a killed Explorer, and the user loses its state.
+  - **Leaving the shell value naming the app while Explorer starts:** Explorer may open only a folder window, leaving no taskbar or Start.
+- **Known gap:** whether build 26200 honours the per-user value is the manual check S17.7. If it does not, the fallback in open question 6 becomes a decision entry.
+
 ## 2026-11-02 — S16: performance budgets
 - **Context:** the open question "performance budgets" waited for a working prototype. S16 measures one and sets budgets from it, so a later change cannot make startup, idle cost or reaction worse without a red check.
 - **Chosen:**

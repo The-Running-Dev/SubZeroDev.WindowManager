@@ -21,13 +21,15 @@ public sealed record SettingsServices(
     Func<string> ActivePreset,
     Func<string, CancellationToken, Task<Outcome>> ApplyPreset,
     Func<Task> InstanceSaved,
-    string PluginDataRoot);
+    string PluginDataRoot,
+    Func<bool>? ShellRegistered = null,
+    Func<bool, CancellationToken, Task<Outcome>>? SetShell = null);
 
 /// <summary>
 /// <c>host.settings.open</c>: one window with a Plugins page (every plugin package with its version, source,
 /// state and problems; installing a package and removing one; the selected one's switches, instance settings,
 /// recent faults and log tail), a Layout page (see <c>SettingsWindow.Layout.cs</c>) and an Appearance page
-/// (the active preset). Closing hides it; it lives until <see cref="Close"/>. Every control
+/// (the active preset, and the "Use as my shell" switch). Closing hides it; it lives until <see cref="Close"/>. Every control
 /// has an automation name and id and is reachable with Tab. Call on the UI thread.
 /// </summary>
 public sealed partial class SettingsWindow
@@ -64,6 +66,8 @@ public sealed partial class SettingsWindow
     private IReadOnlyList<string> _logLines = [];
     private bool _closeRequested;
     private bool _refreshingPresets;
+    private bool _refreshingShell;
+    private readonly ToggleSwitch _useAsShell = new() { Header = "Use as my shell", OnContent = "This app is your shell from the next sign-in", OffContent = "Explorer is your shell" };
 
     public SettingsWindow(SettingsServices services)
     {
@@ -146,7 +150,21 @@ public sealed partial class SettingsWindow
                 Report(await _services.ApplyPreset(presetId, CancellationToken.None), $"Preset {presetId} applied.");
             }
         };
-        _appearancePage = new StackPanel { Spacing = 12, Padding = new Thickness(16), Children = { _presets } };
+        Name(_useAsShell, "Use as my shell", "Appearance.UseAsShell");
+        _useAsShell.Toggled += async (_, _) =>
+        {
+            if (_refreshingShell || _services.SetShell is null)
+            {
+                return;
+            }
+
+            var on = _useAsShell.IsOn;
+            Report(await _services.SetShell(on, CancellationToken.None), on
+                ? "Registered as your shell. Sign out and in to use it; hold Shift while signing in to get Explorer instead."
+                : "Explorer is your shell again from the next sign-in.");
+            RefreshShell();
+        };
+        _appearancePage = new StackPanel { Spacing = 12, Padding = new Thickness(16), Children = { _presets, Heading("Shell"), _useAsShell } };
 
         _pluginsItem = new NavigationViewItem { Content = "Plugins", Tag = PluginsPage, Icon = new SymbolIcon(Symbol.AllApps) };
         Name(_pluginsItem, "Plugins page", "Settings.Nav.Plugins");
@@ -227,6 +245,7 @@ public sealed partial class SettingsWindow
         RefreshPluginList();
         RefreshStatus();
         RefreshPresets();
+        RefreshShell();
         RefreshLayout();
     }
 
@@ -548,6 +567,20 @@ public sealed partial class SettingsWindow
 
         _logLines = _services.Logs.Tail(pluginId);
         _log.Text = string.Join("\r", _logLines);
+    }
+
+    private void RefreshShell()
+    {
+        _refreshingShell = true;
+        try
+        {
+            _useAsShell.IsEnabled = _services.SetShell is not null;
+            _useAsShell.IsOn = _services.ShellRegistered?.Invoke() ?? false;
+        }
+        finally
+        {
+            _refreshingShell = false;
+        }
     }
 
     private void RefreshPresets()

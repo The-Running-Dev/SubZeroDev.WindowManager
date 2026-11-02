@@ -17,6 +17,9 @@ public sealed record PluginManifest(
 {
     public bool Supports(HostMode mode) => Modes.Contains(mode);
 
+    /// <summary><c>requiresExplorer</c>: the plugin needs Explorer running, so it cannot load in replacement mode.</summary>
+    public bool RequiresExplorer => Raw["requiresExplorer"] is JsonValue value && value.TryGetValue<bool>(out var requires) && requires;
+
     /// <summary>The <c>commands</c> the plugin provides, in manifest order.</summary>
     public IReadOnlyList<CommandDeclaration> Commands =>
         [.. (Raw["commands"] as JsonArray ?? []).OfType<JsonObject>().Select(command => new CommandDeclaration(

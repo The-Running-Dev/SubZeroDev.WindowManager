@@ -27,6 +27,10 @@ public enum CoreErrorCode
     Undeclared,
     CommandFailed,
     PluginDisabled,
+    ShellRoleTaken,
+    ShellOverridden,
+    SessionCommandRefused,
+    NotInReplacementMode,
 }
 
 public sealed record CoreError(CoreErrorCode Code, string Detail, bool Retryable);

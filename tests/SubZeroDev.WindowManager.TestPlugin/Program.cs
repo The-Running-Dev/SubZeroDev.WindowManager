@@ -25,7 +25,7 @@ namespace SubZeroDev.WindowManager.TestPlugin;
 /// <c>MigrateSettingsAsync</c>. All three show "ok".
 /// <c>fixture-windows</c> and <c>fixture-fullscreen</c> are not plugins at all: see <see cref="Fixture"/>.
 /// Every scenario appends "created &lt;instance&gt;" and "destroyed &lt;instance&gt;" to <c>instances.log</c> in its
-/// data folder as instances come and go.
+/// data folder as instances come and go, and "&lt;coexistence|replacement&gt;" to <c>mode.log</c> when it starts.
 /// </summary>
 public static class Program
 {
@@ -65,6 +65,7 @@ public sealed class ProbePlugin : Plugin
     {
         Program.DataDirectory = Context.DataDirectory;
         Directory.CreateDirectory(Context.DataDirectory);
+        Program.Append("mode.log", Context.Mode == HostMode.Replacement ? "replacement" : "coexistence");
         if (Program.Scenario == "subscriber")
         {
             _subscription = Context.Feeds.Subscribe("windows.running", (update, _) =>
