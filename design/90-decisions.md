@@ -13,6 +13,16 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S23: replacement mode qualified for daily use
+- **Context:** the brief's replacement-mode criterion is a complete daily desktop. The automated slices prove each piece with fakes; what remains is a measured start and a record of real daily use, without the tests touching the user's real shell, sign-in or devices.
+- **Chosen:**
+  - **Start budget:** `replacementStartupMs`, from the guardian's start with `--mode replacement` and no layout of its own to the moment every item of the built-in `subzerodev.shell` layout shows a live view. The test hook fakes Explorer, the shell roles and the indicator devices, so the measurement changes nothing on the machine. Ten runs on the reference machine gave a median of 1868 ms and a p90 of 1962 ms, so the reference budget is 2354 ms by the S16 rule. The CI budget starts at 3000 ms and is set from the `budgets` artifact of this slice's pull request, as S16's was. Its runs go to `replacement.json`, so the S16 measurements file is not overwritten.
+  - **Matrix:** `docs/replacement-mode.md` lists each brief criterion with its automated evidence and a column for the week of daily use, and records the expected state of the features Explorer hosts (Start, taskbar, toasts, notification centre, Quick Settings, Task View, Alt+Tab, Win+X, Snap layouts). The week's results, the ways back on a real sign-in (S23.3) and a cold restart with no `explorer.exe` (S23.4) are filled in by hand.
+- **Rejected:**
+  - **Timing a real sign-in in the tests:** it needs the real shell value and a sign-out, which tests must never do.
+  - **Marking the manual criteria as passed now:** they pass only after the week of use.
+- **Known gap:** the slice is done for everything that can be automated; S23.1, S23.3 and S23.4 stay open with the other manual checks until Ben records them.
+
 ## 2026-11-02 — S22: system indicators
 - **Context:** as the shell nothing shows volume, network or battery, and nothing lets the user change the volume. Tests must never change the user's real volume, mute state, network or settings.
 - **Chosen:**

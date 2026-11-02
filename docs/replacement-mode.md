@@ -84,6 +84,52 @@ Add the tray item to a panel with plugin `subzerodev.tray`. In coexistence mode 
 
 Flashing windows mark their running-windows button for attention until you activate them.
 
+## Qualified for daily use
+
+Each criterion the brief sets for replacement mode, with what the automated tests show and the result of a week of daily use on Ben's machine (Windows 11 Enterprise 26200). The week's column is filled in by hand; until then it says *pending*.
+
+| Criterion | Automated evidence | Week of daily use |
+| --- | --- | --- |
+| Signing in starts the app instead of Explorer | S17 registration and restore; S18 guardian start with faked shell roles | *pending* (S17.7, S23.4) |
+| Panels, the launcher and running windows | S1, S7 and S8 in both modes; the `subzerodev.shell` layout (S22.5) | *pending* |
+| Notification area with other applications' icons | S19 with a tray client of the tests' own | *pending* |
+| Desktop with wallpaper and icons | S20 with files of the tests' own | *pending* |
+| The Windows key | S21.1–S21.3 with marked keys | *pending* (S21.6) |
+| Lock, sign out, restart, shut down and sleep | S21.4–S21.5 with a recording fake | *pending* (S21.6) |
+| Volume, network and battery indicators | S22.1–S22.5 with fake devices | *pending* |
+| File Explorer windows on demand | S18 `host.files.open` with a faked start | *pending* (S18.7) |
+| No administrator rights to register or unregister | S17: per-user value only | *pending* |
+| Falls back to Explorer when the host cannot start | S17 restart budget and fallback with a faked Explorer | *pending* (S23.3) |
+| Sign-in to a usable desktop within budget | S23.2: `replacementStartupMs` in [budgets.md](budgets.md) | *pending* |
+
+### Features Explorer hosts
+
+These come from Explorer or processes it hosts, so in replacement mode they work, degrade or are missing. The expected result is recorded here; the week confirms or corrects it.
+
+| Feature | Expected | Instead |
+| --- | --- | --- |
+| Start menu and search | Missing; the Start menu stays closed | The launcher (Windows key, Ctrl+Esc) |
+| Taskbar | Missing | Panels with running windows |
+| Toast notifications | Missing: applications that rely on them show nothing | None in the first release |
+| Notification centre and calendar flyout | Missing | The clock item |
+| Quick Settings (Win+A) | Missing | The volume, network and battery items; Settings for the rest |
+| Task View and virtual desktops (Win+Tab, Win+Ctrl+arrows) | Missing | None in the first release |
+| Alt+Tab | Degrades to the classic switcher Windows keeps without Explorer | Running windows |
+| Win+X menu | Missing | The launcher and the power item |
+| Snap layouts flyout | Degrades: Win+arrow snapping stays, the layouts flyout may not appear | — |
+
+## Ways back to Explorer, checked on a real sign-in
+
+Each is exercised once with the app registered (S23.3). Until then each says *pending*.
+
+| Way back | Result |
+| --- | --- |
+| `--shell off`, then sign out and in | *pending* |
+| **Use as my shell** switch in Settings | *pending* |
+| `host.shell.restoreExplorer` | *pending* |
+| Shift held at sign-in | *pending* |
+| Automatic fallback after a host that cannot start (a broken install) | *pending* |
+
 ## Guardian exit codes
 
 | Code | Meaning |
@@ -103,3 +149,4 @@ Flashing windows mark their running-windows button for attention until you activ
 - Real tray apps and docked toolbars are checked by hand; the tests use a client of their own. Other app bars are not told (`ABN_POSCHANGED`) when the host's own panels change.
 - Your real wallpaper and Desktop folders are checked by hand; the tests use files of their own. Desktop icons stack in one column, with no wrapping grid, and cannot be dragged.
 - A window that changes its icon can be marked for attention as if it flashed, until you activate it.
+- The week of daily use, the ways back on a real sign-in and a cold restart without `explorer.exe` are recorded by hand in the tables above.

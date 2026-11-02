@@ -77,7 +77,7 @@ jobs:
           global-json-file: global.json
       - name: Build
         run: dotnet build SubZeroDev.WindowManager.slnx -c Release
-      - name: Startup and idle against the CI budgets
+      - name: Startup, idle and replacement startup against the CI budgets
         shell: pwsh
         env:
           SUBZERODEV_WM_BUDGETS: ci

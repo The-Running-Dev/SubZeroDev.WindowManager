@@ -163,7 +163,7 @@ public sealed class IndicatorsTests
         return run;
     }
 
-    private static JsonObject Fake(double level = 0.5, bool muted = false, string network = "connected", (int Percent, bool Charging)? battery = null) => new()
+    internal static JsonObject Fake(double level = 0.5, bool muted = false, string network = "connected", (int Percent, bool Charging)? battery = null) => new()
     {
         ["volume"] = new JsonObject { ["present"] = true, ["level"] = level, ["muted"] = muted },
         ["network"] = network,
@@ -173,7 +173,7 @@ public sealed class IndicatorsTests
     };
 
     /// <summary>Replaces the fake readings in one move, so the plugin never reads half a file.</summary>
-    private static void WriteFake(HostRun run, JsonObject fake)
+    internal static void WriteFake(HostRun run, JsonObject fake)
     {
         Directory.CreateDirectory(run.HookDirectory);
         var path = Path.Combine(run.HookDirectory, "indicators.json");

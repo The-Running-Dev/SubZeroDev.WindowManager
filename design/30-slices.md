@@ -328,7 +328,7 @@ Acceptance:
 Out of scope: choosing a Wi-Fi network inside the popup (Settings does it); Bluetooth; brightness.
 
 ## S23 — Replacement mode qualified for daily use
-Status: todo
+Status: done
 Delivers: Ben can sign in to the app as his only shell for daily work, with a checked list of what works, a measured time from sign-in to a usable desktop, and a tested way back.
 Touches: `docs/replacement-mode.md` (matrix and known gaps); the benchmark harness (sign-in budget); `90-decisions.md`
 Depends on: S16, S19, S20, S21, S22

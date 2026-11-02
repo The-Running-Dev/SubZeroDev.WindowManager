@@ -34,6 +34,8 @@ public sealed partial class BudgetTests
 
     internal static readonly string[] Interaction = ["hotkeyToPopupMs", "clickToForegroundMs"];
 
+    private const string ReplacementStartup = "replacementStartupMs";
+
     [Fact]
     public async Task S16_1_measures_startup_idle_and_interaction_over_ten_runs()
     {
@@ -79,6 +81,60 @@ public sealed partial class BudgetTests
             .Select(metric => $"{metric}: median {Median(runs, metric):0.##} > budget {budgets[metric]:0.##} + 10%")
             .ToList();
         Assert.True(over.Count == 0, $"Over budget ({column}):{Environment.NewLine}{string.Join(Environment.NewLine, over)}");
+    }
+
+    /// <summary>
+    /// Slice S23: replacement mode's start, from the guardian's start until every instance of the built-in
+    /// <c>subzerodev.shell</c> layout shows a live view. <c>measure</c> records ten runs; <c>reference</c> or
+    /// <c>ci</c> runs three and checks the median against that column, as S16_3 does.
+    /// </summary>
+    [Fact]
+    public async Task S23_2_replacement_startup_stays_within_budget()
+    {
+        var mode = Environment.GetEnvironmentVariable(ModeVariable);
+        if (mode is not ("measure" or "reference" or "ci"))
+        {
+            Assert.Skip($"Set {ModeVariable} to measure, reference or ci to measure replacement startup.");
+        }
+
+        HostRun.RequireDesktop();
+        var runs = new List<Dictionary<string, double>>();
+        for (var i = 0; i < Runs(mode == "measure" ? 10 : 3); i++)
+        {
+            runs.Add(new Dictionary<string, double>(StringComparer.Ordinal) { [ReplacementStartup] = await MeasureReplacementOnceAsync() });
+            TestContext.Current.TestOutputHelper?.WriteLine($"run {i + 1}: {ReplacementStartup}={runs[^1][ReplacementStartup]:0.##}");
+        }
+
+        var budgets = mode == "measure" ? null : ReadBudgets(mode);
+        Write(Summarise(runs, [ReplacementStartup], budgets), "replacement.json");
+        if (budgets is not null)
+        {
+            Assert.True(budgets.ContainsKey(ReplacementStartup), $"docs/budgets.md has no {mode} budget for {ReplacementStartup}.");
+            var median = Median(runs, ReplacementStartup);
+            Assert.True(median <= budgets[ReplacementStartup] * Tolerance,
+                $"Over budget ({mode}): {ReplacementStartup}: median {median:0.##} > budget {budgets[ReplacementStartup]:0.##} + 10%");
+        }
+    }
+
+    /// <summary>One guardian start in replacement mode with no layout of its own, so the shell layout is shown.</summary>
+    private static async Task<double> MeasureReplacementOnceAsync()
+    {
+        using var run = HostRun.Create();
+        IndicatorsTests.WriteFake(run, IndicatorsTests.Fake(battery: (80, false)));
+        var expected = ShellLayoutInstances();
+        var started = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        run.Start(HostRun.GuardianExe, "--mode", "replacement");
+        var status = await run.WaitForAsync(s => s["contributions"]!.AsArray() is { } views && views.Count == expected
+            && views.All(view => view!["reason"] is null && view["liveSinceUtcMs"] is not null), Startup);
+        var measured = status["contributions"]!.AsArray().Max(view => (long)view!["liveSinceUtcMs"]!) - started;
+        Assert.Equal(0, await run.StopAsync());
+        return measured;
+    }
+
+    private static int ShellLayoutInstances()
+    {
+        var layout = JsonNode.Parse(File.ReadAllText(Path.Combine(HostRun.ContentDirectory, "layouts", "subzerodev.shell.json")))!;
+        return layout["panels"]!.AsArray().Sum(panel => panel!["zones"]!.AsObject().Sum(zone => zone.Value!.AsArray().Count));
     }
 
     private static async Task<List<Dictionary<string, double>>> RunAsync(int count, bool interaction)
@@ -247,14 +303,14 @@ public sealed partial class BudgetTests
         };
     }
 
-    private static void Write(JsonObject summary)
+    private static void Write(JsonObject summary, string fileName = "measurements.json")
     {
         var json = summary.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         TestContext.Current.TestOutputHelper?.WriteLine(json);
         if (Environment.GetEnvironmentVariable(OutVariable) is { Length: > 0 } folder)
         {
             Directory.CreateDirectory(folder);
-            File.WriteAllText(Path.Combine(folder, "measurements.json"), json + "\n", new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(folder, fileName), json + "\n", new UTF8Encoding(false));
         }
     }
 
