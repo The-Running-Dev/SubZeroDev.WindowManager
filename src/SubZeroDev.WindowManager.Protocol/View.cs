@@ -63,7 +63,7 @@ public static partial class ViewValidator
         ["text"] = ["text", "wrap"],
         ["icon"] = ["icon", "size"],
         ["image"] = ["source", "fit"],
-        ["button"] = ["label", "icon", "active", "attention", "badge"],
+        ["button"] = ["label", "icon", "active", "attention", "badge", "invokeOn"],
         ["toggle"] = ["label", "icon", "checked"],
         ["stack"] = ["orientation"],
         ["list"] = ["items", "orientation", "selection", "selectedKey"],

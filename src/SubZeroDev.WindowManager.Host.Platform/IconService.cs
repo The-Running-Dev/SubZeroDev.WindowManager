@@ -17,7 +17,7 @@ public sealed class IconService : IIconService
         return reference switch
         {
             IconRef.Window window => FromWindow((nint)window.Hwnd, size),
-            IconRef.App { Exe: { Length: > 0 } exe } => FromFile(exe, size),
+            IconRef.App { Exe: { Length: > 0 } exe } => FromFile(exe, size, shellFallback: true),
             _ => NotFound($"No system icon for {reference}."),
         };
     }, ct);
@@ -57,10 +57,11 @@ public sealed class IconService : IIconService
             }
         }
 
-        return ExecutableOf(hwnd) is { } exe ? FromFile(exe, size) : NotFound($"Window 0x{hwnd:X} has no icon.");
+        // No shell fallback here: the generic program icon would hide that the window has none, and the caller shows the default.
+        return ExecutableOf(hwnd) is { } exe ? FromFile(exe, size, shellFallback: false) : NotFound($"Window 0x{hwnd:X} has no icon.");
     }
 
-    private static Outcome<IconImage> FromFile(string path, int size)
+    private static Outcome<IconImage> FromFile(string path, int size, bool shellFallback)
     {
         var hr = Native.SHDefExtractIcon(path, 0, 0, out var large, out var small, (uint)(size | (size << 16)));
         if (small != 0 && small != large)
@@ -70,7 +71,7 @@ public sealed class IconService : IIconService
 
         if (hr != 0 || large == 0)
         {
-            return NotFound($"'{path}' has no icon.");
+            return shellFallback ? FromShell(path, size) : NotFound($"'{path}' has no icon.");
         }
 
         try
@@ -80,6 +81,26 @@ public sealed class IconService : IIconService
         finally
         {
             Native.DestroyIcon(large);
+        }
+    }
+
+    /// <summary>A file with no icon of its own (a document, a shortcut, a folder): the icon Explorer shows for it.</summary>
+    private static unsafe Outcome<IconImage> FromShell(string path, int size)
+    {
+        var info = default(ShellFileInfo);
+        var flags = Native.ShgfiIcon | (size <= 16 ? Native.ShgfiSmallIcon : Native.ShgfiLargeIcon);
+        if (Native.SHGetFileInfo(path, 0, &info, (uint)sizeof(ShellFileInfo), flags) == 0 || info.Icon == 0)
+        {
+            return NotFound($"'{path}' has no icon.");
+        }
+
+        try
+        {
+            return Draw(info.Icon, size);
+        }
+        finally
+        {
+            Native.DestroyIcon(info.Icon);
         }
     }
 
@@ -214,8 +235,21 @@ internal struct BitmapInfoHeader
     public uint Colours;
 }
 
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal unsafe struct ShellFileInfo
+{
+    public nint Icon;
+    public int IconIndex;
+    public uint Attributes;
+    public fixed char DisplayName[260];
+    public fixed char TypeName[80];
+}
+
 internal static unsafe partial class Native
 {
+    public const uint ShgfiIcon = 0x100;
+    public const uint ShgfiLargeIcon = 0x0;
+    public const uint ShgfiSmallIcon = 0x1;
     public const uint WmGetIcon = 0x007F;
     public const int IconSmall = 0;
     public const int IconBig = 1;
@@ -248,6 +282,9 @@ internal static unsafe partial class Native
 
     [LibraryImport("shell32.dll", EntryPoint = "SHDefExtractIconW", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int SHDefExtractIcon(string file, int index, uint flags, out nint large, out nint small, uint sizes);
+
+    [LibraryImport("shell32.dll", EntryPoint = "SHGetFileInfoW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nuint SHGetFileInfo(string path, uint attributes, ShellFileInfo* info, uint size, uint flags);
 
     [LibraryImport("kernel32.dll")]
     public static partial nint OpenProcess(uint access, int inherit, uint processId);

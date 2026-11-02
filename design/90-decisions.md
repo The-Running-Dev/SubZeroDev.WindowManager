@@ -13,6 +13,21 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-02 — S20: desktop, wallpaper and icons
+- **Context:** as the shell nothing else draws the desktop, so the host must draw the wallpaper behind every window and show the Desktop folders. Tests must never minimise the user's windows, open the user's Desktop files or depend on the user's real wallpaper. This supersedes S13's known gap that `wallpapers` are read past and not applied.
+- **Chosen:**
+  - **Desktop surface:** one wallpaper window per monitor, created only in replacement mode and kept at the bottom of the z-order. It is rebuilt after every appearance apply and every monitor change. The test hook's status carries `desktop {source, windows[]}`, and each window's `z` and bounds.
+  - **Wallpaper:** a preset's `wallpaper.image` names an asset pack's wallpaper by relative path or by file name without extension, matched without regard to case, or is an absolute path. `fit` is one of the lower-case `fill`, `fit`, `stretch` and `center`, like the other layout words. A pack wallpaper that is not PNG, JPEG or BMP is a problem on the pack, which stays valid. Without a preset wallpaper the system one is read (`SPI_GETDESKWALLPAPER` and `WallpaperStyle`); under the test hook it comes from the `system-wallpaper` file.
+  - **Show desktop:** `host.desktop.show` minimises every normal top-level window and remembers them; a second call restores the same ones. Under the test hook it acts only on the process ids in the `desktop-show-pids` file.
+  - **Gadget:** a plugin may declare a `gadget` contribution, which the settings window offers for placement like a panel item. A panel may be placed `float` with a box of its own. `subzerodev.desktop-icons` lists the user's and the public Desktop folders, merged and sorted by name, from two watchers with a 300 ms settle. Icons come from the file through `SHGetFileInfo` when no pack names one; that fallback serves file references only, so a window with no icon still shows the default.
+  - **Opening:** a Button's `invokeOn: "doubleClick"` (SDK `WithDoubleClick`) acts on a double tap or Enter, and a single click only focuses. The icon sends `desktop.open {path}`, which runs `ShellExecute` with `open` after `AllowSetForegroundWindow(ASFW_ANY)`, as the launcher does. Under the test hook the plugin records `desktop-open <path>` in `desktop-actions.log` instead, and its folders come from `SUBZERODEV_WM_DESKTOP_FOLDERS`.
+  - **The double-click test:** places the gadget on an `overlay` panel, which is topmost, and checks with `WindowFromPoint` that the panel is under the point before it clicks. A `desktop` panel sits at the bottom of the z-order, so a real click could land in one of the user's windows.
+- **Rejected:**
+  - **A `SetShellWindow`-style desktop under the user's windows in tests:** it would cover the user's real desktop.
+  - **Click to open:** Explorer opens on a double click, and a single click must leave room to select.
+  - **Case-insensitive `fit`:** no other layout word is.
+- **Known gap:** the user's real wallpaper and Desktop folders, and a double click on the real `desktop` layer, are checked by hand on the replacement session. Icons stack in one column with no wrapping grid, and cannot be placed by dragging.
+
 ## 2026-11-02 — S19: the notification area and other applications' app bars
 - **Context:** as the shell the host must answer `Shell_NotifyIcon` and `SHAppBarMessage`, which shell32 sends to `Shell_TrayWnd` as `WM_COPYDATA`. Tests must never create a real `Shell_TrayWnd`, which would take the icons from the user's Explorer, or broadcast the real `TaskbarCreated`.
 - **Chosen:**

@@ -91,6 +91,16 @@ public static class View
     /// <summary>The element with an action for a right click (a context click), as a notification icon's menu.</summary>
     public static ViewNode WithContextAction(this ViewNode element, ElementAction action) => element with { ContextAction = action };
 
+    /// <summary>The button acting on a double click or Enter, as a desktop icon, rather than on a click (<c>invokeOn: "doubleClick"</c>).</summary>
+    public static ViewNode WithDoubleClick(this ViewNode button)
+    {
+        var props = new Dictionary<string, JsonNode?>(button.Props ?? new Dictionary<string, JsonNode?>(), StringComparer.Ordinal)
+        {
+            ["invokeOn"] = "doubleClick",
+        };
+        return button with { Props = props };
+    }
+
     /// <summary>The element with a <c>tooltip</c> prop.</summary>
     public static ViewNode WithTooltip(this ViewNode element, Prop<string> tooltip)
     {

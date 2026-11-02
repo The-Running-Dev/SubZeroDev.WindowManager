@@ -1,0 +1,29 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.desktop-icons",
+  "version": "0.1.0",
+  "displayName": "Desktop icons",
+  "publisher": "SubZeroDev",
+  "description": "Shows the files and shortcuts on your Desktop as icons; a double click or Enter opens one.",
+  "hostApi": "^1.0",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.DesktopIcons.exe", "args": [] },
+  "capabilities": [],
+  "modes": [ "coexistence", "replacement" ],
+  "requiresExplorer": false,
+  "contributions": [
+    {
+      "id": "icons",
+      "kind": "gadget",
+      "displayName": "Desktop icons",
+      "multiInstance": true
+    }
+  ],
+  "commands": [
+    {
+      "id": "desktop.open",
+      "title": "Open a Desktop item",
+      "argsSchema": { "type": "object", "properties": { "path": { "type": "string" } } }
+    }
+  ],
+  "settingsVersion": 1
+}

@@ -321,7 +321,26 @@ public sealed class ContributionView
                 Bind(props["attention"], scope, value => button.Attention = AsBool(value));
                 Bind(props["badge"], scope, value => button.Badge = AsString(value));
                 var buttonAction = element["action"] as JsonObject;
-                button.Click += (_, _) => Act(button, scope, buttonAction, ElementEventKind.Invoked, null);
+                if (props["invokeOn"] is JsonValue invokeOn && invokeOn.TryGetValue<string>(out var on) && on == "doubleClick")
+                {
+                    // As a desktop icon: a click only focuses it; a double click or Enter acts.
+                    // The button marks its pointer input handled, so the double tap is heard even then.
+                    button.AddHandler(UIElement.DoubleTappedEvent, new Microsoft.UI.Xaml.Input.DoubleTappedEventHandler((_, _) =>
+                        Act(button, scope, buttonAction, ElementEventKind.Invoked, null)), handledEventsToo: true);
+                    button.PreviewKeyDown += (_, args) =>
+                    {
+                        if (args.Key == Windows.System.VirtualKey.Enter)
+                        {
+                            args.Handled = true;
+                            Act(button, scope, buttonAction, ElementEventKind.Invoked, null, InvocationSource.Keyboard);
+                        }
+                    };
+                }
+                else
+                {
+                    button.Click += (_, _) => Act(button, scope, buttonAction, ElementEventKind.Invoked, null);
+                }
+
                 _invokers[button] = source => Act(button, scope, buttonAction, ElementEventKind.Invoked, null, source);
                 if (element["contextAction"] is JsonObject contextAction)
                 {
