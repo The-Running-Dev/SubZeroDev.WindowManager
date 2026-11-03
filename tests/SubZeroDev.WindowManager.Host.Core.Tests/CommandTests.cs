@@ -52,6 +52,20 @@ public sealed class CommandTests : IDisposable
         Assert.Equal(InvocationSource.Plugin, Assert.Single(channel.Requests).Source);
     }
 
+    [Fact]
+    public async Task S24_the_trigger_is_sent_to_the_provider_when_given_and_absent_when_not()
+    {
+        _catalog.Add("samples.plugin", """[{"id":"samples.echo"}]""");
+        var channel = _supervisor.Run("samples.plugin", 4242, _steps);
+        var router = Router();
+
+        await router.InvokeAsync("samples.echo", null, InvocationSource.Hotkey, null, TestContext.Current.CancellationToken, CommandTrigger.Chord);
+        await router.InvokeAsync("samples.echo", null, InvocationSource.Pointer, null, TestContext.Current.CancellationToken);
+
+        Assert.Equal([CommandTrigger.Chord, null], channel.Requests.Select(r => r.Trigger));
+        Assert.DoesNotContain("trigger", ProtocolJson.ToNode(channel.Requests.Last())!.ToJsonString(), StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(PluginState.Faulted)]
     [InlineData(PluginState.Unavailable)]

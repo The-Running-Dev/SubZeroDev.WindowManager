@@ -48,6 +48,7 @@ public sealed partial class App : Application
     private DesktopSurface? _desktop;
     private ShowDesktop? _showDesktop;
     private WindowsKeyHook? _windowsKeys;
+    private WindowsKeyTable? _keyTable;
     private string? _hooked;
     private int _exiting;
 
@@ -193,9 +194,14 @@ public sealed partial class App : Application
                 new TrayAppBars(monitors, workArea, PrimaryTaskbar));
             _trayHost.IconsChanged += (_, _) => feeds.PublishHost(TrayFeed.FeedId, TrayFeed.Snapshot(_trayHost.Icons));
             feeds.PublishHost(TrayFeed.FeedId, TrayFeed.Snapshot(_trayHost.Icons));
+            feeds.PublishHost(DoNotDisturbFeed.FeedId, DoNotDisturbFeed.Snapshot(false));
 
             // Nothing else answers the Windows key without Explorer (S21).
-            _windowsKeys = WindowsKeyHook.Start(hooked is not null, WindowsKeyBindings.KeysWithWin(WindowsKeyBindings.Defaults),
+            // The table says which Win+key chords it may swallow now: a chord whose provider is not running goes to Windows (I35).
+            var keyTable = _keyTable = new WindowsKeyTable(settings.WindowsKeys, line => log.Write(LogLevel.Warning, "keys", line));
+            _router.CommandsChanged += (_, _) => RefreshKeyTable(report: true);
+            RefreshKeyTable(report: false);
+            _windowsKeys = WindowsKeyHook.Start(hooked is not null, keyTable.SwallowsWithWin,
                 line => log.Write(LogLevel.Warning, "keys", line));
             _windowsKeys.Pressed += (_, chord) => _ = OnWindowsKeyAsync(chord);
         }
@@ -206,7 +212,8 @@ public sealed partial class App : Application
 
         _surfaces = new SurfaceManager(config, monitors, _appBarService, _theme, _contributions, _log, Retry,
             new ElementActions(_router, _contributions), foreground,
-            new IconResolver(new IconService(), () => _theme!.IconChain, (key, size) => _trayHost?.Image(key, size)));
+            new IconResolver(new IconService(), () => _theme!.IconChain, (key, size) => _trayHost?.Image(key, size)),
+            () => _settings.ToastCorner ?? ToastCorner.BottomRight);
         _surfaces.PanelCreated += (_, panel) => panel.Panel.ContextFlyout = PanelMenu();
         if (replacement)
         {
@@ -339,6 +346,23 @@ public sealed partial class App : Application
 
             return Task.FromResult(OpenFolder(path));
         });
+        router.AddBuiltIn(DoNotDisturbFeed.Command, "Do not disturb", (args, _) =>
+        {
+            if (_options.Mode != HostMode.Replacement)
+            {
+                return Task.FromResult(CommandOutcome.Fail(CoreErrorCode.NotInReplacementMode,
+                    "host.notifications.setDoNotDisturb only works when the app is the shell."));
+            }
+
+            if (DoNotDisturbFeed.ParseOn(args) is not { } on)
+            {
+                return Task.FromResult(CommandOutcome.Fail(CoreErrorCode.CommandFailed, "host.notifications.setDoNotDisturb needs { on: bool }."));
+            }
+
+            // The shell's own switch: Windows' setting is never touched. The notifications plugin persists it and stops its pop-ups.
+            _feeds?.PublishHost(DoNotDisturbFeed.FeedId, DoNotDisturbFeed.Snapshot(on));
+            return Task.FromResult(CommandOutcome.Success(new CommandResult(null)));
+        });
         var session = _hooked is null ? (ISessionService)new SessionService() : new RecordingSessionService(_hooked);
         AddSessionCommand(router, "host.session.lock", "Lock", session.Lock);
         AddSessionCommand(router, "host.session.signOut", "Sign out", session.SignOut);
@@ -367,15 +391,33 @@ public sealed partial class App : Application
         });
     }
 
-    /// <summary>Runs the command a Windows-key chord is bound to, as a hotkey would.</summary>
-    private async Task OnWindowsKeyAsync(KeyChord chord)
+    /// <summary>Tells the chord table which commands can answer now; called when a provider starts, stops or changes.</summary>
+    /// <param name="report">Whether to warn about bindings whose command nothing declares; the first call runs before the plugins are known.</param>
+    private void RefreshKeyTable(bool report)
     {
-        if (WindowsKeyBindings.Defaults.FirstOrDefault(b => b.Chord == chord) is not { } binding || _router is not { } router)
+        if (_keyTable is not { } table || _router is not { } router)
         {
             return;
         }
 
-        var outcome = await router.InvokeAsync(binding.CommandId, binding.Args?.DeepClone().AsObject(), InvocationSource.Hotkey, null, CancellationToken.None);
+        var commands = router.Commands.ToDictionary(c => c.CommandId, c => c.Available, StringComparer.Ordinal);
+        table.Refresh(commands.ContainsKey, id => commands.GetValueOrDefault(id));
+        if (report)
+        {
+            table.ReportUnresolved(commands.ContainsKey, line => _log?.Write(LogLevel.Warning, "keys", line));
+        }
+    }
+
+    /// <summary>Runs the command a Windows-key chord is bound to, as a hotkey would.</summary>
+    private async Task OnWindowsKeyAsync(KeyChord chord)
+    {
+        if (_keyTable?.Find(chord) is not { } binding || _router is not { } router)
+        {
+            return;
+        }
+
+        var outcome = await router.InvokeAsync(binding.CommandId, binding.Args?.DeepClone().AsObject(), InvocationSource.Hotkey, null,
+            CancellationToken.None, CommandTrigger.Chord);
         if (!outcome.Ok)
         {
             _log?.Write(LogLevel.Warning, "keys", $"{chord} ran {binding.CommandId}: {outcome.Error!.Detail}");

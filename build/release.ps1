@@ -38,6 +38,7 @@ $builtIn = @(
     @{ Id = 'subzerodev.desktop-icons'; Project = 'SubZeroDev.WindowManager.Plugins.DesktopIcons' }
     @{ Id = 'subzerodev.session'; Project = 'SubZeroDev.WindowManager.Plugins.Session' }
     @{ Id = 'subzerodev.indicators'; Project = 'SubZeroDev.WindowManager.Plugins.Indicators' }
+    @{ Id = 'subzerodev.notifications'; Project = 'SubZeroDev.WindowManager.Plugins.Notifications'; Framework = 'net10.0-windows10.0.26100.0' }
 )
 
 function Invoke-Checked {
@@ -53,7 +54,8 @@ function Invoke-Checked {
 }
 
 function Get-BuildOutput([hashtable]$Plugin) {
-    Join-Path $root "src\$($Plugin.Project)\bin\Release\net10.0\win-x64"
+    $framework = if ($Plugin.Framework) { $Plugin.Framework } else { 'net10.0' }
+    Join-Path $root "src\$($Plugin.Project)\bin\Release\$framework\win-x64"
 }
 
 function Reset-Directory([string]$Path) {

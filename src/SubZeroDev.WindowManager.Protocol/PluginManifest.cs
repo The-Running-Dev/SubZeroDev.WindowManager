@@ -9,6 +9,11 @@ public sealed record ContributionDeclaration(string Id, string Kind, string Disp
 
 public sealed record CommandDeclaration(string Id, string Title, string? DefaultHotkey);
 
+/// <summary>Host API 1.1: where a popup opens. <see cref="Anchored"/> is the first release's only kind.</summary>
+public enum PopupPlacement { Anchored, Toast, Overlay }
+
+public sealed record PopupDeclaration(string Id, PopupPlacement Placement);
+
 /// <summary>A parsed <c>plugin.json</c>. <see cref="Raw"/> keeps the whole document for fields later slices read.</summary>
 public sealed record PluginManifest(
     int ManifestVersion, string Id, SemVersion Version, string DisplayName, string Publisher, string Description,
@@ -33,6 +38,24 @@ public sealed record PluginManifest(
     /// <summary>The ids under <c>popups</c>: the popup surfaces the plugin may open.</summary>
     public IReadOnlyList<string> Popups =>
         [.. (Raw["popups"] as JsonArray ?? []).OfType<JsonObject>().Select(popup => Text(popup, "id") ?? string.Empty)];
+
+    /// <summary>The <c>popups</c> with their placement (<c>anchored</c> when none is named).</summary>
+    public IReadOnlyList<PopupDeclaration> PopupDeclarations =>
+        [.. (Raw["popups"] as JsonArray ?? []).OfType<JsonObject>().Select(popup =>
+            new PopupDeclaration(Text(popup, "id") ?? string.Empty, ParsePlacement(Text(popup, "placement")) ?? PopupPlacement.Anchored))];
+
+    /// <summary>The placement of one declared popup; <c>anchored</c> for an id the manifest does not declare.</summary>
+    public PopupPlacement PlacementOf(string popupId) =>
+        PopupDeclarations.FirstOrDefault(popup => popup.Id == popupId)?.Placement ?? PopupPlacement.Anchored;
+
+    internal static PopupPlacement? ParsePlacement(string? text) => text switch
+    {
+        null => PopupPlacement.Anchored,
+        "anchored" => PopupPlacement.Anchored,
+        "toast" => PopupPlacement.Toast,
+        "overlay" => PopupPlacement.Overlay,
+        _ => null,
+    };
 
     /// <summary>The feed ids under <c>subscribes</c>: the feeds the plugin consumes.</summary>
     public IReadOnlyList<string> Subscribes =>
@@ -156,6 +179,14 @@ public static partial class PluginManifestReader
         CheckIds("commands", Ids(document, "commands"), problems);
         CheckIds("feeds", Ids(document, "feeds"), problems);
         CheckIds("popups", Ids(document, "popups"), problems);
+        foreach (var popup in (document["popups"] as JsonArray ?? []).OfType<JsonObject>())
+        {
+            if (popup["placement"] is { } placement
+                && PluginManifest.ParsePlacement(placement is JsonValue value && value.TryGetValue<string>(out var text) ? text : string.Empty) is null)
+            {
+                problems.Add($"popup '{Text(popup, "id")}' has placement {placement.ToJsonString()}; use anchored, toast or overlay.");
+            }
+        }
         if (document["subscribes"] is { } subscribes)
         {
             if (subscribes is JsonArray subscribeArray
@@ -237,6 +268,6 @@ public static partial class PluginManifestReader
     [GeneratedRegex(@"^[a-z0-9]+(\.[a-z0-9-]+)+$")]
     private static partial Regex PluginIdPattern();
 
-    [GeneratedRegex(@"^[a-z0-9]+([.-][a-z0-9]+)*$")]
+    [GeneratedRegex(@"^[a-z0-9]+([.-][a-zA-Z0-9]+)*$")]
     private static partial Regex MemberIdPattern();
 }

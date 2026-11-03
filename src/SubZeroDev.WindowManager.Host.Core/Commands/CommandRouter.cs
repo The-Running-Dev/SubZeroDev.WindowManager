@@ -14,7 +14,9 @@ public interface ICommandRouter
 {
     IReadOnlyList<CommandDescriptor> Commands { get; }
 
-    Task<Outcome<CommandResult>> InvokeAsync(string commandId, JsonObject? args, InvocationSource source, string? callerPluginId, CancellationToken ct);
+    /// <param name="trigger">Host API 1.1: how the user started the command; passed to the provider as given.</param>
+    Task<Outcome<CommandResult>> InvokeAsync(string commandId, JsonObject? args, InvocationSource source, string? callerPluginId, CancellationToken ct,
+        CommandTrigger? trigger = null);
 
     /// <summary>Records the user's choice of provider in <c>commandProviders</c>.</summary>
     Task<Outcome> SetProviderAsync(string commandId, string pluginId, CancellationToken ct);
@@ -102,11 +104,11 @@ public sealed class CommandRouter : ICommandRouter
     }
 
     public async Task<Outcome<CommandResult>> InvokeAsync(string commandId, JsonObject? args, InvocationSource source,
-        string? callerPluginId, CancellationToken ct)
+        string? callerPluginId, CancellationToken ct, CommandTrigger? trigger = null)
     {
         try
         {
-            return await InvokeCoreAsync(commandId, args, source, ct).ConfigureAwait(false);
+            return await InvokeCoreAsync(commandId, args, source, trigger, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -158,7 +160,8 @@ public sealed class CommandRouter : ICommandRouter
                 new JsonObject { ["retryable"] = result.Error.Retryable });
     }
 
-    private async Task<Outcome<CommandResult>> InvokeCoreAsync(string commandId, JsonObject? args, InvocationSource source, CancellationToken ct)
+    private async Task<Outcome<CommandResult>> InvokeCoreAsync(string commandId, JsonObject? args, InvocationSource source,
+        CommandTrigger? trigger, CancellationToken ct)
     {
         if (_builtIns.TryGetValue(commandId, out var builtIn))
         {
@@ -200,7 +203,7 @@ public sealed class CommandRouter : ICommandRouter
 
         Record($"send {commandId} {channel.ProcessId} {source}");
         var result = await channel.RequestAsync<CommandInvokeParams, CommandResult?>(Methods.CommandInvoke,
-            new CommandInvokeParams(commandId, args, source), _timeout, ct).ConfigureAwait(false);
+            new CommandInvokeParams(commandId, args, source, trigger), _timeout, ct).ConfigureAwait(false);
         if (!result.Ok)
         {
             _log.Write(LogLevel.Warning, "commands", $"{commandId} via {provider}: {result.Error!.Code} {result.Error.Detail}");

@@ -406,6 +406,22 @@ public static class TrayFeed
     }
 }
 
+/// <summary>
+/// The <c>host.notifications.doNotDisturb</c> feed and the <c>host.notifications.setDoNotDisturb</c> arguments: the
+/// shell's own switch, which the notifications plugin persists and honours. Windows' setting is not involved.
+/// </summary>
+public static class DoNotDisturbFeed
+{
+    public const string FeedId = "host.notifications.doNotDisturb";
+    public const string Command = "host.notifications.setDoNotDisturb";
+
+    public static JsonObject Snapshot(bool on) => new() { ["on"] = on };
+
+    /// <summary>Reads <c>{ on: bool }</c>; null when it is malformed.</summary>
+    public static bool? ParseOn(JsonObject? args) =>
+        args?["on"] is JsonValue value && value.TryGetValue<bool>(out var on) ? on : null;
+}
+
 /// <summary>What a start-up pass ran and skipped.</summary>
 public sealed record StartupReport(bool AlreadyRan, IReadOnlyList<string> Started, IReadOnlyList<string> Skipped);
 

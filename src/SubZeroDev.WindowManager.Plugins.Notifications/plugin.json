@@ -1,0 +1,43 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.notifications",
+  "version": "0.1.0",
+  "displayName": "Notifications",
+  "publisher": "SubZeroDev",
+  "description": "Shows Windows notifications as pop-ups and keeps a notification centre, with a bell and unread count on the panel.",
+  "hostApi": "^1.1",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.Notifications.exe", "args": [] },
+  "capabilities": [],
+  "modes": [ "replacement" ],
+  "requiresExplorer": false,
+  "subscribes": [ "host.notifications.doNotDisturb" ],
+  "contributions": [
+    { "id": "bell", "kind": "panelItem", "displayName": "Notifications", "multiInstance": false, "settingsSchema": {
+        "type": "object",
+        "properties": {
+          "popupSeconds": { "type": "integer", "default": 6, "minimum": 2, "maximum": 30 },
+          "maxVisible": { "type": "integer", "default": 3, "minimum": 1, "maximum": 5 },
+          "popups": { "type": "boolean", "default": true }
+        }
+      } }
+  ],
+  "commands": [
+    { "id": "notifications.openCentre", "title": "Open the notification centre" },
+    { "id": "notifications.dismiss", "title": "Dismiss a notification", "argsSchema": {
+        "type": "object", "properties": { "id": { "type": "string" } } } },
+    { "id": "notifications.clear", "title": "Clear notifications", "argsSchema": {
+        "type": "object", "properties": { "appId": { "type": "string" } } } },
+    { "id": "notifications.activate", "title": "Open a notification's application", "argsSchema": {
+        "type": "object", "properties": { "id": { "type": "string" } } } }
+  ],
+  "feeds": [
+    { "id": "notifications.history", "schema": {} },
+    { "id": "notifications.status", "schema": {} }
+  ],
+  "popups": [
+    { "id": "toast", "placement": "toast" },
+    { "id": "centre", "placement": "anchored" },
+    { "id": "setup", "placement": "anchored" }
+  ],
+  "settingsVersion": 1
+}

@@ -35,7 +35,7 @@ public sealed unsafe class WindowsKeyHook : IWindowsKeyHook
     private long _slowestTicks;
     private bool _disposed;
 
-    private WindowsKeyHook(bool testOnly, IReadOnlySet<uint> boundWithWin)
+    private WindowsKeyHook(bool testOnly, Func<uint, bool> boundWithWin)
     {
         _testOnly = testOnly;
         _tracker = new WindowsKeyTracker(boundWithWin);
@@ -53,7 +53,7 @@ public sealed unsafe class WindowsKeyHook : IWindowsKeyHook
     public TimeSpan SlowestAnswer => TimeSpan.FromTicks(Interlocked.Read(ref _slowestTicks));
 
     /// <summary>Installs the hook on its own thread; <paramref name="testOnly"/> under the test hook.</summary>
-    public static WindowsKeyHook Start(bool testOnly, IReadOnlySet<uint> boundWithWin, Action<string> warn)
+    public static WindowsKeyHook Start(bool testOnly, Func<uint, bool> boundWithWin, Action<string> warn)
     {
         var hook = new WindowsKeyHook(testOnly, boundWithWin);
         s_current = hook;

@@ -49,6 +49,9 @@ public interface IContributionHost
     /// <summary>Whether the plugin's manifest declares the popup under <c>popups</c>.</summary>
     bool DeclaresPopup(string pluginId, string popupId);
 
+    /// <summary>Where the popup is placed, as its manifest declares; anchored when the popup is not declared.</summary>
+    PopupPlacement PlacementOf(string pluginId, string popupId);
+
     /// <summary>Raised off the UI thread, one at a time, whenever a popup's snapshot changes.</summary>
     event EventHandler<PopupSnapshot> PopupChanged;
 
@@ -118,6 +121,9 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
 
     public bool DeclaresPopup(string pluginId, string popupId) =>
         _catalog.GetManifest(pluginId) is { } manifest && manifest.Popups.Contains(popupId);
+
+    public PopupPlacement PlacementOf(string pluginId, string popupId) =>
+        _catalog.GetManifest(pluginId)?.PlacementOf(popupId) ?? PopupPlacement.Anchored;
 
     public PopupSnapshot? DescribePopup(string pluginId, string popupId)
     {

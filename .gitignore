@@ -5,3 +5,5 @@ TestResults/
 *.user
 .vs/
 .claude/
+src/SubZeroDev.WindowManager.Plugins.Notifications/package/*.msix
+src/SubZeroDev.WindowManager.Plugins.Notifications/package/*.cer

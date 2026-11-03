@@ -29,16 +29,33 @@ public sealed class PopupWindow
     private bool _focusPending;
     private int _focusRetries;
 
-    public PopupWindow(string pluginId, string popupId, ContributionView view)
+    public PopupWindow(string pluginId, string popupId, ContributionView view, PopupPlacement placement = PopupPlacement.Anchored)
     {
         PluginId = pluginId;
         PopupId = popupId;
         View = view;
+        Placement = placement;
         Frame = new WmPopup { Content = view.Root, VerticalAlignment = VerticalAlignment.Top };
         Frame.SizeChanged += (_, _) => Fit();
         Frame.PreviewKeyDown += OnPreviewKeyDown;
 
-        _window = new Window { Title = "SubZeroDev.WindowManager popup", Content = new Grid { Children = { Frame } } };
+        var root = new Grid { Children = { Frame } };
+        if (placement == PopupPlacement.Overlay)
+        {
+            // The surface covers the monitor: the view sits in the middle and a click on the rest dismisses it.
+            Frame.HorizontalAlignment = HorizontalAlignment.Center;
+            Frame.VerticalAlignment = VerticalAlignment.Center;
+            root.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            root.PointerPressed += (_, e) =>
+            {
+                if (ReferenceEquals(e.OriginalSource, root))
+                {
+                    Dismissed?.Invoke(this, PopupCloseReason.LightDismiss);
+                }
+            };
+        }
+
+        _window = new Window { Title = "SubZeroDev.WindowManager popup", Content = root };
         var presenter = OverlappedPresenter.Create();
         presenter.SetBorderAndTitleBar(hasBorder: false, hasTitleBar: false);
         presenter.IsResizable = false;
@@ -60,6 +77,12 @@ public sealed class PopupWindow
         };
         _window.Activated += (_, e) =>
         {
+            if (Placement == PopupPlacement.Toast)
+            {
+                // A toast never takes or loses focus on the user's behalf.
+                return;
+            }
+
             if (e.WindowActivationState != WindowActivationState.Deactivated)
             {
                 _active = true;
@@ -74,11 +97,15 @@ public sealed class PopupWindow
             }
         };
         Handle = WinRT.Interop.WindowNative.GetWindowHandle(_window);
-        SetWindowLongPtrW(Handle, GwlExStyle, GetWindowLongPtrW(Handle, GwlExStyle) | WsExToolWindow);
+        var style = WsExToolWindow | (placement == PopupPlacement.Toast ? WsExNoActivate : 0);
+        SetWindowLongPtrW(Handle, GwlExStyle, GetWindowLongPtrW(Handle, GwlExStyle) | style);
     }
 
     private const int GwlExStyle = -20;
     private const nint WsExToolWindow = 0x80;
+    private const nint WsExNoActivate = 0x08000000;
+
+    public PopupPlacement Placement { get; }
 
     /// <summary>Raised when the user dismisses the popup: by clicking elsewhere, Escape or Alt+F4.</summary>
     public event EventHandler<PopupCloseReason>? Dismissed;
@@ -125,10 +152,13 @@ public sealed class PopupWindow
         {
             IsOpen = true;
             _active = false;
-            _window.AppWindow.Show(activateWindow: true);
+            _window.AppWindow.Show(activateWindow: Placement != PopupPlacement.Toast);
         }
 
-        _window.Activate();
+        if (Placement != PopupPlacement.Toast)
+        {
+            _window.Activate();
+        }
     }
 
     /// <summary>
@@ -139,6 +169,11 @@ public sealed class PopupWindow
     public void FocusContent()
     {
         Fit();
+        if (Placement == PopupPlacement.Toast)
+        {
+            return;
+        }
+
         _focusPending = true;
         _focusRetries = 0;
         TryFocus();

@@ -18,6 +18,7 @@
         ],
         "end": [
           { "id": "7de4d567-20d1-4be0-ab41-7da37474f644", "plugin": "subzerodev.tray", "contribution": "tray" },
+          { "id": "d3a8c0f2-5b6e-4c1a-9e47-7f21b8a6c5d0", "plugin": "subzerodev.notifications", "contribution": "bell" },
           { "id": "cb34a194-d9b0-4328-8df2-0d3f4f325f0e", "plugin": "subzerodev.indicators", "contribution": "network" },
           { "id": "54e1db27-38e4-44be-8c24-893132bc13cf", "plugin": "subzerodev.indicators", "contribution": "volume" },
           { "id": "a7f6cb3c-1fd5-4ce1-a041-11effe0ebfd1", "plugin": "subzerodev.indicators", "contribution": "battery" },

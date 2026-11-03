@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Names the sparse package in package\AppxManifest.xml. Windows applies its identity only once that package is
+     registered; until then the worker runs unpackaged and reports IdentityMissing. Only this executable carries it. -->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="SubZeroDev.WindowManager.Notifications" />
+  <msix
+    xmlns="urn:schemas-microsoft-com:msix.v1"
+    publisher="CN=SubZeroDev"
+    packageName="SubZeroDev.WindowManager.Notifications"
+    applicationId="Notifications" />
+</assembly>
