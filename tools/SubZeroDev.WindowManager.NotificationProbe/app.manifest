@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Names the sparse package in Package\AppxManifest.xml. Windows applies its identity only once that package is
+     registered; otherwise the probe runs unpackaged. -->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="SubZeroDev.WindowManager.NotificationProbe" />
+  <msix
+    xmlns="urn:schemas-microsoft-com:msix.v1"
+    publisher="CN=SubZeroDev"
+    packageName="SubZeroDev.WindowManager.NotificationProbe"
+    applicationId="Probe" />
+</assembly>

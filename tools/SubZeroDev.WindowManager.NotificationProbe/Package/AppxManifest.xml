@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sparse package: gives the probe's own files package identity without moving them. register.ps1 signs it with the
+     CN=SubZeroDev certificate, which the machine must trust. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 uap10 rescap">
+  <Identity
+    Name="SubZeroDev.WindowManager.NotificationProbe"
+    Publisher="CN=SubZeroDev"
+    Version="1.0.0.0"
+    ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>SubZeroDev notification probe</DisplayName>
+    <PublisherDisplayName>SubZeroDev</PublisherDisplayName>
+    <Logo>logo.png</Logo>
+    <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
+  </Properties>
+  <Resources>
+    <Resource Language="en-gb" />
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22621.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <uap3:Capability Name="userNotificationListener" />
+  </Capabilities>
+  <Applications>
+    <Application
+      Id="Probe"
+      Executable="SubZeroDev.WindowManager.NotificationProbe.exe"
+      uap10:TrustLevel="mediumIL"
+      uap10:RuntimeBehavior="win32App">
+      <uap:VisualElements
+        DisplayName="SubZeroDev notification probe"
+        Description="One-off check for the second release"
+        BackgroundColor="transparent"
+        Square150x150Logo="logo.png"
+        Square44x44Logo="logo.png"
+        AppListEntry="none" />
+    </Application>
+  </Applications>
+</Package>
