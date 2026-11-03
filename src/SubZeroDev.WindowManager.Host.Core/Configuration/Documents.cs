@@ -74,19 +74,62 @@ public sealed record HostSettingsDocument(string ActivePreset, bool StartAtSignI
     /// <summary>Plugin id → enabled. A plugin absent from the map is enabled when built in, disabled when user-installed.</summary>
     public IReadOnlyDictionary<string, bool> Plugins { get; init; } = new Dictionary<string, bool>(StringComparer.Ordinal);
 
-    public JsonObject ToJson() => new()
+    /// <summary>Second release: key chord (such as <c>Win+N</c>) → command id. Merged over the built-in chord table; absent when the user set none.</summary>
+    public IReadOnlyDictionary<string, string> WindowsKeys { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Second release: the work-area corner that toasts stack on; absent means bottom right.</summary>
+    public ToastCorner? ToastCorner { get; init; }
+
+    public JsonObject ToJson()
     {
-        ["schemaVersion"] = ConfigStore.SupportedSchemaVersion,
-        ["activePreset"] = ActivePreset,
-        ["plugins"] = new JsonObject(Plugins.Select(p => KeyValuePair.Create(p.Key, (JsonNode?)new JsonObject { ["enabled"] = p.Value }))),
-        ["commandProviders"] = new JsonObject(CommandProviders.Select(p => KeyValuePair.Create(p.Key, (JsonNode?)p.Value))),
-        ["hotkeys"] = new JsonObject(Hotkeys.Select(h => KeyValuePair.Create(h.Key, h.Value is null ? null : (JsonNode?)h.Value))),
-        ["startAtSignIn"] = StartAtSignIn,
-        ["restartPolicy"] = new JsonObject
+        var json = new JsonObject
         {
-            ["maxRestarts"] = RestartPolicy.MaxRestarts,
-            ["windowSeconds"] = RestartPolicy.WindowSeconds,
-        },
+            ["schemaVersion"] = ConfigStore.SupportedSchemaVersion,
+            ["activePreset"] = ActivePreset,
+            ["plugins"] = new JsonObject(Plugins.Select(p => KeyValuePair.Create(p.Key, (JsonNode?)new JsonObject { ["enabled"] = p.Value }))),
+            ["commandProviders"] = new JsonObject(CommandProviders.Select(p => KeyValuePair.Create(p.Key, (JsonNode?)p.Value))),
+            ["hotkeys"] = new JsonObject(Hotkeys.Select(h => KeyValuePair.Create(h.Key, h.Value is null ? null : (JsonNode?)h.Value))),
+            ["startAtSignIn"] = StartAtSignIn,
+            ["restartPolicy"] = new JsonObject
+            {
+                ["maxRestarts"] = RestartPolicy.MaxRestarts,
+                ["windowSeconds"] = RestartPolicy.WindowSeconds,
+            },
+        };
+        if (WindowsKeys.Count > 0)
+        {
+            json["windowsKeys"] = new JsonObject(WindowsKeys.Select(k => KeyValuePair.Create(k.Key, (JsonNode?)k.Value)));
+        }
+
+        if (ToastCorner is { } corner)
+        {
+            json["toastCorner"] = ToastCorners.Name(corner);
+        }
+
+        return json;
+    }
+}
+
+/// <summary>Second release: where the notification toasts stack (the <c>toastCorner</c> setting).</summary>
+public enum ToastCorner { TopLeft, TopRight, BottomLeft, BottomRight }
+
+public static class ToastCorners
+{
+    public static string Name(ToastCorner corner) => corner switch
+    {
+        ToastCorner.TopLeft => "topLeft",
+        ToastCorner.TopRight => "topRight",
+        ToastCorner.BottomLeft => "bottomLeft",
+        _ => "bottomRight",
+    };
+
+    public static ToastCorner? Parse(string? text) => text switch
+    {
+        "topLeft" => ToastCorner.TopLeft,
+        "topRight" => ToastCorner.TopRight,
+        "bottomLeft" => ToastCorner.BottomLeft,
+        "bottomRight" => ToastCorner.BottomRight,
+        _ => null,
     };
 }
 
@@ -183,6 +226,37 @@ public static partial class Documents
             problems.Add("hotkeys: must be an object.");
         }
 
+        var windowsKeys = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (json["windowsKeys"] is JsonObject chordMap)
+        {
+            foreach (var (chord, value) in chordMap)
+            {
+                // An unknown chord is not a problem with the document: the table ignores it with a diagnostic.
+                if (value is JsonValue v && v.TryGetValue<string>(out var command) && command.Length > 0)
+                {
+                    windowsKeys[chord] = command;
+                }
+                else
+                {
+                    problems.Add($"windowsKeys.{chord}: must be a command id.");
+                }
+            }
+        }
+        else if (json["windowsKeys"] is not null)
+        {
+            problems.Add("windowsKeys: must be an object.");
+        }
+
+        ToastCorner? toastCorner = null;
+        if (json["toastCorner"] is { } cornerNode)
+        {
+            toastCorner = ToastCorners.Parse(cornerNode is JsonValue c && c.TryGetValue<string>(out var cornerText) ? cornerText : null);
+            if (toastCorner is null)
+            {
+                problems.Add("toastCorner: must be topLeft, topRight, bottomLeft or bottomRight.");
+            }
+        }
+
         var plugins = new Dictionary<string, bool>(StringComparer.Ordinal);
         if (json["plugins"] is JsonObject pluginMap)
         {
@@ -205,7 +279,7 @@ public static partial class Documents
 
         return problems.Count > start
             ? null
-            : new HostSettingsDocument(preset!, startAtSignIn, policy) { CommandProviders = providers, Hotkeys = hotkeys, Plugins = plugins };
+            : new HostSettingsDocument(preset!, startAtSignIn, policy) { CommandProviders = providers, Hotkeys = hotkeys, Plugins = plugins, WindowsKeys = windowsKeys, ToastCorner = toastCorner };
     }
 
     public static PresetDocument? ParsePreset(JsonObject json, string expectedId, List<string> problems)

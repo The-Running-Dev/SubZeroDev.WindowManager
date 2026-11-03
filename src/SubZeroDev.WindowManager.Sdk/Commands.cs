@@ -13,7 +13,10 @@ public interface ICommands
     Task<SdkResult<CommandResult>> InvokeAsync(string commandId, JsonObject? args, CancellationToken ct);
 }
 
-public sealed record CommandContext(JsonObject? Args, InvocationSource Source);
+/// <param name="Args">The command's arguments, if any.</param>
+/// <param name="Source">What started the command.</param>
+/// <param name="Trigger">Host API 1.1: how the user started the command; null when the host did not say.</param>
+public sealed record CommandContext(JsonObject? Args, InvocationSource Source, CommandTrigger? Trigger = null);
 
 internal sealed class Commands(Connection connection, IReadOnlySet<string> declared) : ICommands
 {
@@ -81,13 +84,33 @@ internal sealed class Commands(Connection connection, IReadOnlySet<string> decla
 
         try
         {
-            var result = await handler(new CommandContext(parameters.Args, parameters.Source), CancellationToken.None).ConfigureAwait(false);
+            var result = await handler(new CommandContext(parameters.Args, parameters.Source, parameters.Trigger), CancellationToken.None).ConfigureAwait(false);
             connection.Respond(id, result ?? new CommandResult(null));
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             logError(exception);
-            connection.Fail(id, WireErrorCodes.CommandFailed, exception.Message, new JsonObject { ["retryable"] = false });
+            var data = new JsonObject { ["retryable"] = (exception as CommandFailedException)?.Retryable ?? false };
+            if (exception is CommandFailedException { Code: { } code })
+            {
+                data["code"] = code;
+            }
+
+            connection.Fail(id, WireErrorCodes.CommandFailed, exception.Message, data);
         }
     }
+}
+
+/// <summary>
+/// A command handler's failure with a name the caller can act on. It travels as wire code 1009 with the name in
+/// <c>data.code</c> (host API 1.1), e.g. <c>ActivationFailed</c>.
+/// </summary>
+/// <param name="code">The plugin's error name.</param>
+/// <param name="message">Words for the user.</param>
+/// <param name="retryable">Whether trying again may succeed.</param>
+public sealed class CommandFailedException(string code, string message, bool retryable = false) : Exception(message)
+{
+    public string? Code { get; } = code;
+
+    public bool Retryable { get; } = retryable;
 }

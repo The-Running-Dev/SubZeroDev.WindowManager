@@ -61,6 +61,7 @@ public sealed class SurfaceManager : ISurfaceManager
     private readonly IElementActions? _actions;
     private readonly IconResolver? _icons;
     private readonly IForegroundService? _foreground;
+    private readonly Func<ToastCorner> _toastCorner;
     private readonly List<PanelWindow> _panels = [];
     private readonly Dictionary<Guid, ContributionView> _views = [];
     private readonly Dictionary<(string Plugin, string Popup), PopupWindow> _popups = [];
@@ -76,8 +77,9 @@ public sealed class SurfaceManager : ISurfaceManager
 
     public SurfaceManager(IConfigStore config, IMonitorService monitors, IAppBarService appBars, IThemeEngine theme,
         IContributionHost contributions, IHostLog log, Action<string>? retry = null, IElementActions? actions = null,
-        IForegroundService? foreground = null, IconResolver? icons = null)
+        IForegroundService? foreground = null, IconResolver? icons = null, Func<ToastCorner>? toastCorner = null)
     {
+        _toastCorner = toastCorner ?? (() => ToastCorner.BottomRight);
         _retry = retry;
         _icons = icons;
         _actions = actions;
@@ -168,20 +170,37 @@ public sealed class SurfaceManager : ISurfaceManager
                 (elementId, kind, value, source, itemKey) =>
                     _contributions.SendPopupEventAsync(pluginId, popupId, elementId, kind, value, source, itemKey),
                 _icons);
-            window = new PopupWindow(pluginId, popupId, view);
+            window = new PopupWindow(pluginId, popupId, view, _contributions.PlacementOf(pluginId, popupId));
             window.Dismissed += (_, reason) => _ = ClosePopupAsync(pluginId, popupId, reason, CancellationToken.None);
             _popups[key] = window;
         }
 
         window.Frame.Style = Lookup("Wm.Popup") as Style;
         window.View.Render(_contributions.DescribePopup(pluginId, popupId));
-        var placed = element is not null ? PlaceBy(element) : PlaceOn(monitorAnchor);
+        var placed = window.Placement switch
+        {
+            PopupPlacement.Toast => PlaceToast(),
+            PopupPlacement.Overlay => PlaceOverlay(monitorAnchor),
+            _ => element is not null ? PlaceBy(element) : PlaceOn(monitorAnchor),
+        };
         if (placed is not { } placement)
         {
             return Outcome.Fail(CoreErrorCode.NotFound, "No monitor is connected.");
         }
 
         window.Open(placement.Monitor, placement.Place);
+        if (window.Placement == PopupPlacement.Toast)
+        {
+            // A toast neither takes the foreground nor the keyboard focus.
+            var shown = await _contributions.NotifyPopupOpenedAsync(pluginId, popupId, trigger);
+            if (!shown.Ok)
+            {
+                window.Hide();
+            }
+
+            return shown;
+        }
+
         if (_foreground is not null && GetForegroundWindow() != window.Handle)
         {
             var activated = await _foreground.ActivateWindowAsync(window.Handle, ct);
@@ -346,6 +365,32 @@ public sealed class SurfaceManager : ISurfaceManager
         });
     }
 
+    /// <summary>The primary monitor's work-area corner chosen by the <c>toastCorner</c> setting, with a margin.</summary>
+    private (MonitorInfo Monitor, Func<int, int, RectInt> Place)? PlaceToast()
+    {
+        var monitors = _monitors.Monitors;
+        var monitor = monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors.FirstOrDefault();
+        if (monitor is null)
+        {
+            return null;
+        }
+
+        var corner = _toastCorner();
+        return (monitor, (width, height) => ToastPlacement.Place(monitor.WorkArea, width, height, corner, (int)Math.Round(12 * monitor.Scale)));
+    }
+
+    /// <summary>The whole monitor under the anchor.</summary>
+    private (MonitorInfo Monitor, Func<int, int, RectInt> Place)? PlaceOverlay(MonitorAnchor anchor)
+    {
+        if (PlaceOn(anchor) is not { } placed)
+        {
+            return null;
+        }
+
+        var bounds = placed.Monitor.Bounds;
+        return (placed.Monitor, (_, _) => bounds);
+    }
+
     private void QueuePopupRender((string Plugin, string Popup) key)
     {
         lock (_pendingGate)
@@ -380,7 +425,7 @@ public sealed class SurfaceManager : ISurfaceManager
                 window.View.Render(_contributions.DescribePopup(key.Plugin, key.Popup));
                 // Focus moves only for a first TextInput or when the focused element went away, so a state
                 // update never pulls it back from where the user moved it.
-                if (window.IsOpen && ((!hadInput && window.View.TextInputs().Count > 0) || !window.HasFocusWithin))
+                if (window.IsOpen && window.Placement != PopupPlacement.Toast && ((!hadInput && window.View.TextInputs().Count > 0) || !window.HasFocusWithin))
                 {
                     window.FocusContent();
                 }

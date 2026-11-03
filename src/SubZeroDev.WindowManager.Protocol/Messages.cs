@@ -5,7 +5,7 @@ namespace SubZeroDev.WindowManager.Protocol;
 public static class ProtocolInfo
 {
     public const int ProtocolVersion = 1;
-    public static readonly SemVersion HostApiVersion = new(1, 0, 0);
+    public static readonly SemVersion HostApiVersion = new(1, 1, 0);
     public const int MaxMessageBytes = 4 * 1024 * 1024;
 }
 
@@ -109,9 +109,16 @@ public enum PopupTrigger { Element, Command }
 
 public enum PopupCloseReason { LightDismiss, Escape, Requested, OwnerFaulted }
 
-public sealed record CommandInvokeParams(string CommandId, JsonObject? Args, InvocationSource Source);
+/// <param name="CommandId">The command to run.</param>
+/// <param name="Args">Its arguments, if any.</param>
+/// <param name="Source">What started the command.</param>
+/// <param name="Trigger">Host API 1.1: how a host-originated invoke was started; absent from a 1.0 host and from other callers.</param>
+public sealed record CommandInvokeParams(string CommandId, JsonObject? Args, InvocationSource Source, CommandTrigger? Trigger = null);
 
 public enum InvocationSource { Pointer, Keyboard, Hotkey, Plugin, Host }
+
+/// <summary>Host API 1.1: whether the plugin should open for keyboard navigation (<see cref="Keyboard"/>, <see cref="Chord"/>).</summary>
+public enum CommandTrigger { Pointer, Keyboard, Chord }
 
 public sealed record CommandResult(JsonNode? Value);
 

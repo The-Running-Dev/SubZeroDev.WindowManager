@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sparse package: gives the notifications worker, and only it (I33), package identity without moving its files.
+     register.ps1 signs it with the CN=SubZeroDev certificate, which the machine must trust (done by the user, S24.9). -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  IgnorableNamespaces="uap uap3 uap10 rescap com desktop">
+  <Identity
+    Name="SubZeroDev.WindowManager.Notifications"
+    Publisher="CN=SubZeroDev"
+    Version="1.0.0.0"
+    ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>SubZeroDev notifications</DisplayName>
+    <PublisherDisplayName>SubZeroDev</PublisherDisplayName>
+    <Logo>logo.png</Logo>
+    <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
+  </Properties>
+  <Resources>
+    <Resource Language="en-gb" />
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22621.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <uap3:Capability Name="userNotificationListener" />
+  </Capabilities>
+  <Applications>
+    <Application
+      Id="Notifications"
+      Executable="SubZeroDev.WindowManager.Plugins.Notifications.exe"
+      uap10:TrustLevel="mediumIL"
+      uap10:RuntimeBehavior="win32App">
+      <uap:VisualElements
+        DisplayName="SubZeroDev notifications"
+        Description="Reads the notification history for the SubZeroDev shell"
+        BackgroundColor="transparent"
+        Square150x150Logo="logo.png"
+        Square44x44Logo="logo.png"
+        AppListEntry="none" />
+      <!-- A packaged executable starts only with an activator declared here. -->
+      <Extensions>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="SubZeroDev.WindowManager.Plugins.Notifications.exe" DisplayName="SubZeroDev notifications" Arguments="----AppNotificationActivated:">
+              <com:Class Id="CD49E91A-688C-4CDF-92E4-AEFA6AFD11BD" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="CD49E91A-688C-4CDF-92E4-AEFA6AFD11BD" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+</Package>

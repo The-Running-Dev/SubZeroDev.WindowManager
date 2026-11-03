@@ -50,6 +50,7 @@ internal sealed class TestHook
     private readonly SimulatedMonitors _monitors;
     private readonly ShellEvents _shellEvents;
     private JsonObject? _lastInvoke;
+    private int _invokeCount;
     private int _settingsUiRuns;
     private string? _lastSettingsUi;
     private readonly HashSet<WmPanel> _watched = [];
@@ -296,7 +297,10 @@ internal sealed class TestHook
             ? parsed
             : InvocationSource.Keyboard;
         var args = lines.Length > 2 && !string.IsNullOrWhiteSpace(lines[2]) ? JsonNode.Parse(lines[2]) as JsonObject : null;
-        _ = InvokeAsync(commandId, args, source);
+        CommandTrigger? trigger = lines.Length > 3 && Enum.TryParse<CommandTrigger>(lines[3].Trim(), ignoreCase: true, out var parsedTrigger)
+            ? parsedTrigger
+            : null;
+        _ = InvokeAsync(commandId, args, source, trigger);
     }
 
     /// <summary>One JSON request per line for the settings window, which opens first when it is not yet created.</summary>
@@ -320,17 +324,17 @@ internal sealed class TestHook
         _settingsUiRuns++;
     }
 
-    private async Task InvokeAsync(string commandId, JsonObject? args, InvocationSource source)
+    private async Task InvokeAsync(string commandId, JsonObject? args, InvocationSource source, CommandTrigger? trigger = null)
     {
         try
         {
-            var outcome = await _router.InvokeAsync(commandId, args, source, null, CancellationToken.None);
+            var outcome = await _router.InvokeAsync(commandId, args, source, null, CancellationToken.None, trigger);
             _lastInvoke = new JsonObject { ["command"] = commandId, ["ok"] = outcome.Ok, ["code"] = outcome.Error?.Code.ToString(), ["detail"] = outcome.Error?.Detail,
-                ["retryable"] = outcome.Error?.Retryable };
+                ["retryable"] = outcome.Error?.Retryable, ["count"] = ++_invokeCount };
         }
         catch (Exception e)
         {
-            _lastInvoke = new JsonObject { ["command"] = commandId, ["ok"] = false, ["code"] = e.GetType().Name };
+            _lastInvoke = new JsonObject { ["command"] = commandId, ["ok"] = false, ["code"] = e.GetType().Name, ["count"] = ++_invokeCount };
         }
     }
 
@@ -503,6 +507,8 @@ internal sealed class TestHook
                 ["id"] = feed.FeedId,
                 ["provider"] = feed.Provider,
                 ["available"] = feed.Available,
+                // Only the notification feeds, and only under the test hook, where their content is a test's own.
+                ["snapshot"] = feed.FeedId.StartsWith("notifications.", StringComparison.Ordinal) ? _feeds.Latest(feed.FeedId)?.Snapshot?.DeepClone() : null,
             }).ToArray()),
             ["workerMessages"] = WorkerChannel.MessagesSent,
             ["settingsWindow"] = _app.Settings?.Snapshot(),

@@ -17,3 +17,6 @@ Hardware available to the automated runs: one monitor, 3440 × 1440 at 125 % (12
 | A full-screen game or presentation on the primary monitor | S12.3 | Manual | Not run |
 | `explorer.exe` killed and restarted | S12.4 | Manual | Not run |
 | Win+D and a click on the desktop with a `desktop` panel shown | S12.6 | Manual | Not run |
+| Notifications reach the history with Explorer not running, and Windows shows its own pop-ups or not | S24.1 | Manual | Not run |
+| A worker started suspended and put in the job object keeps its package identity; starting an application by AUMID with the notification launch string reaches it | S24.1 | Manual | Not run |
+| Certificate trust, notification access and the notifications switch | S24.9 | Manual (Ben) | Not run |

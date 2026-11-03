@@ -20,6 +20,7 @@
     <Project Path="src/SubZeroDev.WindowManager.Plugins.DesktopIcons/SubZeroDev.WindowManager.Plugins.DesktopIcons.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Plugins.Session/SubZeroDev.WindowManager.Plugins.Session.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Plugins.Indicators/SubZeroDev.WindowManager.Plugins.Indicators.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Plugins.Notifications/SubZeroDev.WindowManager.Plugins.Notifications.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.PackTool/SubZeroDev.WindowManager.PackTool.csproj" />
   </Folder>
   <Folder Name="/tests/">

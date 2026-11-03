@@ -348,7 +348,7 @@ Two things about the order, stated openly:
 - **The `Thumbnail` element is delivered in S26**, its first consumer (the Task View overview). It depends on S25's window references, so S25 does not ship it; S25 ships the references and the registry it will resolve against, and S26 extends the C6 interoperability fixture to the element.
 
 ## S24 — Notifications
-Status: todo
+Status: done
 Delivers: In replacement mode Ben sees Windows notifications as pop-ups in the shell, can open a centre listing them, and can open, dismiss and clear them, with a setup page that guides the one-time steps Ben does himself.
 Touches: Protocol and Sdk (1.1: `placement` on popups, `trigger` on `command.invoke`); Host.Surfaces (`toast` and `overlay` placements); Host.Platform (the extended `IWindowsKeyHook` with the chord table, Win+N); Host.Core (`host.notifications.setDoNotDisturb`, chord bindings in `settings.json`); plugin `subzerodev.notifications` (worker, `notifications.history` and `notifications.status` feeds, `toast`, `centre` and `setup` popups, `bell` contribution); the sparse package, its script and the `.cer`; a fake `INotificationHistory`
 Depends on: S23
