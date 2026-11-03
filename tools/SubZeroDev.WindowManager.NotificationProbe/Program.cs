@@ -6,9 +6,24 @@ using Windows.UI.Notifications.Management;
 
 // Answers: can an unpackaged process read other applications' notifications, and does one it raises reach them?
 // Prints counts only, never the content of the user's notifications.
-static void Report(string key, object? value) => Console.WriteLine($"{key}: {value}");
+// Also kept next to the exe, for a run activated through the package, whose console closes when it ends.
+var log = Path.Combine(AppContext.BaseDirectory, "probe-output.txt");
+File.WriteAllText(log, "");
+void Report(string key, object? value)
+{
+    Console.WriteLine($"{key}: {value}");
+    File.AppendAllText(log, $"{key}: {value}\n");
+}
 
 Report("explorerRunning", Process.GetProcessesByName("explorer").Length > 0);
+try
+{
+    Report("packageIdentity", Windows.ApplicationModel.Package.Current.Id.FamilyName);
+}
+catch (InvalidOperationException)
+{
+    Report("packageIdentity", "none");
+}
 
 var listener = UserNotificationListener.Current;
 var access = listener.GetAccessStatus();
@@ -17,8 +32,21 @@ if (access != UserNotificationListenerAccessStatus.Allowed)
 {
     try
     {
-        access = await listener.RequestAccessAsync();
+        // Windows shows the consent prompt only for a request made from a visible window's thread, with a message loop.
+        var ui = Windows.System.DispatcherQueueController.CreateOnDedicatedThread();
+        var requested = new TaskCompletionSource<UserNotificationListenerAccessStatus>();
+        ui.DispatcherQueue.TryEnqueue(async () =>
+        {
+            var window = Native.CreateWindowEx(0, "STATIC", "SubZeroDev notification probe",
+                Native.WsOverlappedWindow | Native.WsVisible, 200, 200, 480, 160, 0, 0, 0, 0);
+            Native.SetForegroundWindow(window);
+            try { requested.SetResult(await listener.RequestAccessAsync()); }
+            catch (Exception e) { requested.SetException(e); }
+            finally { Native.DestroyWindow(window); }
+        });
+        access = await requested.Task.WaitAsync(TimeSpan.FromMinutes(2));
         Report("accessRequested", access);
+        await ui.ShutdownQueueAsync();
     }
     catch (Exception e)
     {
@@ -36,6 +64,7 @@ catch (Exception e)
     Report("notificationChangedEvent", $"{e.GetType().Name} 0x{e.HResult:X8} {e.Message.Trim()}");
 }
 
+var readFailed = false;
 async Task<IReadOnlyList<UserNotification>> Read()
 {
     try
@@ -44,7 +73,8 @@ async Task<IReadOnlyList<UserNotification>> Read()
     }
     catch (Exception e)
     {
-        Report("readError", $"{e.GetType().Name} 0x{e.HResult:X8} {e.Message.Trim()}");
+        if (!readFailed) Report("readError", $"{e.GetType().Name} 0x{e.HResult:X8} {e.Message.Trim()}");
+        readFailed = true;
         return [];
     }
 }
@@ -59,7 +89,8 @@ try
     manager.Register();
     var marker = Guid.NewGuid().ToString("N");
     var toast = new AppNotificationBuilder().AddText("SubZeroDev probe").AddText(marker).BuildNotification();
-    toast.SuppressDisplay = true;
+    // --visible shows the pop-up, which may be what puts a notification in the history.
+    toast.SuppressDisplay = !args.Contains("--visible");
     toast.Tag = "probe";
     manager.Show(toast);
     Report("ownShown", toast.Id != 0);
@@ -89,4 +120,22 @@ catch (Exception e)
 finally
 {
     try { manager.Unregister(); } catch (Exception e) { Report("unregisterError", e.Message.Trim()); }
+}
+
+static class Native
+{
+    public const uint WsOverlappedWindow = 0x00CF0000;
+    public const uint WsVisible = 0x10000000;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    public static extern nint CreateWindowEx(uint exStyle, string className, string title, uint style, int x, int y,
+        int width, int height, nint parent, nint menu, nint instance, nint parameter);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    public static extern bool SetForegroundWindow(nint window);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    public static extern bool DestroyWindow(nint window);
 }

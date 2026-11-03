@@ -7,7 +7,9 @@
   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
   xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap3 uap10 rescap">
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  IgnorableNamespaces="uap uap3 uap10 rescap com desktop">
   <Identity
     Name="SubZeroDev.WindowManager.NotificationProbe"
     Publisher="CN=SubZeroDev"
@@ -42,6 +44,19 @@
         Square150x150Logo="logo.png"
         Square44x44Logo="logo.png"
         AppListEntry="none" />
+      <!-- A packaged app raises its own notifications only with an activator declared here. -->
+      <Extensions>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="SubZeroDev.WindowManager.NotificationProbe.exe" DisplayName="SubZeroDev notification probe" Arguments="----AppNotificationActivated:">
+              <com:Class Id="F3543841-A2E6-4E01-A812-92B960E7EE66" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="F3543841-A2E6-4E01-A812-92B960E7EE66" />
+        </desktop:Extension>
+      </Extensions>
     </Application>
   </Applications>
 </Package>
