@@ -18,6 +18,26 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-04 — S25: how the window model was built, scoped and tested
+- **Context:** building S25 showed places where the design left the shape of the host's window code, the plugin's failure surface and the test scope open.
+- **Chosen:**
+  - **The tracker and the model are interfaces in `Host.Core` with Win32 implementations in `Host.Platform`.** A separate `IWindowFacts` port reads a window's facts. `IUiPoster` runs work on the UI thread; the app provides it over the `DispatcherQueue`. Observations beyond the contract's list are `Rescan`, `Flashed` and `Redrawn`.
+  - **Admission is sticky and the model publishes once per queue drain.** The periodic rescan admits only unknown handles. Host-process windows are admitted only if they pass the strip style rule, and the shell window is excluded. There is no 30 ms debounce in the tracker, because coalescing per drain already bounds the publish rate.
+  - **One fixed desktop Guid until S26.** Every window reports it as `desktopId`. `FirstSeen` and `ActivatedAt` come from a sequence counter, not the clock. A window whose owner is not tracked reports `ownerKey` as `wk1:<epoch>:0`.
+  - **Host API 1.1 is additive.** Host-to-worker command errors carry `data.code` (the host's error name), and the Sdk reads it as `SdkError.Name`. `IFeeds.Latest` gives a plugin the current state of a feed it subscribes to.
+  - **`windows.running` becomes unavailable because the host says so.** The running-windows plugin does not publish an unavailable state itself; the host marks the feed unavailable when the plugin leaves `Running`. `host.windows` and `host.desktops` stay published, since the host is their provider.
+  - **A stale `ShellView` uses both feeds' latest states and the lower revision.** It does so after the 250 ms hold when the pair still disagrees.
+  - **Test hosts track only their own windows and windows titled `szd-…`.** The hook's `synthetic-windows` request adds, retitles and destroys model-only windows, so the budget and kill tests use hundreds of windows without a real one (I38). The `SKIPOWNPROCESS` hook flag is not used.
+  - **"A 1.1 plugin on a 1.0 host" is tested as a `^1.2` manifest on the 1.1 host.** The host API version is one global constant, so a real 1.0 host needs the previous release; S25.10's rollback test covers that case. "Generations survive a plugin restart" is asserted through the epoch and window count the host holds, because `status.json` does not list generations.
+  - **S25.10's rollback test and S25.9's fixture test run only with environment variables** (`SUBZERODEV_WM_PREVIOUS_RELEASE_DIR`, `SUBZERODEV_WM_FIXTURE_PACKAGE`). The release workflow sets the fixture one. Nothing yet supplies an earlier release in CI, so the rollback test ran locally against a build of S24's merge commit.
+  - **S25.11 reuses the idle CPU and private-memory budgets.** It adds a revision-coalescing assertion and no new rows in `docs/budgets.md`.
+- **Rejected:**
+  - **Keeping the plugin's own hook as a fallback:** two trackers is the failure I39 exists to prevent.
+  - **A 30 ms debounce before publishing:** it adds latency to every change and, with per-drain coalescing, bounds nothing more.
+  - **Letting the plugin publish its own unavailable state:** a plugin that has been killed cannot, so the host has to do it anyway.
+  - **Faking a 1.0 host with a second version constant:** it would test code that exists only for the test.
+  - **Real windows for the load tests:** they would move the user's desktop and break I38.
+
 ## 2026-11-03 — S24: how notifications reached the host, the shell and the tests
 - **Context:** building S24 showed six places where the contract was silent, ambiguous or inconsistent. Each needed a choice that the next slices (S28's Windows keys above all) will build on.
 - **Chosen:**

@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "id": "example.windows",
+  "version": "1.0.0",
+  "displayName": "Windows fixture",
+  "publisher": "Example",
+  "description": "A third-party fixture: reads the shell's window feeds and acts on windows by key.",
+  "hostApi": "^1.1",
+  "entry": { "path": "Example.Windows.exe", "args": [] },
+  "capabilities": [ "windows.read", "windows.activate" ],
+  "modes": [ "coexistence", "replacement" ],
+  "requiresExplorer": false,
+  "contributions": [
+    { "id": "status", "kind": "panelItem", "displayName": "Windows status", "multiInstance": false }
+  ],
+  "commands": [
+    { "id": "example.windows.activate", "title": "Activate window", "argsSchema": { "type": "object", "properties": { "windowKey": { "type": "string" } } } },
+    { "id": "example.windows.minimize", "title": "Minimise window", "argsSchema": { "type": "object", "properties": { "windowKey": { "type": "string" } } } }
+  ],
+  "subscribes": [ "host.windows", "host.desktops" ],
+  "settingsVersion": 1
+}

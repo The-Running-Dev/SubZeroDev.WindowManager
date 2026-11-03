@@ -49,6 +49,8 @@ public sealed partial class App : Application
     private ShowDesktop? _showDesktop;
     private WindowsKeyHook? _windowsKeys;
     private WindowsKeyTable? _keyTable;
+    private WindowService? _windows;
+    private SyntheticWindows? _syntheticWindows;
     private string? _hooked;
     private int _exiting;
 
@@ -170,6 +172,18 @@ public sealed partial class App : Application
             _ => _router.ServeWorkerAsync(pluginId, request),
         };
         _showDesktop = new ShowDesktop(hooked);
+
+        // The one window registry (I39). It enumerates and publishes revision 1 here, before any plugin is supervised (S25.10).
+        // A test host tracks only its own windows and the fixture windows tests create, never the user's.
+        var scope = hooked is null ? null : new Func<WindowFacts, bool>(f => f.OwnProcess || f.Title.StartsWith("szd-", StringComparison.Ordinal));
+        var windowFacts = new Win32WindowFacts();
+        // The test hook adds windows that exist only in the model, so budgets can track hundreds without opening any (S25.11).
+        var synthetic = hooked is null ? null : new SyntheticWindows(windowFacts, "szd-synthetic");
+        var windowModel = new WindowModel(synthetic ?? (IWindowFacts)windowFacts,new DispatcherPoster(dispatcher), scope: scope);
+        synthetic?.Bind(windowModel);
+        _syntheticWindows = synthetic;
+        var windows = _windows = new WindowService(windowModel, new Win32WindowTracker(windowFacts), _feeds.PublishHost);
+        await windows.StartAsync(CancellationToken.None);
         AddBuiltIns(_router, foreground, dispatcher);
         _supervisor.StatusChanged += (_, _) => dispatcher.TryEnqueue(RefreshSettingsWindow);
         _catalog.Changed += (_, _) => dispatcher.TryEnqueue(RefreshSettingsWindow);
@@ -266,7 +280,7 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost, Desktop = _desktop, WindowsKeys = _windowsKeys };
+                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost, Desktop = _desktop, WindowsKeys = _windowsKeys, Windows = _windows, Synthetic = _syntheticWindows };
             _testHook.Start();
         }
     }
@@ -369,8 +383,8 @@ public sealed partial class App : Application
         AddSessionCommand(router, "host.session.restart", "Restart", session.Restart);
         AddSessionCommand(router, "host.session.shutdown", "Shut down", session.Shutdown);
         AddSessionCommand(router, "host.session.sleep", "Sleep", session.Sleep);
-        router.AddBuiltIn("host.window.activate", "Activate window", (args, ct) => WindowCommandAsync(args, foreground.ActivateWindowAsync, ct));
-        router.AddBuiltIn("host.window.minimize", "Minimise window", (args, ct) => WindowCommandAsync(args, foreground.MinimizeWindowAsync, ct));
+        router.AddBuiltIn("host.window.activate", "Activate window", (args, ct) => WindowCommands.ActivateAsync(_windows!.Model, foreground, args, ct));
+        router.AddBuiltIn("host.window.minimize", "Minimise window", (args, ct) => WindowCommands.MinimizeAsync(_windows!.Model, foreground, args, ct));
         router.AddBuiltIn("host.preset.apply", "Apply preset", async (args, ct) =>
         {
             if (args?["id"] is not JsonValue value || !value.TryGetValue<string>(out var id))
@@ -494,18 +508,6 @@ public sealed partial class App : Application
             .OfType<PresetDocument>()
             .OrderBy(preset => preset.Id, StringComparer.Ordinal)
             .Select(preset => (preset.Id, preset.DisplayName))];
-
-    private static async Task<CommandOutcome> WindowCommandAsync(JsonObject? args, Func<nint, CancellationToken, Task<Core.Outcome>> act,
-        CancellationToken ct)
-    {
-        if (args?["hwnd"] is not JsonValue value || !value.TryGetValue<long>(out var hwnd))
-        {
-            return CommandOutcome.Fail(CoreErrorCode.CommandFailed, "Needs { hwnd: number }.");
-        }
-
-        var outcome = await act((nint)hwnd, ct).ConfigureAwait(false);
-        return outcome.Ok ? CommandOutcome.Success(new CommandResult(null)) : CommandOutcome.Fail(outcome.Error!);
-    }
 
     private static async Task<CommandOutcome> InvokeTrayAsync(TrayHost tray, string key, TrayAction action, int x, int y, CancellationToken ct)
     {
@@ -677,6 +679,7 @@ public sealed partial class App : Application
         _hotkeyService?.Dispose();
         _config?.Dispose();
         _catalog?.Dispose();
+        _windows?.Dispose();
         if (_contributions is not null)
         {
             await _contributions.DisposeAsync();

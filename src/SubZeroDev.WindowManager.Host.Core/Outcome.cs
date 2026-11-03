@@ -31,6 +31,9 @@ public enum CoreErrorCode
     ShellOverridden,
     SessionCommandRefused,
     NotInReplacementMode,
+
+    /// <summary>A window reference from another run of the shell; no window was touched.</summary>
+    StaleWindowReference,
 }
 
 public sealed record CoreError(CoreErrorCode Code, string Detail, bool Retryable);

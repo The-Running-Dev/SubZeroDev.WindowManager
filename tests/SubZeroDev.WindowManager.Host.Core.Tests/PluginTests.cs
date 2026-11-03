@@ -63,6 +63,43 @@ public sealed partial class PluginTests
     }
 
     [Fact]
+    public void S25_4_no_plugin_project_hooks_enumerates_or_rescans_windows()
+    {
+        var root = RepositoryRoot();
+        var pluginSources = Directory.EnumerateDirectories(Path.Combine(root, "src"), "SubZeroDev.WindowManager.Plugins.*")
+            .Append(Path.Combine(root, "samples"))
+            .SelectMany(directory => Directory.EnumerateFiles(directory, "*.cs", SearchOption.AllDirectories))
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .ToList();
+        Assert.NotEmpty(pluginSources);
+        Assert.Contains(pluginSources, path => path.EndsWith("RunningWindows\\Program.cs", StringComparison.Ordinal)
+            || path.EndsWith("RunningWindows/Program.cs", StringComparison.Ordinal));
+
+        foreach (var file in pluginSources)
+        {
+            var match = WindowTrackingApi().Match(File.ReadAllText(file));
+            Assert.False(match.Success, $"{Path.GetRelativePath(root, file)} tracks windows itself with {match.Value}; read host.windows (I39).");
+        }
+    }
+
+    [Fact]
+    public void S25_9_the_window_fixture_subscribes_to_both_shell_feeds_and_needs_host_api_1_1()
+    {
+        var root = RepositoryRoot();
+        var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(root, "samples", "WindowsFixture", "plugin.json")))!.AsObject();
+
+        Assert.Equal("^1.1", (string?)manifest["hostApi"]);
+        Assert.Equal(["host.windows", "host.desktops"], manifest["subscribes"]!.AsArray().Select(feed => (string?)feed));
+
+        var program = File.ReadAllText(Path.Combine(root, "samples", "WindowsFixture", "Program.cs"));
+        Assert.Contains("ShellViewSource", program, StringComparison.Ordinal);
+        Assert.Contains("host.window.activate", program, StringComparison.Ordinal);
+        Assert.Contains("host.window.minimize", program, StringComparison.Ordinal);
+        Assert.Contains("windowKey", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void S2_1_no_host_project_loads_an_assembly()
     {
         var root = RepositoryRoot();
@@ -258,6 +295,9 @@ public sealed partial class PluginTests
 
     [GeneratedRegex(@"\bAssembly\.(Load|LoadFrom|LoadFile|UnsafeLoadFrom)\s*\(|\bAssemblyLoadContext\b")]
     private static partial Regex AssemblyLoading();
+
+    [GeneratedRegex(@"\b(SetWinEventHook|SetWindowsHookEx\w*|EnumWindows|EnumDesktopWindows|EnumChildWindows|RegisterShellHookWindow|WindowTracker|RescanWindows|ScanWindows|ReconcileWindows)\b")]
+    private static partial Regex WindowTrackingApi();
 
     private static JsonElement ViewSet(long revision, string root) =>
         JsonDocument.Parse($$"""{"surfaceId":"s","revision":{{revision}},"root":{{root}}}""").RootElement.Clone();

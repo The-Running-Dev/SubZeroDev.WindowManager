@@ -365,7 +365,7 @@ Acceptance:
 Out of scope: toast buttons and inline replies (not available through Windows' listener interface); the calendar flyout; any window-model work.
 
 ## S25 — The shared window model and running windows on it
-Status: todo
+Status: done
 Delivers: Ben's running-windows strip looks and behaves as before, but its list now comes from one host-owned registry of windows that outlives hiding, with lifetime references the other features and independently built plugins can rely on.
 Touches: Host.Core (`IWindowModel`, `ManagedWindow`, `WindowKey`, `WindowFingerprint`, `WindowReference`, the registry, `Resolve`, `ResolveHandle`, the published facts, `Epoch`); Host.Platform (`IWindowTracker` with `EnumerateAsync` and `Capture`, the one set of event hooks, shell-hook window and 2 s rescan); Host.App (start order: tracker before plugins); Protocol and Sdk (`host.windows` and `host.desktops` feeds with `revision`, `host.window.activate` and `minimize` with `windowKey`, `StaleWindowReference`, `WindowsFeedState`, `DesktopsFeedState`, `ShellView`); plugin `subzerodev.running-windows` (the compatibility adapter; its own tracker removed); the test plugin and an out-of-repo fixture plugin built against the published SDK only
 Depends on: S24

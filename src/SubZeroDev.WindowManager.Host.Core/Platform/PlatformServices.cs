@@ -219,7 +219,16 @@ public interface IForegroundService
     Task<Outcome> ActivateWindowAsync(nint hwnd, CancellationToken ct);
 
     Task<Outcome> MinimizeWindowAsync(nint hwnd, CancellationToken ct);
+
+    /// <summary>
+    /// As <see cref="ActivateWindowAsync"/>, but says what happened: <see cref="ActivationResult.Foreground"/> only once
+    /// the window is seen to be the foreground window (within about 250 ms), else <see cref="ActivationResult.Requested"/>.
+    /// </summary>
+    Task<Outcome<ActivationResult>> ActivateConfirmedAsync(nint hwnd, CancellationToken ct);
 }
+
+/// <summary>What <c>host.window.activate { windowKey }</c> can claim.</summary>
+public enum ActivationResult { Foreground, Requested }
 
 /// <summary>
 /// The host's reading of an IconRef from a view (the plugin SDK has its own builder type). Only the

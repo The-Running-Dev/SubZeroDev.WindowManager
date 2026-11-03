@@ -13,6 +13,12 @@ public interface IFeeds
     /// <c>subscribes</c>, starting with the latest one when there is one. Throws for an undeclared id.
     /// </summary>
     IDisposable Subscribe(string feedId, Func<FeedUpdate, CancellationToken, Task> onUpdate);
+
+    /// <summary>
+    /// The latest update the host sent for a feed declared under <c>subscribes</c>, or null before the first one.
+    /// Safe from any thread. Throws for an undeclared id.
+    /// </summary>
+    FeedUpdate? Latest(string feedId);
 }
 
 public interface IFeedPublisher
@@ -59,6 +65,19 @@ internal sealed class Feeds(Connection connection, IReadOnlySet<string> publishe
         }
 
         return subscription;
+    }
+
+    public FeedUpdate? Latest(string feedId)
+    {
+        if (!subscribed.Contains(feedId))
+        {
+            throw new ArgumentException($"{WireErrorCodes.Undeclared} '{feedId}' is not declared under 'subscribes' in plugin.json.", nameof(feedId));
+        }
+
+        lock (_gate)
+        {
+            return _latest.TryGetValue(feedId, out var latest) ? latest : null;
+        }
     }
 
     /// <summary>Runs a <c>feed.update</c> from the host; called on the callback queue.</summary>

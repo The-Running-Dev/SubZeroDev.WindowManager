@@ -20,7 +20,21 @@ public enum ErrorCode
     NotConnected = 2000,
 }
 
-public sealed record SdkError(ErrorCode Code, string Detail, bool Retryable);
+/// <param name="Code">The wire error class.</param>
+/// <param name="Detail">The host's message.</param>
+/// <param name="Retryable">Whether trying again may succeed.</param>
+/// <param name="Name">The host's own name for the failure (host API 1.1), such as <c>StaleWindowReference</c> or <c>WindowGone</c>; null when the host sent none.</param>
+public sealed record SdkError(ErrorCode Code, string Detail, bool Retryable, string? Name = null)
+{
+    /// <summary>Reads <c>retryable</c> and <c>data.code</c> from the data of a wire error.</summary>
+    internal static SdkError FromWire(RpcError error)
+    {
+        var data = error.Data as JsonObject;
+        var retryable = data?["retryable"] is JsonValue v && v.TryGetValue<bool>(out var r) && r;
+        var name = data?["code"] is JsonValue c && c.TryGetValue<string>(out var text) ? text : null;
+        return new SdkError((ErrorCode)error.Code, error.Message, retryable, name);
+    }
+}
 
 public readonly record struct SdkResult(SdkError? Error)
 {
@@ -67,8 +81,7 @@ internal static class HostRequests
 
         if (response.Error is { } error)
         {
-            var retryable = error.Data is JsonObject data && data["retryable"] is JsonValue v && v.TryGetValue<bool>(out var r) && r;
-            return new(new SdkError((ErrorCode)error.Code, error.Message, retryable));
+            return new(SdkError.FromWire(error));
         }
 
         return SdkResult.Success;

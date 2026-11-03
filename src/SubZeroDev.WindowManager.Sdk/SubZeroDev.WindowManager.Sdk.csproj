@@ -22,6 +22,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="SubZeroDev.WindowManager.TestPlugin" />
+    <InternalsVisibleTo Include="SubZeroDev.WindowManager.Host.Core.Tests" />
   </ItemGroup>
   <Target Name="IncludeProtocolInPackage" DependsOnTargets="ResolveReferences">
     <ItemGroup>

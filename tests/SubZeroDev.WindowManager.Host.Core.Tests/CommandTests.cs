@@ -304,6 +304,9 @@ public sealed class CommandTests : IDisposable
         public Task<Outcome> ActivateWindowAsync(nint hwnd, CancellationToken ct) => Task.FromResult(Outcome.Success);
 
         public Task<Outcome> MinimizeWindowAsync(nint hwnd, CancellationToken ct) => Task.FromResult(Outcome.Success);
+
+        public Task<Outcome<ActivationResult>> ActivateConfirmedAsync(nint hwnd, CancellationToken ct) =>
+            Task.FromResult(Outcome<ActivationResult>.Success(ActivationResult.Foreground));
     }
 
     private sealed class FakeHotkeys : IHotkeyService

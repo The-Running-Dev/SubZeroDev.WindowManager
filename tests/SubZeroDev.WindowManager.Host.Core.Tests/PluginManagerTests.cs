@@ -108,6 +108,25 @@ public sealed class PluginManagerTests
         Assert.Equal(0, launcher.Starts);
     }
 
+    [Theory]
+    [InlineData("^1.2", true)]
+    [InlineData("^1.1", false)]
+    [InlineData("^1.0", false)]
+    public async Task S25_6_a_plugin_needing_a_newer_minor_is_incompatible_and_an_older_one_runs(string hostApi, bool incompatible)
+    {
+        using var scratch = new Scratch();
+        var locations = WithPlugins(scratch, hostApi: hostApi);
+        using var catalog = new PackageCatalog(locations, new NullLog(), watch: false);
+        using var config = new ConfigStore(locations);
+        await using var supervisor = Supervisor(catalog, locations, new Lines(), new RefusingLauncher());
+        supervisor.Enablement = new PluginEnablement(config, catalog);
+
+        var described = supervisor.Describe(BuiltIn);
+
+        Assert.Equal(incompatible, described.State == PluginState.Incompatible);
+        Assert.Equal(incompatible, described.Problems.Any(problem => problem.Code == CoreErrorCode.HostApiMismatch));
+    }
+
     [Fact]
     public void The_plugins_map_parses_and_a_bad_entry_is_a_problem()
     {

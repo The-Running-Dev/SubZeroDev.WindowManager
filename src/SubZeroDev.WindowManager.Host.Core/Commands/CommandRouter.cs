@@ -157,7 +157,7 @@ public sealed class CommandRouter : ICommandRouter
         return result.Ok
             ? RpcMessage.Success(request.Id!.Value, result.Value)
             : RpcMessage.Failure(request.Id, WorkerChannel.WireCodeOf(result.Error!.Code), result.Error.Detail,
-                new JsonObject { ["retryable"] = result.Error.Retryable });
+                new JsonObject { ["retryable"] = result.Error.Retryable, ["code"] = result.Error.Code.ToString() });
     }
 
     private async Task<Outcome<CommandResult>> InvokeCoreAsync(string commandId, JsonObject? args, InvocationSource source,
