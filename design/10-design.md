@@ -2,6 +2,8 @@
 
 Built from [00-brief.md](00-brief.md). Approach approved 2026-11-01: **declarative contributions rendered by the host, every plugin in its own worker process, and a separate guardian process that undoes desktop changes if the host dies.**
 
+The second release's design is the [Second release](#second-release) part at the end of this file. It extends this design and changes only what it names.
+
 Premises confirmed before designing:
 1. Every plugin, the first-party clock, launcher and running-windows plugins included, runs in its own process. The host never loads plugin code. Custom in-process WinUI UI is deferred past the first release.
 2. Each panel's layout chooses whether it reserves screen space like the taskbar, floats over windows, auto-hides, or sits on the desktop beneath windows.
@@ -318,3 +320,257 @@ Decided here with no live alternative worth a paragraph (logged in [90-decisions
    *Answered:* all three pass on Windows App SDK 1.8.260317003, unpackaged and self-contained (decision "S1: Pin Windows App SDK 1.8.260317003"). Hit-testing that follows a template's shape is still open.
 6. **The per-user shell value on Ben's build.** The design assumes Windows honours the per-user `Winlogon\Shell` value on Windows 11 Enterprise build 26200. S17's prototype check confirms it. If it does not, the fallback is the per-user Custom User Interface value (`HKCU\...\Policies\System\Shell`), which also needs no elevation. Switching to it is a decision entry.
 7. **Explorer-hosted features without Explorer.** Toasts, the notification centre, Quick Settings and Task View are hosted by Explorer or its shell-experience processes. S23's qualification records which of them still work with Explorer absent on Ben's build. The brief keeps them out of scope. *Recorded:* the expected state of each is in `docs/replacement-mode.md`, and a week of daily use confirms it (S23.1, decision "S23: replacement mode qualified for daily use").
+
+---
+
+# Second release
+
+Added 2026-11-03 from the second-release part of [00-brief.md](00-brief.md). The first release above stands; this part extends it and changes only what it says it changes. Approach approved 2026-11-03: **one authoritative window model in the host, published as a feed with commands, with the taskbar depth, virtual desktops, Task View and switcher as plugin views of it; notifications independent of the model, read by a packaged worker and drawn by the shell.**
+
+Premises confirmed before designing (Ben, 2026-11-03):
+1. The shell draws its own notification pop-ups and centre from the history that a packaged listener reads. It does not rely on Windows' own pop-ups. The run without Explorer is the first notifications slice's gate, and this design does not depend on its result.
+2. Package identity is confined to the notifications plugin's worker. The guardian, the host and every other plugin stay unpackaged. The one-time setup (trust the certificate, allow notification access, switch notifications on) is a guided step shown to Ben, never silent. The first release's no-administrator promise still covers shell registration.
+3. Virtual desktops are the shell's own sets of windows: hide and show, and moving a window re-files it. Windows' own desktops depend on Explorer and on undocumented interfaces. The cost is that applications asking Windows which desktop they are on do not see ours.
+4. Every second-release feature is replacement-mode only, so Win+A, Win+N and Win+Tab never compete with Explorer. The window model and its feed are infrastructure, not a feature, and run in both modes.
+5. Custom plugin UI in host windows, a theme editor and automatic updates are out of this release (deferred, not open).
+6. The design assumes issue #28's manual checks pass. A failure reopens it. Slices follow Ben's priority order (notifications first), one pull request each.
+
+**Revised 2026-11-03** against [the window-model handoff](2026-11-03-second-release-design-handoff.md), a design input and not an implementation instruction. The revision does not reopen approach A or premises 1–6. It corrects five things in the first draft: (1) the registry no longer has a model-wide `eligible` rule: the host tracks every admitted window and publishes facts, and each view applies its own rule; (2) a window's lifetime identity is a host-assigned generation, separate from its application `groupKey`, and the claim that handle, process id and start time alone survive handle reuse is withdrawn; (3) `windows.running` and the existing window commands have a documented compatibility table and a single-tracker cutover; (4) the slices (S24–S31) follow the brief's order, with the model extraction as the first window slice and the reason it is larger stated; (5) seven acceptance checks, C1–C7, each have a slice owner and an evidence method. The checks are planned requirements, not results. Ben's five questions (open questions 1–5) are unchanged and still open.
+
+## The shape in one paragraph
+
+Two things are added to the host, and four kinds of plugin sit on top. The **window model** takes over window scanning from the running-windows plugin, so the host becomes the only place that discovers windows. It is one in-memory registry of every top-level window the host has admitted, kept for the window's whole life whether or not it is visible, with desktop membership, a lifetime identity, a separate grouping key, and progress and overlay badge state; views decide what to show. It is published as the `host.windows` and `host.desktops` feeds with commands to switch desktops and move windows. Hiding and showing windows is done by a **window-effects thread**, behind the recovery journal, so a dead host cannot leave windows hidden. The **notification path** is separate: a packaged worker reads Windows' notification history, publishes it as a feed, and the notifications plugin draws pop-ups and a centre as host surfaces. On top: running windows (grouping, hover thumbnail, jump lists, badges), virtual desktops with a Task View, quick settings, and a power-user menu, all reached by chords the existing Windows-key hook already owns. The desktop plugin gains the shell's file context menu, built in its own worker so third-party menu extensions never load into the host.
+
+## Data model
+
+**Persisted** (new or changed; the first release's documents are unchanged unless named):
+
+- `desktops.json` (data root): the shell's desktops. `{ schemaVersion: 1, desktops: [ { id: guid, name?: string } ], lastCurrent: guid }`. Only the list and names persist. Which window sits on which desktop does not: window handles mean nothing after the host restarts, and the guardian shows every window it finds hidden (flow 12), so a host restart merges all windows onto the first desktop. That is the stated cost of the fail-safe.
+- Recovery journal: a third entry kind, `hiddenWindows`: `{ kind, windows: [ { hwnd, processId, processStartTicks, threadId, className } ] }`. One entry holds the whole hidden set. It is replaced, not appended, on each switch, and the entry written before a switch is the union of the old hidden set and the windows about to be hidden, so a crash at any point leaves a superset. The fingerprint has five fields because recovery cannot trust a handle: it shows a window only if all five still match (flow 12).
+- `settings.json`: one additive optional key, `windowsKeys`: chord → command id, with the host's defaults supplied when absent. No `schemaVersion` bump.
+- Presets: `wallpaper` becomes `{ default?: Wallpaper, monitors?: { <monitorId>: Wallpaper } }`, where `Wallpaper` is the first release's `{ image, fit }`. This is `presets` `schemaVersion` 2; the pure migration v1 → v2 wraps the old object as `default`.
+- `plugin-data\subzerodev.notifications\state.json`: `{ lastSeen: instant, doNotDisturb: bool }`. **No notification content is ever persisted by the shell.** Windows keeps the history; the shell reads it.
+- Sparse package for the notifications worker, shipped in the install root: a manifest, the logo, and the signed package file. Registered per user, with the plugin folder as its external location. The certificate it needs trusted is a public `.cer` shipped beside it.
+
+**In memory** (host, rebuilt on every start):
+
+- **ManagedWindow** (Host.Core). One entry per admitted window, kept until the window is destroyed. Identity: a *lifetime key* (handle plus a host-assigned generation) verified by a *fingerprint*; see *Lifetime identity* below. Facts, published as they are: `title`, `exePath`, `aumid` (now resolved from the window's property store or its process; the first release left it null), `groupKey`, `monitorId`, `desktopId`, `pinnedToAll`, the visibility, cloaking, ownership and style facts, `active`, `minimised`, `attention` (a flash, or an app tried to show itself while on another desktop), `progress` (`none`, `indeterminate`, `normal`, `error`, `paused`, plus 0–1), `overlay` (icon reference and description), `firstSeen` and `activatedAt`. **Derived:** `groupKey` is the AUMID when there is one, else the normalised executable path, with an override for windows hosted by a frame process (for example UWP frames). **There is no model-wide `eligible` field.** The first draft had one (the first release's strip rule, or in the hidden set); it made hiding look like leaving, so it is withdrawn. Each view derives its own list from the facts (*View rules*).
+- **DesktopSet**: the ordered desktops, `currentId`, and per desktop the windows' z-order captured when the user left it. Invariant: at least one desktop; `currentId` names one.
+- **HiddenSet**: the windows the shell has hidden, mirrored in the journal. A window is in it from the write-ahead flush before the hide until the show completes.
+- **Chord table**: the effective `windowsKeys` map.
+- **NotificationRecord** (inside the notifications worker only): `id`, `appId`, `appName`, `title`, `body`, `at`, `silent`, and `read`, derived from `lastSeen`. The history itself is Windows'. A dismissal or clear is a call back into Windows, not a local deletion.
+- **QuickSetting** (inside the quick-settings worker): `id`, `kind` (`toggle` or `level`), `value`, `available`, `reason`. Always re-read from the device after a change; the shell never keeps its own idea of the device state.
+- **JumpListEntry** (inside the running-windows worker): `category` (`recent`, `frequent`, `tasks`, or a custom name), `title`, `target`, `args`, `icon`.
+
+**Ownership.** The window model belongs to the host's UI thread; everything else reads immutable snapshots. Device and notification state belongs to the worker that talks to the device.
+
+**Registry boundary.** The registry is not today's visible running-windows list moved into the host. A top-level window of another process (not message-only, not owned by the host) is *admitted* once it has been visible with a non-empty title, or as soon as the shell hides it. It then stays until it is destroyed: a Destroy event, or a rescan or command-time check that finds the handle invalid or its fingerprint changed. Hiding it for another desktop, minimising it, cloaking it, or being left out of any view is a *visibility change*, never a destruction: the window keeps its desktop, group and badges. Windows never admitted (tool tips, input-method and other helper windows that were never titled and visible) cost nothing.
+
+**Lifetime identity.** Two identities that are never mixed. *Lifetime identity* says which window. *Group identity* (`groupKey`) says which application and is shared by many windows. Commands and thumbnails address a window by lifetime identity and never by `groupKey`.
+
+- The host assigns a **generation** (a 64-bit counter, on the UI thread, at admission) to every admitted window. The lifetime key is `(handle, generation)`; a generation is never reused within a host run.
+- A **fingerprint** (process id, process start time, thread id, window class) is captured at admission and re-verified at every rescan and immediately before every state-changing command. A mismatch means the handle was reused: the old generation is destroyed and the handle is admitted afresh. Handle, process id and start time alone cannot tell a window from a successor created by the same process, so they are not the identity (the first draft said they were).
+- **Public reference:** `wk1:<epoch>:<generation>`. The *epoch* is random per host start. A reference with another epoch is `StaleWindowReference`; a current-epoch generation that is gone or fails its fingerprint check is `WindowGone`. Thumbnail registrations take the same reference and give the same two errors.
+- **Limits.** Between two checks a process can destroy a window and create another with the same handle, thread and class; a missed Destroy event then goes unseen until the next rescan (2 s) or the next command on it. The command-time check narrows that to the instant before the call but cannot close it, because the gap between checking a handle and using it is inherent to window handles. Generations do not survive a host restart: afterwards every old reference is `StaleWindowReference` and nothing is carried over. The recovery journal does not use generations; it records the fingerprint.
+- **Legacy handle-based commands** (`windows.activate { hwnd }`, `windows.minimize { hwnd }`, `host.window.activate` and `host.window.minimize` with `hwnd` only) resolve the handle to whatever the registry holds under it now. They carry the gap above and have no stale rejection. If the registry does not hold the handle but the handle is a window, they act on it unmanaged, as the first release did; otherwise `WindowGone`. New callers pass `windowKey`.
+
+**Published facts.** The feed publishes facts and leaves the verdict to the view:
+
+| Fact | Meaning |
+|---|---|
+| `visible` | `IsWindowVisible` at the last observation; false while the shell has it hidden |
+| `cloak` | `none`, `app`, `shell` or `inherited`, from the cloaked attribute |
+| `shellHidden` | the shell itself hid it, for another desktop; it is in the hidden set |
+| `ownerKey` | the owner's `windowKey`, or null |
+| `toolWindow`, `noActivate`, `appWindow`, `titled` | the style and title facts the first release's strip rule used |
+| `desktopId`, `pinnedToAll` | desktop membership |
+| `firstSeen` | monotonic number, from the order of admission |
+| `activatedAt` | monotonic number, set each time the window becomes the foreground window; 0 if never |
+| `active` | the foreground window, with the first release's rule that a tool window taking the foreground leaves the previous window active; the rule now lives in the model so every view agrees |
+| `minimised`, `attention`, `progress`, `overlay` | as before |
+
+**View rules.** Each view applies its own default rule to the same facts. A difference between views is by design and is not an inconsistency. What must agree is the facts (which desktop a window is on, whether it exists) and the revision they were read at.
+
+| View | Desktops | Monitors | Includes | Order |
+|---|---|---|---|---|
+| Running windows (`windows.running`, the strip) | the current desktop, plus pinned windows | all, or the contribution's `scope` setting (`this-monitor`) | the first release's rule: `visible`, `cloak` none, `titled`, and (`appWindow`, or unowned, not `toolWindow`, not `noActivate`); minimised windows included | `firstSeen` ascending |
+| Task View | every desktop, grouped by `desktopId` | all | the same style rule, and `visible` or `shellHidden`, and `cloak` none or `shell`; minimised included; a pinned window appears once, in an all-desktops row | `activatedAt` descending within each desktop |
+| Alt+Tab switcher | the current desktop, plus pinned windows | all | the same style rule and `visible`; an owned window is folded into its owner's entry; minimised included | `activatedAt` descending; the first step selects the second entry |
+
+A plugin may offer settings that change its own rule (the strip's `scope` is the first release's example). None of them changes the facts.
+
+**Feed consistency.** `host.windows` and `host.desktops` carry the same `revision`, a counter incremented once per published snapshot. Both feeds come from one immutable snapshot in the same dispatcher turn, and both publish completed state only (I30): `current` changes and windows are reported shown or hidden only after a switch plan has completed, and `host.desktops` carries `busy` and `switching` while one runs. A consumer that reads both (Task View, the switcher) uses the SDK's paired view. It renders only when the two revisions are equal. If they differ it holds the newer one for up to 250 ms, then re-reads the lagging feed's current snapshot, and if they still differ it renders from the lower revision and marks itself stale. A consumer that reads one feed needs no pairing. Because every consumer reads the same snapshot, two views that both include a window agree on its desktop, and all of them converge on the same completed switch.
+
+## Module boundaries
+
+The first release's graph is unchanged and stays acyclic; the new code goes into its existing layers.
+
+```text
+Protocol, Recovery -> Host.Core -> Host.Platform -> Host.Theming -> Host.Surfaces -> Host.Settings -> Host.App
+Protocol -> Sdk -> plugins (a plugin references Sdk only)
+```
+
+| Module | Gains | Depends on (unchanged) |
+|---|---|---|
+| Host.Core | `IWindowModel` (the registry, lifetime keys and fingerprints, grouping, badges, attention, the snapshot `revision`), `IDesktopSet` (desktops, membership, switch plans), `IWindowEffects` (the port to the effects thread), the feeds `host.windows` and `host.desktops`, the commands `host.desktops.*` and `host.window.*`, the `hiddenWindows` journal kind, the chord table | Protocol, Recovery |
+| Host.Platform | `IWindowTracker` (WinEvent hooks, the 2 s rescan, the shell-hook window; moved here from the running-windows plugin, and the only window discovery in the product), the **window-effects thread** (async hide and show, one thread), `ITaskbarBackchannel` (receives progress and overlay on the host's `Shell_TrayWnd`, and broadcasts `TaskbarButtonCreated`), `IThumbnailService` (DWM thumbnails), the extended Windows-key hook (chords, Alt+Tab sequence) | Core |
+| Host.Surfaces | The `Thumbnail` element, hover popups, two popup placements (`toast`: a non-activating stack on a work-area corner; `overlay`: a full-monitor surface that takes keyboard focus), per-monitor wallpaper | Theming, Platform |
+| Host.Settings | Pages: Desktops, Notifications setup, wallpaper per monitor | Surfaces |
+| Host.App | Wires the above; the test hook gains fakes for each device and for the effects thread | all |
+| Sdk / Protocol | Additive: host API and protocol 1.1 (hover popup property, popup placement, `Thumbnail` element, activation `trigger`) | — |
+| Recovery / Guardian | Reverts the `hiddenWindows` entry by showing every listed window that still exists | Protocol |
+
+**Plugins:**
+
+| Plugin | Role | Reads | Modes |
+|---|---|---|---|
+| `subzerodev.running-windows` (changed) | The strip, then grouping, hover thumbnail, jump lists, badges. Its scanner, WinEvent hooks, shell-hook window and reconcile loop are removed in the first window slice (flow 18). Its **compatibility adapter** builds `windows.running` from `host.windows` (the first release's item shape plus additive fields; current desktop plus pinned) so dependants do not break. The adapter lives in this plugin; with the plugin disabled the feed is unavailable and shared tracking continues | `host.windows`, `host.desktops` | both; depth features only in replacement |
+| `subzerodev.notifications` (new) | **The only packaged process.** Centre, pop-ups, bell with unread count, do-not-disturb | Windows' history | replacement |
+| `subzerodev.desktops` (new) | Panel item and Task View (Win+Tab) | `host.windows`, `host.desktops` | replacement |
+| `subzerodev.switcher` (new, last, droppable) | Alt+Tab switcher | `host.windows` | replacement |
+| `subzerodev.quick-settings` (new) | Win+A popup: Wi-Fi, Bluetooth, airplane mode, brightness, do not disturb | the devices | replacement |
+| `subzerodev.power-menu` (new) | Win+X menu | the WinX folders | replacement |
+| `subzerodev.desktop-icons` (changed) | Native shell context menu on icons and on the background | the Desktop folders | replacement |
+
+The notifications plugin reads nothing from the window model, and the window model knows nothing about notifications. A bug in one cannot corrupt the other. The power menu reads the WinX folders only and does not depend on the window model.
+
+**What the host owns, and what stays in plugins.** The host's boundary is shared platform capability: window discovery, lifetime identity, desktop membership, group identity, progress and overlay facts, the state-changing commands, recovery, and rendering primitives (the `Thumbnail` element). Presentation stays in plugins: which windows a view shows and in what order, grouping presentation, jump-list menus and their interactions, and every other feature's behaviour. `host.tray.icons` is the precedent: the host owns the facts, plugins own the views.
+
+**Plugin independence.** Disabling or crashing any view plugin leaves the model, both feeds and the commands running, because the host and not a plugin owns tracking. A restarted plugin resubscribes and receives the current snapshot; no plugin keeps a tracker of its own.
+
+## Control flow
+
+Flows 9–19 follow the first release's flows 1–8.
+
+9. **A window appears, changes, hides or goes (the model update).** A WinEvent (create, show, hide, destroy, name change, foreground, minimise, cloak) or the 2 s rescan reaches the tracker, which posts an observation to the UI thread. The model admits a new window by the registry boundary, gives it a generation, and files it on the current desktop (an owned window follows its owner). For a known window it updates the facts observed: a hide or a cloak changes `visible` or `cloak` and nothing else. Only a Destroy, an invalid handle, or a fingerprint mismatch removes a window, and removal also clears it from the hidden set. It recomputes `groupKey`, increments `revision`, and publishes the next snapshot, at most once per frame. A window that shows itself while assigned to another desktop is hidden again and gains `attention`.
+10. **Switch desktop (Win+Ctrl+Left/Right, a panel item, or `host.desktops.switch`).** The chord reaches the command router. `IDesktopSet` computes a *plan*: the windows to hide (the current desktop's, except pinned ones), and the windows to show (the target's, in their saved z-order, with the last active one last). The plan goes to the effects thread, which (1) replaces the journal's `hiddenWindows` entry with the union of the old hidden set and the windows about to be hidden, and flushes, (2) re-verifies each window's fingerprint, drops those that are gone, and applies the hides and shows with non-blocking window-position calls, (3) replaces the entry with the exact hidden set, (4) posts the result. While the plan runs `host.desktops` shows `busy` and `switching`; when it has completed, one snapshot changes `current` and each affected window's `visible` and `shellHidden`. A second switch request while one runs is held, and only the latest target is applied.
+11. **Move a window (Task View drag, or `host.window.moveToDesktop`).** The model validates the `windowKey` (`StaleWindowReference`, `WindowGone`), the target (`DesktopNotFound`) and the window (`WindowNotMovable`), then re-files the window. If the target is not the current desktop, the plan hides it (journal first). Moving to "new desktop" creates one first; that desktop belongs to the call, and flow 19 says what happens to it if the window closes meanwhile.
+12. **Host dies with windows hidden.** The guardian reads the journal, finds `hiddenWindows`, and for each listed window checks all five fingerprint fields (valid handle, process id, process start time, thread id, class), so a handle reused by another window is never touched. It shows only windows that are not visible, in the form that neither activates nor restores, so a minimised window comes back minimised; it clears the entry and relaunches the host (flow 5). The entry written before any hide is a superset of what can be hidden, so a crash before, during or after the hides of a switch strands nothing; a window already shown is skipped. After the relaunch every recovered window is on the first desktop (`desktops.json` keeps only the list, so membership does not survive a restart), and every old window reference is `StaleWindowReference`. When the relaunch budget is spent, the same revert runs before Explorer is started (I23). A window that still will not show is logged `WindowNotMovable` and left for the user.
+13. **A notification arrives.** Windows adds it to the history and raises the listener's change event. The notifications worker re-reads the history, diffs it against what it published (by notification id), updates the `notifications.history` feed, and, unless do-not-disturb is on or the notification is silent, opens the `toast` popup (placement `toast`). The pop-up shows for `popupSeconds`, at most `maxVisible` at a time; the rest collapse into "N more". Clicking it activates the originating application (flow 15). The centre (Win+N or the bell) lists the history grouped by application, with dismiss and clear; both call back into Windows.
+14. **A chord (Win+A, Win+N, Win+Tab, Win+X, Win+Ctrl+arrows, Alt+Tab).** The hook, on its own thread, sees the key. If the chord's command has a `Running` provider at that instant, the hook swallows the chord and posts the command id to the UI thread, which invokes it; otherwise the key passes through. Alt+Tab is a sequence: while Alt is held, Tab and Shift+Tab are swallowed and become `switcher.step`; Alt's release becomes `switcher.commit`; Esc becomes `switcher.cancel`.
+15. **Activate a notification's source.** The worker starts the notification's application by its AUMID, passing the notification's launch string when there is one. Toast buttons and inline replies cannot be invoked through Windows' listener interface, so they are not offered (open question 1).
+16. **Hover a taskbar group (thumbnail).** The element carries a hover popup with a 400 ms delay. The host opens the popup at the element without taking focus, closes it when the pointer leaves both, and the popup's view has one `Thumbnail` element per window in the group. The element asks Host.Platform for a DWM thumbnail of the window, drawn into the popup's own window. The registration lives as long as the element (I36).
+17. **Right-click a desktop icon (or the background).** The desktop-icons worker builds the shell's context menu in its own process, with a hidden owner window, and shows it at the pointer after the host has granted it foreground rights (I18). The chosen verb is invoked by the same worker. Rename opens a popup with a TextInput instead of Explorer's in-place edit.
+18. **Cutover: the host becomes the only tracker (the first window slice).** One pull request does three things together, so there is never a moment with two trackers. (1) Host.Platform gains `IWindowTracker`, and the host starts it at launch, before any plugin. (2) The running-windows plugin stops scanning and builds `windows.running` from a `host.windows` subscription: its compatibility adapter. (3) Its `WindowTracker`, WinEvent hooks, shell-hook window and reconcile loop are deleted. *Clean start:* the host enumerates the existing windows, admits them, and publishes revision 1 before supervising any plugin; the adapter publishes `windows.running` only after it has received a snapshot, so a dependant never sees a half-built list. *Plugin restart:* the supervisor restarts the worker, which resubscribes, receives the current snapshot and republishes; nothing is rescanned. *Plugin disabled:* the adapter stops and `windows.running` becomes `available: false`, and a command to its provider fails without starting the worker, as S6 decided; the model, the other feeds and the commands carry on. *Version mismatch:* the adapter declares `hostApi ^1.1`; a 1.0 host (an application rolled back) lists it as `Incompatible` with `HostApiMismatch` and does not start it, and a 1.0 plugin on a 1.1 host runs unchanged. *Rollback:* the application is one zip, so rolling back restores the first release's plugin and its scanner together, never the new host with the old scanner or the reverse. The one exception is a user package that overrides the built-in id (a user package with the same id replaces the built-in one): it is the user's plugin, it may still carry a scanner, and the host's model stays authoritative for every feed the host owns. It does not make a second authoritative tracker, only a second private one, and the host does not police it.
+19. **A window closes during an operation.** Each operation has stages, and each stage has one defined outcome. A completed desktop switch is never undone because a window closed; a posted activation is never reported as proven foreground.
+    - *Activate (`host.window.activate` with a `windowKey`):* (a) validate the reference: another epoch is `StaleWindowReference`, a gone generation or failed fingerprint is `WindowGone`, with no side effect. (b) If the window is on another desktop, run the switch (flow 10); if the window closes during it, the switch completes and stays, and the call returns `WindowGone`. (c) Restore if minimised, then request the foreground; a window that closes here gives `WindowGone`. (d) Verify the foreground after about 250 ms: the result is `{ outcome: "foreground" }` if the window is the foreground window, `{ outcome: "requested" }` if it is not (the request was posted and Windows may have refused it), and `WindowGone` if it closed in the interval. `requested` never means the window is in front. The legacy `hwnd` form returns no outcome.
+    - *Move (`host.window.moveToDesktop`):* (a) validation as above. (b) A requested new desktop is created. (c) The window is re-filed, journal first if it will be hidden. (d) The hide runs on the effects thread. If the window closes before (c), the call returns `WindowGone` and removes the desktop it created, if that desktop is still empty and is not current. If it closes between (c) and the end of (d), the destroy observation removes it from the model and the hidden set, the effects thread treats a hide of a vanished window as done, the journal entry is rewritten without it, and the call returns `WindowGone` if the destruction was seen before the snapshot publishes, else success; the desktop it was filed on stays. After the call returns, a close is an ordinary destroy.
+    - *Switch:* a window that closes anywhere in the plan is dropped from the plan, from the model and from the hidden set; it is never marked stuck. If the window that would have been shown last (the target's last active window) closes, the next window in the saved z-order takes its place.
+    - *Cleanup invariant:* when any operation has returned, no hidden-set entry, journal entry or desktop created by that call names a window that is gone or a desktop nothing asked to keep.
+
+**First-time notification setup (a flow of its own, run by Ben once).** The notifications plugin starts, and its worker reports whether it has package identity and whether access is `Allowed`. If either is missing, the plugin's popups show a **Set up** page, never an error: three steps with their current status (the machine trusts the certificate; the account allows this app under notification access; notifications are switched on), a command to copy for the one elevated step, and links to the matching Settings pages. Nothing is run for the user (I32). The page re-checks every few seconds while it is open.
+
+## Distribution
+
+Same channel as the first release: one zip on the GitHub release; the new plugins are built-in content, packaged by the same PackTool. Additions:
+
+- **Notifications:** the zip carries the sparse package, its public certificate, and a script that registers it for the current user (the recipe in `tools/SubZeroDev.WindowManager.NotificationProbe`). The first run shows the guided setup above. Upgrade replaces the plugin folder; the package is re-registered only when its manifest changes.
+- **Uninstall:** `--uninstall` also unregisters the sparse package for the current user. It does not remove the certificate from the machine's store and prints the command to do so.
+- **Plugin SDK:** host API and protocol 1.1 are additive and ship in the same SDK package. A first-release plugin runs unchanged; one that uses a 1.1 feature declares `hostApi: "^1.1"`.
+- **Replacement mode:** nothing new to register. Coexistence installs get the window model and the unchanged plugins and none of the new features.
+
+## Failure modes
+
+The first release's table stands. Rows added:
+
+| Boundary | What fails | Detected by | System does | User sees | State left behind |
+|---|---|---|---|---|---|
+| Hiding windows | The host dies with windows hidden, before, during or after the hides of a switch | Guardian wait, or the next start finding the journal entry | Flow 12: show every listed window whose five-field fingerprint still matches | Every surviving window visible on one desktop | Journal cleared; desktop list kept |
+| Hiding windows | A journal entry names a handle another window now holds | Fingerprint mismatch at recovery | Skip it; touch nothing | Nothing | Entry cleared |
+| Window model | A Destroy event is missed and the handle is reused | The 2 s rescan, or the command-time fingerprint check | Destroy the old generation, admit the handle afresh | Nothing, or `WindowGone` for a command in the gap | None |
+| Window model | A command carries a reference from an earlier host run, or a gone window | Epoch and generation check | `StaleWindowReference` or `WindowGone`; no side effect | A notice | None |
+| Window model | A window closes during activate, move or switch | Destroy observation or the verification step | Flow 19 | At most a notice | None |
+| Window model | `host.windows` and `host.desktops` are read at different revisions | The paired view | Hold up to 250 ms, re-read the lagging feed, else render from the lower revision and mark stale | Nothing, or a stale marker | None |
+| Window model | WinEvent hooks cannot be installed | Hook call fails | Rescan only, every 2 s; log once | Slower updates | None |
+| Window model | A view plugin is disabled or crashes | Supervisor | Model, feeds and commands continue; the plugin's own feed is unavailable; a restart resubscribes to the current snapshot | That view disappears or is replaced by the plugin's retry | None |
+| Window model | A plugin built for 1.1 meets a 1.0 host | Compatibility resolution | `Incompatible`, `HostApiMismatch`; not started | The plugin manager shows the reason | None |
+| Hiding windows | A window refuses to hide, is hung, or is elevated (a medium-integrity host cannot change a high-integrity window) | The window is still visible when the effects thread re-checks | Mark it `stuck`; leave it visible on every desktop; log `WindowNotMovable` | The window stays in view | None |
+| Hiding windows | The journal write fails | Flush error | **Do not switch** (I6); raise `JournalWriteFailed` | A notice; the desktop does not change | None |
+| Hiding windows | An application shows itself while hidden | WinEvent show on a window of another desktop | Hide it again; set `attention` | A flash on the desktop item | None |
+| Hiding windows | A hidden window's process exits | Process handle or `IsWindow` | Remove it from the model and the hidden set | Nothing | Journal entry updated |
+| Desktops | The last desktop is removed, or an id is unknown | Command validation | `LastDesktop` or `DesktopNotFound` | A notice | None |
+| Desktops | Removing a desktop | — | Its windows move to the previous desktop, as Windows does | The windows appear there | None |
+| Desktops | `desktops.json` invalid | Load validation | One desktop, "Desktop 1" | Settings banner | The user's file untouched |
+| Notifications | Package identity missing (not registered, certificate untrusted, or the process started without it) | Worker `hello` reports `identity: none` | The plugin shows the Set up page | The page names the failed step | None |
+| Notifications | Access `Denied`, or notifications switched off | Access status; an empty history with the switch off | The Set up page | Same | None |
+| Notifications | Change events missed (they are not guaranteed) | A re-read on popup open and every 60 s finds new ids | Treat them as arrivals, without a pop-up for anything older than 30 s | The centre catches up | None |
+| Notifications | Windows also draws its own pop-up | Seen in the first slice's gate | `popups` setting defaults to off if it does | Either one pop-up or none; never silently two | None |
+| Notifications | A flood | More than `maxVisible` pending | Collapse into "N more"; the centre holds all | One summary pop-up | None |
+| Notifications | The source application cannot be started | Activation error | Typed error to the caller | A notice in the centre | None |
+| Notifications | Content in logs | — | The logs record counts, application ids and notification ids, never titles or bodies (I31) | Nothing | None |
+| Quick settings | A device is absent or refuses | Capability probe at start; error on change | The tile is hidden (absent) or disabled with its reason (refused) | A tile that explains itself | None |
+| Quick settings | A change did not stick | Re-read after the change | Show the device's real value | The control moves back | None |
+| Thumbnails | The source window is gone, hidden or minimised | Registration or the properties query fails | Draw the icon and title card instead | A card | None |
+| Taskbar badges | The host's `Shell_TrayWnd` receives a message it cannot decode | Size or format check | Ignore it, log once per application | No badge | None |
+| Jump lists | A destination file is locked or corrupt | Read error | That application's jump list is empty | An empty list | None |
+| Context menu | A shell-extension handler hangs or crashes | The worker's 3 s build timeout, or the worker faulting | The menu falls back to the plain verbs (Open, Delete, Properties); a crash takes only the worker (flow 3) | A shorter menu, or a brief placeholder | None |
+| Wallpaper | A per-monitor image is missing, or the monitor id is not present | Load, or the monitor list | Fall back to `default`, then the system wallpaper | The fallback image | Preset untouched |
+| Chords | No provider is running for a chord | The check at key-down | The key passes through | Windows' own behaviour, which is none without Explorer | None |
+
+**Retry semantics** are unchanged: command invocations are never retried, and the Set up page re-checks passively. A failed notification re-read is retried by the next event or the 60 s resync.
+
+## Concurrency and ordering
+
+- **The window model has one writer: the UI thread.** The tracker, the hook and the backchannel only post observations. Generations are assigned there, in observation order. Readers get immutable snapshots, and both feeds are published from one snapshot, at most once per frame. The tracker is the only discovery source in the product; no view scans.
+- **The window-effects thread is the only thread that hides or shows other processes' windows.** It uses the non-blocking forms of the calls, because a synchronous one can block on a hung window. It also owns the journal write for `hiddenWindows`, so the UI thread never awaits disk (I9). One plan runs at a time; a newer switch replaces any plan not yet started.
+- **Switch order is fixed:** journal flush, then hides and shows, then the `current` change. The flush before the visible change is what makes recovery safe.
+- **The model and the hook never share state.** The hook reads the chord table (replaced whole when settings change) and a set of command ids with a running provider (replaced whole by the supervisor). It answers within the system's hook timeout without calling into the UI thread.
+- **Notifications run in their worker's single logical context.** A history re-read is serialised there; the change event only requests one. Two events close together cause one re-read.
+- **Thumbnail registration, hover popup and element lifetime are on the UI thread**, and a registration is released in the element's unload.
+- **Nothing in the second release is concurrent with the first release's journal for app bars**: both kinds share the same serialised journal writer.
+
+## Alternatives considered
+
+13. **Where window knowledge lives.** *Chosen (approach A):* one model in the host, published as a feed; running windows, Task View, the switcher and badges are views of it. *Rejected (B):* self-contained plugins. The window list would be scanned in several places, hiding would race with the strip's rescan, and grouping and jump lists would each re-derive window identity. *Lateral:* none. Windows' own flyouts need Explorer.
+14. **What a virtual desktop is.** *Chosen:* the shell's own sets of windows. *Rejected:* Windows' own desktops. Their manager interface for other processes' windows is internal and changes between builds, and the service lives in Explorer, so none of it exists in replacement mode. The documented interface moves only a caller's own windows.
+15. **How windows are kept off screen.** *Chosen:* hide them (non-blocking window-position calls), journalled. *Rejected:* cloaking, which Windows documents only for an application's own windows (to be checked from a shell-role process; open question 4). *Rejected:* moving windows off screen, because applications clamp, restore and re-place themselves, and their taskbar buttons stay. *Rejected:* minimising, which destroys the user's real minimised state.
+16. **Task View previews of other desktops.** *Chosen:* live thumbnails for the current desktop, and a snapshot taken just before a window is hidden for the others. *Rejected:* live thumbnails everywhere, which a hidden window cannot give. *Rejected:* a titles-only view, which fails the "set of windows" purpose.
+17. **How notifications reach the shell.** *Chosen:* a packaged worker reads Windows' history; the shell draws. *Rejected:* packaging the host (decision 7 stands, and identity would reach every plugin). *Rejected:* relying on Windows' pop-ups (they live in Explorer's shell experience; unverified without it). *Rejected:* capturing legacy balloon messages (only old tray applications use them). *Rejected:* undocumented notification-platform subscriptions (they break between builds).
+18. **Scope of package identity.** *Chosen:* the notifications worker only. *Rejected:* every plugin or the guardian, which would drag the virtualised file and registry behaviour that decision 7 avoided.
+19. **Hover thumbnails.** *Chosen:* DWM thumbnails in a host element. *Rejected:* screen-capture sessions, which polls, costs a GPU copy, and can show a capture border. *Rejected:* per-window bitmap grabs, which cannot show minimised windows and are slow.
+20. **Taskbar badges.** *Chosen:* receive progress and overlay on the host's own `Shell_TrayWnd`, as applications send them to the shell, and broadcast `TaskbarButtonCreated` so applications start sending. *Rejected:* injecting into applications. *Rejected:* inferring progress from window titles.
+21. **The desktop's file menu.** *Chosen:* the shell's own menu, built in the desktop-icons worker. *Rejected:* a hand-made menu of verbs, which loses every installed extension (archivers, Git). *Rejected:* building it in the host, because shell extensions are third-party code and would load into the process that owns the desktop (I1's reason).
+22. **Win+X.** *Chosen:* read Windows' own WinX folders, falling back to a built-in list. This respects the user's customisations. *Rejected:* a fixed list only.
+23. **Chords.** *Chosen:* extend the existing hook (first release decision 12). *Rejected:* `RegisterHotKey`, which Windows reserves for its own Windows-key chords.
+24. **Jump lists.** *Chosen:* read the applications' own destination files. *Rejected:* keeping a shell-owned list of recents, which would show none of what applications record.
+25. **What the registry holds.** *Chosen:* every admitted window for its whole life, with views filtering published facts. *Rejected:* a registry that is the visible running-windows list moved into the host, or one with a model-wide `eligible` flag: a window hidden for another desktop would drop out, hiding would be indistinguishable from destruction, and recovery could not tell what it hid. *Rejected:* tracking every top-level window including helpers that were never titled and visible, which costs events and memory for nothing any view shows.
+26. **Window identity.** *Chosen:* a host-assigned generation, a fingerprint verified at rescan and before commands, and an epoch per host run, kept apart from `groupKey`. *Rejected:* handle, process id and process start time alone, because a process can destroy a window and create a successor at the same handle. *Rejected:* `groupKey` as identity, because it names an application, not a window. *Rejected:* persisting generations across a restart, because handles mean nothing after one.
+27. **The `windows.running` contract.** *Chosen:* keep the feed id and the first release's fields, add fields, change nothing incompatibly, and derive it from the model in the plugin. *Rejected:* a new feed id, which breaks dependants for no gain when every change is additive. *Rejected:* two trackers during a transition, which could disagree.
+28. **How the old tracker goes.** *Chosen:* one pull request that makes the host the tracker, moves the plugin onto the feed and deletes the scanner. *Rejected:* running both and comparing, which is two authorities. *Rejected:* building the model and leaving the scanner for a later slice, which leaves two scanners for as long as the gap lasts.
+29. **Where the model is built.** *Chosen:* as its own first window slice, before virtual desktops. It is larger than a normal slice because choosing approach A makes desktop membership and window identity shared shell state, and the model, its public feed and commands, the compatibility adapter and the removal of the old tracker cannot be split without leaving two trackers or an unpublished contract. It does not move desktops ahead of notifications: S24 is notifications and S26 is desktops. *Rejected:* building desktops with a model of their own and extracting it later, which would migrate every consumer twice.
+
+## Open questions
+
+Marked **(Ben)** need a decision from Ben; the rest are checks the named slice runs, and a failing check is a decision entry, not a workaround.
+
+1. **(Ben) Scope of the notification centre.** Default: it lists, opens the originating application (with its launch string), dismisses and clears. Toast buttons and inline replies are not available through Windows' listener interface. Is that "acted on"?
+2. **(Ben) Which rows of `docs/replacement-mode.md` § *Features Explorer hosts* are in scope.** Default: Toasts, Notification centre (with the calendar flyout split off and left *Missing*), Quick Settings, Task View and virtual desktops, Win+X, and Taskbar. Start and Snap layouts are not named in the brief and stay as they are. Alt+Tab already degrades to a working classic switcher; the themed switcher is scheduled last and may be dropped.
+3. **(Ben) The common toggles beyond Bluetooth and brightness.** Default: Wi-Fi, airplane mode, and do-not-disturb (the shell's own, which stops pop-ups; it does not change Windows' setting).
+4. **(Ben) Jump lists: pin and unpin.** Default: read and launch only (recent, frequent, tasks and custom categories where readable); pinning is not in this release.
+5. **(Ben) Who signs the notifications package.** Default: signed on the machine, as the probe is, with the key never leaving it.
+6. **Check, first notifications slice:** do notifications reach the history with Explorer **not** running, and does Windows then show its own pop-ups too? Everything else in the design holds either way, except that an empty history makes notifications impossible.
+7. **Check, first notifications slice:** does a worker created suspended and assigned to the job object (I3) keep its package identity? And does starting an application by AUMID with the notification's launch string reach it?
+8. **Check, desktops slice:** can the shell-role process cloak other applications' windows? If so, live thumbnails of other desktops become possible.
+9. **Check, taskbar slice:** does the host's `Shell_TrayWnd` receive progress and overlay once `TaskbarButtonCreated` is broadcast? If not, badges cannot ship and the design is reopened.
+10. **Check, taskbar slice:** can jump-list tasks and custom categories be read without Explorer?
+11. **Check, quick-settings slice:** radio control for an unpackaged process; DDC/CI on Ben's monitors; whether the machine has a built-in panel.
+12. **Check, desktops slice:** DWM thumbnails inside a WinUI popup window: placement, clipping and DPI.
+13. **Check, first window slice:** does the fingerprint plus the 2 s rescan keep wrong-window actions at zero under handle churn (a fixture that destroys and recreates windows at reused handles)?
+14. **Check, first window slice:** does tracking every admitted window, not only the visible ones, stay inside the idle and event-rate budgets with hundreds of windows?
+15. **Check, desktops slice:** does the form of show that neither activates nor restores keep a minimised window minimised on the supported Windows builds?
+
+These three are engineering validation gates. They are not choices for Ben, and a failure is a decision entry.
+
+**Acceptance checks.** Seven checks, planned requirements and not results. Each has a slice owner and an evidence method. *Automated* means the fakes and isolated fixtures of I38; *native* means a check against real windows that the test itself created, with a throwaway host instance and data root, never the user's windows, desktops, devices or settings, and reported separately.
+
+| Check | Claim | Owner | Evidence |
+|---|---|---|---|
+| C1 Desktop consistency | After any desktop change, running windows and every switcher show the same completed switch and agree on each window's desktop; view-filter differences are not failures | S26 (S25 builds the paired view) | Automated: model and fake effects with two or more consumers, asserting equal revisions and desktop membership. Native: fixture windows across desktops |
+| C2 Hidden windows | A window hidden for another desktop stays tracked, with its desktop, group and badges, and returns on switch back | S26 (S25 holds the rule: visibility is not destruction) | Automated: hide and show observations leave the generation unchanged. Native: a fixture window hidden by a real switch and found by `host.windows` |
+| C3 Close during an operation | Flow 19: per-stage outcomes, `WindowGone` for a stale lifetime, a completed switch stays, no leftover hidden-set or journal entries or created desktops, and a posted activation never reported as foreground | S25 (activate), S26 (move, switch) | Automated: a fake effects port that closes the window at each stage. Native: closing a fixture window during a real switch |
+| C4 Plugin independence | Disabling or crashing a view plugin leaves tracking, feeds and commands working; a restarted plugin resubscribes to the current snapshot without a tracker of its own | S25 (running windows), S26 (Task View) | Automated: supervisor kills and disables a plugin in a fake-host run and a second consumer keeps receiving revisions. Native: the same with the real worker |
+| C5 Recovery | A host failure during journal write, hide or show, or part-way through a plan, is repaired by the guardian or the next start for every surviving window; restart membership is as stated (all on the first desktop); a stale or reused identity is never touched | S26 | Automated: journal replay against fakes at each crash point, including a reused handle. Native: kill a throwaway host with fixture windows hidden |
+| C6 Published SDK interoperability | A plugin built separately against the packaged SDK consumes the feeds, invokes the commands and renders a `Thumbnail`; versions negotiate; stale references are rejected | S25 (feeds, commands, negotiation, stale rejection), S26 (`Thumbnail`) | Automated: a fixture plugin project that references only the packed SDK, run against a fake host. Native: the same plugin against a throwaway real host |
+| C7 Budgets and isolation | The first release's startup, idle and interaction budgets hold with the model running; no test touches real notifications, desktops, devices or settings | every slice; S25 for the model | Automated: the S16 measurements re-run per slice with a test seam for event volume; fakes for every device. Native: budget runs only on throwaway instances |
+
+*Answered or carried:* first-release question 7 (Explorer-hosted features) is superseded: the second release brings them in.
