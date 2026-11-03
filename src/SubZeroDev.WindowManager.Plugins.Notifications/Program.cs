@@ -256,7 +256,8 @@ public sealed class NotificationsPlugin : Plugin
                     }
                     catch (Exception e) when (e is not OutOfMemoryException)
                     {
-                        Context.Log.LogError(e, "Refreshing the notifications failed.");
+                        // The exception's text can carry a notification's title or body (I31): log only its type.
+                        Context.Log.LogError("Refreshing the notifications failed ({Type}).", e.GetType().Name);
                     }
                     finally
                     {
@@ -382,7 +383,7 @@ public sealed class NotificationsPlugin : Plugin
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
-            Context.Log.LogError(e, "Expiring a pop-up failed.");
+            Context.Log.LogError("Expiring a pop-up failed ({Type}).", e.GetType().Name);
         }
         finally
         {

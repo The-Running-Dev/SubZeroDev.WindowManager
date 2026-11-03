@@ -18,6 +18,8 @@ public sealed partial class WindowsKeyTable
     private sealed record Entry(WindowsKeyBinding Binding, WindowsKeyBinding? Fallback);
 
     private readonly Dictionary<KeyChord, Entry> _entries = [];
+    private readonly Lock _gate = new();
+    private readonly HashSet<string> _reported = [];
     private volatile Snapshot _snapshot = new(new Dictionary<KeyChord, WindowsKeyBinding>(), new HashSet<uint>());
 
     /// <param name="settings">Chord text → command id, from <c>settings.json</c>; an unknown chord is ignored with a diagnostic.</param>
@@ -64,31 +66,51 @@ public sealed partial class WindowsKeyTable
     /// <param name="available">Whether the command's provider is running (a built-in always is).</param>
     public void Refresh(Func<string, bool> exists, Func<string, bool> available)
     {
-        var effective = new Dictionary<KeyChord, WindowsKeyBinding>();
-        var keys = new HashSet<uint>();
-        foreach (var (chord, entry) in _entries)
+        // Provider changes arrive from several threads; the last one to publish must also be the last one to build.
+        lock (_gate)
         {
-            var binding = IsDefault(entry) || (exists(entry.Binding.CommandId) && available(entry.Binding.CommandId))
-                ? entry.Binding
-                : entry.Fallback;
-            if (binding is null)
+            var effective = new Dictionary<KeyChord, WindowsKeyBinding>();
+            var keys = new HashSet<uint>();
+            foreach (var (chord, entry) in _entries)
             {
-                continue;
+                var binding = IsDefault(entry) || (exists(entry.Binding.CommandId) && available(entry.Binding.CommandId))
+                    ? entry.Binding
+                    : entry.Fallback;
+                if (binding is null)
+                {
+                    continue;
+                }
+
+                effective[chord] = binding;
+                if (chord.Modifiers == KeyModifiers.Win && chord.VirtualKey != 0)
+                {
+                    keys.Add(chord.VirtualKey);
+                }
             }
 
-            effective[chord] = binding;
-            if (chord.Modifiers == KeyModifiers.Win && chord.VirtualKey != 0)
-            {
-                keys.Add(chord.VirtualKey);
-            }
+            _snapshot = new Snapshot(effective, keys);
         }
-
-        _snapshot = new Snapshot(effective, keys);
     }
 
     /// <summary>The user's and Win+N's command ids that nothing declares, for a diagnostic.</summary>
     public IReadOnlyList<string> Unresolved(Func<string, bool> exists) =>
         [.. _entries.Values.Where(e => !IsDefault(e) && !exists(e.Binding.CommandId)).Select(e => $"{e.Binding.Chord} → {e.Binding.CommandId}")];
+
+    /// <summary>Warns once for each binding whose command nothing declares; a binding that later resolves may warn again.</summary>
+    /// <param name="exists">Whether any plugin or the host declares the command.</param>
+    /// <param name="warn">Receives the diagnostic.</param>
+    public void ReportUnresolved(Func<string, bool> exists, Action<string> warn)
+    {
+        lock (_gate)
+        {
+            var current = Unresolved(exists);
+            _reported.IntersectWith(current);
+            foreach (var line in current.Where(_reported.Add))
+            {
+                warn($"windowsKeys: {line} names a command nothing declares; the chord is left to Windows.");
+            }
+        }
+    }
 
     private static WindowsKeyBinding? Default(Entry entry) => IsDefault(entry) ? entry.Binding : null;
 

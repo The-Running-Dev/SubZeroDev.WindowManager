@@ -199,8 +199,8 @@ public sealed partial class App : Application
             // Nothing else answers the Windows key without Explorer (S21).
             // The table says which Win+key chords it may swallow now: a chord whose provider is not running goes to Windows (I35).
             var keyTable = _keyTable = new WindowsKeyTable(settings.WindowsKeys, line => log.Write(LogLevel.Warning, "keys", line));
-            _router.CommandsChanged += (_, _) => RefreshKeyTable();
-            RefreshKeyTable();
+            _router.CommandsChanged += (_, _) => RefreshKeyTable(report: true);
+            RefreshKeyTable(report: false);
             _windowsKeys = WindowsKeyHook.Start(hooked is not null, keyTable.SwallowsWithWin,
                 line => log.Write(LogLevel.Warning, "keys", line));
             _windowsKeys.Pressed += (_, chord) => _ = OnWindowsKeyAsync(chord);
@@ -392,7 +392,8 @@ public sealed partial class App : Application
     }
 
     /// <summary>Tells the chord table which commands can answer now; called when a provider starts, stops or changes.</summary>
-    private void RefreshKeyTable()
+    /// <param name="report">Whether to warn about bindings whose command nothing declares; the first call runs before the plugins are known.</param>
+    private void RefreshKeyTable(bool report)
     {
         if (_keyTable is not { } table || _router is not { } router)
         {
@@ -401,6 +402,10 @@ public sealed partial class App : Application
 
         var commands = router.Commands.ToDictionary(c => c.CommandId, c => c.Available, StringComparer.Ordinal);
         table.Refresh(commands.ContainsKey, id => commands.GetValueOrDefault(id));
+        if (report)
+        {
+            table.ReportUnresolved(commands.ContainsKey, line => _log?.Write(LogLevel.Warning, "keys", line));
+        }
     }
 
     /// <summary>Runs the command a Windows-key chord is bound to, as a hotkey would.</summary>

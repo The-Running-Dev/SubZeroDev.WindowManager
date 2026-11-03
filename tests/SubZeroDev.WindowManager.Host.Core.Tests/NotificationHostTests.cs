@@ -226,6 +226,43 @@ public sealed class NotificationHostTests
     }
 
     [Fact]
+    public void S24_6_a_command_nothing_declares_is_reported_once_until_it_resolves()
+    {
+        var warnings = new List<string>();
+        var table = new WindowsKeyTable(new Dictionary<string, string> { ["Win+Shift+S"] = "samples.snip" }, _ => { });
+
+        table.ReportUnresolved(_ => false, warnings.Add);
+        table.ReportUnresolved(_ => false, warnings.Add);
+
+        Assert.Equal(2, warnings.Count);
+        Assert.Contains(warnings, w => w.Contains("→ samples.snip", StringComparison.Ordinal));
+        Assert.Contains(warnings, w => w.Contains("→ notifications.openCentre", StringComparison.Ordinal));
+
+        table.ReportUnresolved(_ => true, warnings.Add);
+        table.ReportUnresolved(_ => false, warnings.Add);
+
+        Assert.Equal(4, warnings.Count);
+    }
+
+    [Fact]
+    public void S24_6_concurrent_refreshes_do_not_fault_and_the_last_one_stands()
+    {
+        var table = new WindowsKeyTable(new Dictionary<string, string>(), _ => { });
+
+        Parallel.For(0, 200, i =>
+        {
+            var on = i % 2 == 0;
+            table.Refresh(_ => on, _ => on);
+            _ = table.SwallowsWithWin('N');
+        });
+
+        table.Refresh(_ => true, _ => true);
+        Assert.True(table.SwallowsWithWin('N'));
+        table.Refresh(_ => false, _ => false);
+        Assert.False(table.SwallowsWithWin('N'));
+    }
+
+    [Fact]
     public void S24_6_an_unknown_chord_is_ignored_with_a_diagnostic()
     {
         var warnings = new List<string>();
