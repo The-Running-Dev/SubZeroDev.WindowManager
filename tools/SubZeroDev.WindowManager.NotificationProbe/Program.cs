@@ -6,9 +6,24 @@ using Windows.UI.Notifications.Management;
 
 // Answers: can an unpackaged process read other applications' notifications, and does one it raises reach them?
 // Prints counts only, never the content of the user's notifications.
-static void Report(string key, object? value) => Console.WriteLine($"{key}: {value}");
+// Also kept next to the exe, for a run activated through the package, whose console closes when it ends.
+var log = Path.Combine(AppContext.BaseDirectory, "probe-output.txt");
+File.WriteAllText(log, "");
+void Report(string key, object? value)
+{
+    Console.WriteLine($"{key}: {value}");
+    File.AppendAllText(log, $"{key}: {value}\n");
+}
 
 Report("explorerRunning", Process.GetProcessesByName("explorer").Length > 0);
+try
+{
+    Report("packageIdentity", Windows.ApplicationModel.Package.Current.Id.FamilyName);
+}
+catch (InvalidOperationException)
+{
+    Report("packageIdentity", "none");
+}
 
 var listener = UserNotificationListener.Current;
 var access = listener.GetAccessStatus();
@@ -17,8 +32,17 @@ if (access != UserNotificationListenerAccessStatus.Allowed)
 {
     try
     {
-        access = await listener.RequestAccessAsync();
+        // Windows shows the consent prompt only for a request made on a thread with a message loop.
+        var ui = Windows.System.DispatcherQueueController.CreateOnDedicatedThread();
+        var requested = new TaskCompletionSource<UserNotificationListenerAccessStatus>();
+        ui.DispatcherQueue.TryEnqueue(async () =>
+        {
+            try { requested.SetResult(await listener.RequestAccessAsync()); }
+            catch (Exception e) { requested.SetException(e); }
+        });
+        access = await requested.Task.WaitAsync(TimeSpan.FromMinutes(2));
         Report("accessRequested", access);
+        await ui.ShutdownQueueAsync();
     }
     catch (Exception e)
     {
@@ -36,6 +60,7 @@ catch (Exception e)
     Report("notificationChangedEvent", $"{e.GetType().Name} 0x{e.HResult:X8} {e.Message.Trim()}");
 }
 
+var readFailed = false;
 async Task<IReadOnlyList<UserNotification>> Read()
 {
     try
@@ -44,7 +69,8 @@ async Task<IReadOnlyList<UserNotification>> Read()
     }
     catch (Exception e)
     {
-        Report("readError", $"{e.GetType().Name} 0x{e.HResult:X8} {e.Message.Trim()}");
+        if (!readFailed) Report("readError", $"{e.GetType().Name} 0x{e.HResult:X8} {e.Message.Trim()}");
+        readFailed = true;
         return [];
     }
 }
