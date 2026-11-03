@@ -35,6 +35,25 @@ Each is written so it can become an assertion or an architecture test. The owner
 | I23 | In replacement mode, a session that cannot keep a host running ends with Explorer as the shell: when the relaunch budget is spent, the guardian starts `explorer.exe` before it shows any message. | Guardian |
 | I24 | Start-up programs run at most once per sign-in session, however often the host restarts. | Host.Platform (`IStartupRunner`) |
 
+Second release (from [10-design.md](10-design.md) § Second release):
+
+| # | Invariant | Owner |
+|---|---|---|
+| I25 | The window model has one writer, the host UI thread. Tracker, hook and backchannel threads only post observations; everything else reads immutable snapshots. | Host.Core (`IWindowModel`) |
+| I26 | A window is identified by its window key (handle, process id and process start time). A handle reused by another process never inherits a window's desktop, group or badges. | Host.Core (`IWindowModel`) |
+| I27 | Only the window-effects thread hides or shows another process's window, and it uses non-blocking calls. | Host.Platform (`IWindowEffects`) |
+| I28 | A window is hidden by the shell only after a journal entry listing it was flushed (I6), and the entry stops listing it only after it was shown. | Host.Platform (`IWindowEffects`), Host.Core (journal writer) |
+| I29 | At least one desktop exists, and `currentId` names one. | Host.Core (`IDesktopSet`) |
+| I30 | `host.desktops` reports a new `current` only after the plan that hides and shows windows has completed. | Host.Core (`IDesktopSet`) |
+| I31 | Notification titles and bodies are never written to a file, a log or a crash record by the shell. Logs carry counts, application ids and notification ids only. | `subzerodev.notifications` |
+| I32 | The shell changes no trust setting, no notification-access setting and no notification switch. The setup is shown to the user with the commands to copy, and nothing in it is run on the user's behalf. | `subzerodev.notifications` |
+| I33 | Only the notifications worker executable carries package identity. The sparse package declares exactly that one application. | Build check (PackTool) and `subzerodev.notifications` |
+| I34 | A quick setting shows the value read back from the device after a change, never the value that was requested. | `subzerodev.quick-settings` |
+| I35 | A chord is swallowed only when its command has a `Running` provider at key-down. The hook never calls into the UI thread and never waits. | Host.Platform (`WindowsKeyTracker`) |
+| I36 | A DWM thumbnail registration lives no longer than the `Thumbnail` element that asked for it, and is released on unload. | Host.Surfaces, Host.Platform (`IThumbnailService`) |
+| I37 | Third-party shell-extension code loads only in the `subzerodev.desktop-icons` worker, never in the host. | `subzerodev.desktop-icons` |
+| I38 | No second-release test touches the user's real notifications, desktops, windows, devices or settings; every device port has a fake in the test hook. | Host.App (test hook) |
+
 ## Public surface
 
 ### Process command lines
@@ -669,6 +688,141 @@ Palette resources: for each token `t`, the host adds `Wm.Color.t` (`Color`) and 
 
 Icon sizes: the theme sets `Wm.IconSize.Small|Medium|Large` (`x:Double`, DIPs). Defaults are 16, 20 and 32.
 
+### Second release (Host.Core, Host.Platform, Host.Surfaces, first-party plugins)
+
+**Protocol and host API 1.1 (additive).** `ProtocolVersion` stays 1; `HostApiVersion` becomes 1.1.0. A 1.0 plugin runs unchanged. A plugin that uses anything below declares `hostApi: "^1.1"`.
+- `ElementKind` gains `Thumbnail`: props `window: number` (a window handle from the `host.windows` feed; a binding is allowed) and `size: "small"|"medium"|"large" = "medium"`. The theme sets `Wm.Thumbnail.Width|Height.Small|Medium|Large` (`x:Double`, DIPs; defaults 160×90, 240×135 and 320×180), because I11 allows no literal pixel sizes. A `Thumbnail` whose window is gone, hidden or minimised draws an icon and title card.
+- Every element gains the common prop `hoverPopup?: { popup: string, delayMs: number = 400 }`: the host opens the named popup of the same plugin at the element, without taking focus, and closes it when the pointer leaves both.
+- The manifest `popups` entries gain `placement: "anchored" | "toast" | "overlay" = "anchored"`. `toast` is a non-activating stack on a work-area corner (the corner is a host setting `toastCorner`, default bottom right). `overlay` is a full-monitor surface that takes keyboard focus and closes on Esc or a click outside.
+- `command.invoke` from the host gains an optional `trigger: "pointer" | "keyboard" | "chord"`, so the receiving plugin knows whether to open for keyboard navigation.
+- Feed items of `host.windows` may be referenced by `Thumbnail.window` and `IconRef { "window": hwnd }`.
+
+**Host built-in commands (replacement mode only unless stated; `NotInReplacementMode` otherwise).**
+
+| Command | Args | Result | Notes |
+|---|---|---|---|
+| `host.desktops.switch` | `{ id?: string, direction?: "previous"\|"next" }` | none | Exactly one of the two. `previous` and `next` wrap. Flow 10 |
+| `host.desktops.create` | `{ name?: string, switchTo: bool = false }` | `{ id: string }` | |
+| `host.desktops.remove` | `{ id: string }` | none | Its windows move to the previous desktop. `LastDesktop` if it is the only one |
+| `host.desktops.rename` | `{ id: string, name: string }` | none | |
+| `host.window.moveToDesktop` | `{ hwnd: number, id: string \| "new" }` | `{ id: string }` | `WindowGone`, `DesktopNotFound`. Flow 11 |
+| `host.window.pinToAllDesktops` | `{ hwnd: number, pinned: bool }` | none | |
+| `host.window.close` | `{ hwnd: number }` | none | Posts a close request; never terminates the process |
+| `host.notifications.setDoNotDisturb` | `{ on: bool }` | none | The shell's own switch; Windows' setting is not changed |
+
+The `host.window.activate` and `host.window.minimize` commands of the first release also work for a window on another desktop: `activate` switches to its desktop first (flow 10), then activates it.
+
+**Chords** (`settings.json` `windowsKeys`, chord → command id; defaults below; a chord naming a command with no `Running` provider passes through, I35):
+
+| Chord | Command | Provider |
+|---|---|---|
+| Win+A | `quicksettings.open` | `subzerodev.quick-settings` |
+| Win+N | `notifications.openCentre` | `subzerodev.notifications` |
+| Win+Tab | `desktops.openOverview` | `subzerodev.desktops` |
+| Win+X | `powermenu.open` | `subzerodev.power-menu` |
+| Win+Ctrl+Left / Right | `host.desktops.switch { direction }` | host |
+| Win+Ctrl+D | `host.desktops.create { switchTo: true }` | host |
+| Win+Ctrl+F4 | `host.desktops.remove { id: current }` | host |
+| Alt+Tab, Alt+Shift+Tab | `switcher.step { backwards }`, then `switcher.commit` on Alt release, `switcher.cancel` on Esc | `subzerodev.switcher` |
+
+**Host feeds (provider `host`, any plugin may subscribe).**
+- `host.windows`: array of `{ key, hwnd, processId, title, exe?, aumid?, groupKey, monitorId, desktopId, pinnedToAll, active, minimized, attention, progress: { state: "none"\|"indeterminate"\|"normal"\|"error"\|"paused", value?: number }, overlay?: { icon: IconRef, description?: string } }`. `key` is the window key (I26) rendered as a string. Every managed window on every desktop appears, including hidden ones.
+- `host.desktops`: `{ current: string, desktops: [ { id, name?, windowCount, hasAttention } ] }`.
+
+**First-party plugin contracts (second release).**
+
+| Plugin id | Commands | Feeds | Popups | Contributions |
+|---|---|---|---|---|
+| `subzerodev.running-windows` (changed) | the first release's two, plus `windows.openJumpList { groupKey, x, y }` | `windows.running` (unchanged shape, current desktop only) | `preview` (placement `anchored`, the hover popup with its `Thumbnail` per window), `jumplist` | `windows` (settings gain `grouping: "always"\|"whenFull"\|"never" = "always"`, `labels: bool`) |
+| `subzerodev.notifications` | `notifications.openCentre`, `notifications.dismiss { id }`, `notifications.clear { appId? }`, `notifications.activate { id }` | `notifications.history` (array of `{ id, appId, appName, title, body, at, read, silent }`), `notifications.status` (`{ identity: "ok"\|"none", access: "allowed"\|"denied"\|"unspecified", switchedOn: bool, unread: number, doNotDisturb: bool }`) | `toast` (placement `toast`), `centre` (placement `anchored`), `setup` | `bell` (panelItem: a button with the unread count; settings: `popupSeconds: integer 2–30 = 6`, `maxVisible: integer 1–5 = 3`, `popups: bool = true`). `modes: ["replacement"]` |
+| `subzerodev.desktops` | `desktops.openOverview` | none (subscribes to `host.windows`, `host.desktops`) | `overview` (placement `overlay`: one tile per desktop, thumbnails of its windows, drag to re-file, "new desktop") | `desktops` (panelItem: the current desktop's name, click for the overview). `modes: ["replacement"]` |
+| `subzerodev.switcher` | `switcher.step { backwards: bool }`, `switcher.commit`, `switcher.cancel` | none | `switcher` (placement `overlay`) | none. `modes: ["replacement"]` |
+| `subzerodev.quick-settings` | `quicksettings.open`, `quicksettings.set { id: string, value: bool \| number }` | `quicksettings.state` (array of `{ id, kind: "toggle"\|"level", value, available, reason? }`; ids `wifi`, `bluetooth`, `airplane`, `brightness`, `doNotDisturb`) | `panel` | `quicksettings` (panelItem: a button opening `panel`). `modes: ["replacement"]` |
+| `subzerodev.power-menu` | `powermenu.open` | none | `menu` (the WinX entries, then a built-in set when the folders are unreadable) | none. `modes: ["replacement"]` |
+| `subzerodev.desktop-icons` (changed) | `desktop.open` (unchanged), `desktop.contextMenu { path?: string, x: number, y: number }` | none | `rename` (a TextInput) | `icons` (unchanged contribution) |
+
+**Host internals (second release).** Declarations are signatures only.
+
+```csharp
+namespace SubZeroDev.WindowManager.Host.Core;
+
+public readonly record struct WindowKey(nint Handle, int ProcessId, long ProcessStartTicks);
+
+public enum ProgressState { None, Indeterminate, Normal, Error, Paused }
+public sealed record WindowProgress(ProgressState State, double? Value);
+public sealed record WindowOverlay(IconRef Icon, string? Description);
+
+public sealed record ManagedWindow(
+    WindowKey Key, string Title, string? ExePath, string? Aumid, string GroupKey, string MonitorId,
+    Guid DesktopId, bool PinnedToAll, bool Active, bool Minimised, bool Attention,
+    WindowProgress Progress, WindowOverlay? Overlay);
+
+public sealed record WindowSnapshot(long Revision, IReadOnlyList<ManagedWindow> Windows);
+
+public interface IWindowModel
+{
+    WindowSnapshot Current { get; }
+    event EventHandler<WindowSnapshot> Changed;             // raised on the UI thread, at most once per frame
+    void Observe(WindowObservation observation);           // callable from any thread; posts to the UI thread (I25)
+    void SetProgress(WindowKey key, WindowProgress progress);
+    void SetOverlay(WindowKey key, WindowOverlay? overlay);
+}
+
+public abstract record WindowObservation(WindowKey Key);   // Created, Shown, Hidden, Destroyed, TitleChanged, Foreground, Minimised, Restored
+
+public sealed record DesktopInfo(Guid Id, string? Name);
+public sealed record SwitchPlan(Guid From, Guid To, IReadOnlyList<WindowKey> Hide, IReadOnlyList<WindowKey> Show);
+
+public interface IDesktopSet
+{
+    IReadOnlyList<DesktopInfo> Desktops { get; }
+    Guid CurrentId { get; }
+    event EventHandler Changed;                             // UI thread
+    Outcome<Guid> Create(string? name);
+    Outcome Remove(Guid id);
+    Outcome Rename(Guid id, string name);
+    Outcome<SwitchPlan> PlanSwitch(Guid target);           // does not change anything
+    Task<Outcome> SwitchAsync(Guid target, CancellationToken ct);       // journal, effects, then CurrentId (I28, I30)
+    Task<Outcome> MoveAsync(WindowKey window, Guid target, CancellationToken ct);
+    Outcome PinToAll(WindowKey window, bool pinned);
+}
+
+namespace SubZeroDev.WindowManager.Host.Platform;
+
+public interface IWindowEffects                             // the effects thread (I27)
+{
+    // Journals the hidden set first, then applies the plan. Windows that cannot be moved are returned in Stuck.
+    Task<Outcome<EffectsResult>> ApplyAsync(SwitchPlan plan, CancellationToken ct);
+    Task<Outcome> ShowAllAsync(CancellationToken ct);       // used at exit and by recovery paths
+}
+public sealed record EffectsResult(IReadOnlyList<WindowKey> Stuck);
+
+public interface IWindowTracker                             // WinEvent hooks, 2 s rescan, shell-hook window
+{
+    void Start(Action<WindowObservation> sink);
+    void Stop();
+}
+
+public interface ITaskbarBackchannel                        // the host's Shell_TrayWnd; replacement mode only
+{
+    void Start(Action<WindowKey, WindowProgress> progress, Action<WindowKey, WindowOverlay?> overlay);
+    void BroadcastButtonCreated();                          // TaskbarButtonCreated, once the tray window exists
+    void Stop();
+}
+
+public interface IThumbnailService                          // I36
+{
+    Outcome<IThumbnailRegistration> Register(WindowKey source, nint destinationWindow);
+}
+public interface IThumbnailRegistration : IDisposable
+{
+    void SetBounds(RectInt destination, bool visible);
+    bool SourceAvailable { get; }
+}
+```
+
+**Plugin-side (workers).** The notifications worker uses an `INotificationHistory` port (`ReadAsync`, `Changed`, `DismissAsync`, `ClearAsync`, `ActivateAsync`), and the quick-settings worker one port per device (`IRadioControl`, `IBrightnessControl`). Each has a real implementation and a fake in the plugin's test project; the plugin never calls Windows from a code path that has no port (I38).
+
 ## Persisted schemas
 
 **Install root** (read-only to the host): `%LOCALAPPDATA%\Programs\SubZeroDev\WindowManager\`
@@ -681,7 +835,7 @@ Icon sizes: the theme sets `Wm.IconSize.Small|Medium|Large` (`x:Double`, DIPs). 
 |---|---|---|---|
 | `settings.json` | singleton | `schemaVersion: 1`; `activePreset` names an existing preset, else the built-in default is used and a diagnostic is raised; `restartPolicy.maxRestarts` 0–10 (default 3); `windowSeconds` 30–3600 (default 300) | Absent on first run → defaults written |
 | `layouts\<id>.json` | `id` = file stem | Panel `id` unique within the layout; instance `id` unique across all layouts; `thickness` 16–512 DIP; `zones` keys only `start`, `center`, `end` | None; built-in layouts are copied here the first time the user edits one. In replacement mode a preset naming the built-in `subzerodev.default` is shown with the built-in `subzerodev.shell` (launcher, running windows, tray, indicators, clock, power), unless `layouts\subzerodev.default.json` exists here |
-| `presets\<id>.json` | `id` = file stem | `palette` is either a string or `{ light, dark }`; `assetPacks` may be empty; `wallpaper` (optional) is `{ image: <asset-pack image id>, fit: "fill"\|"fit"\|"stretch"\|"center" }` | Same as layouts |
+| `presets\<id>.json` | `id` = file stem | `palette` is either a string or `{ light, dark }`; `assetPacks` may be empty; `wallpaper` (optional) is, from `schemaVersion` 2, `{ default?: W, monitors?: { <monitorId>: W } }` with `W` = `{ image: <asset-pack image id>, fit: "fill"\|"fit"\|"stretch"\|"center" }` (version 1 was `W` itself) | Same as layouts; the v1 → v2 migration wraps the old `W` as `default`. A preset of either version loads. |
 | `plugin-settings\<pluginId>.json` | plugin id | `{ pluginId, settingsVersion, settings }`; `settings` validates against the manifest `settingsSchema` | Migrated through `settings.migrate`; the prior file is kept once as `.v<N>.bak` |
 | `plugins\<id>\plugin.json` (+ package files) | manifest `id` = folder name | See the manifest below | Install replaces the folder atomically |
 | `themes\<id>\theme.json` (+ `.xaml`, assets) | `id` = folder name | `themeApi: 1`; `resources` paths stay inside the folder | none |
@@ -693,6 +847,7 @@ Icon sizes: the theme sets `Wm.IconSize.Small|Medium|Large` (`x:Double`, DIPs). 
 | `.lastgood\<relative path>` | mirrors the source document | A copy of the last version of each document that loaded valid | Overwritten on each valid load |
 | `logs\host-<yyyyMMdd>.log`, `logs\plugins\<pluginId>-<yyyyMMdd>.log`, `logs\crash\<timestamp>.json` | date | 10 MiB per file, 7 days, 100 MiB in total | Pruned at startup |
 | `staging\` | random | Emptied at startup | none |
+| `desktops.json` | singleton | `{ schemaVersion: 1, desktops: [ { id: guid, name?: string } ], lastCurrent: guid }`; at least one desktop (I29); `lastCurrent` names one, else the first is used; window membership is never persisted | Absent → one desktop "Desktop 1". Invalid → the same, with the file untouched and a diagnostic |
 
 **Plugin manifest (`plugin.json`, manifestVersion 1):**
 
@@ -731,6 +886,14 @@ Constraints:
 - Any other keyword makes the manifest `Invalid`.
 
 **Migration of existing data:** none exists; this is a new project. Every document type starts at `schemaVersion` 1 (or `manifestVersion` 1). A later version's migration is a pure function `vN → vN+1`, applied in sequence on load and written back only when the document next changes.
+
+**Second-release additions:**
+- **Recovery journal** (`recovery\session-<sessionId>.json`): a third entry kind, `hiddenWindows`: `{ kind: "hiddenWindows", windows: [ { hwnd, processId, processStartTicks } ] }`. There is at most one such entry; it is replaced whole on each switch (I28). The guardian shows each listed window whose process id and start time still match, then clears the entry. It does not change `schemaVersion`: the journal's entry kinds are already open-ended, and an older guardian ignores a kind it does not know (a mixed install cannot happen, because the guardian and host ship together).
+- **`settings.json`**: optional `windowsKeys` (object: chord → command id; chords match `^(Win|Ctrl|Alt|Shift)(\+(Win|Ctrl|Alt|Shift))*\+[A-Za-z0-9]+$` or `Alt+Tab`/`Alt+Shift+Tab`; an unknown chord, or a command id that does not resolve, is ignored with a diagnostic) and `toastCorner` (`"topLeft"|"topRight"|"bottomLeft"|"bottomRight"`, default `bottomRight`). `schemaVersion` stays 1 because both keys are optional.
+- **`plugin-data\subzerodev.notifications\state.json`**: `{ lastSeen: string (ISO 8601 instant), doNotDisturb: bool }`. No notification content (I31).
+- **Plugin manifest**: popups entries accept `placement` (`anchored`, `toast`, `overlay`). `manifestVersion` stays 1. An unknown `placement` makes the manifest `Invalid`.
+- **Sparse package** (install root, `content\plugins\subzerodev.notifications\package\`): the package manifest, the logo, the signed package file and the public `.cer`. The manifest declares one application, with `userNotificationListener`, `runFullTrust`, and the COM activator for toast activation (I33). Registered per user by the script shipped beside it; unregistered by `--uninstall`.
+- **`presets` v1 → v2** is described in the presets row above. Built-in presets are shipped at v2.
 
 ## Error semantics
 
@@ -776,7 +939,24 @@ All errors are typed codes with a detail string for logs. None is a bare excepti
 | `ShellOverridden` | `--shell on` found a policy or Shell Launcher overriding the per-user value | no | Report it; change nothing |
 | `SessionCommandRefused` | Lock, sign out, restart, shut down or sleep was refused | no | Notice at the element |
 | `NotInReplacementMode` | A replacement-only command in coexistence mode | no | Return the error to the caller |
-| `JournalWriteFailed` | Recovery journal flush failed | yes, once | **Do not apply** the desktop change (I6); the panel falls back to `overlay`, and a diagnostic is raised |
+| `JournalWriteFailed` | Recovery journal flush failed | yes, once | **Do not apply** the desktop change (I6, I28); the panel falls back to `overlay`; a desktop switch does not happen, and a diagnostic is raised |
+| `DesktopNotFound` | A desktop command names an id that does not exist | no | Return the error to the caller; a stale UI refreshes |
+| `LastDesktop` | `host.desktops.remove` on the only desktop | no | Notice at the element |
+| `WindowNotMovable` | The effects thread could not hide a window (hung, elevated, or refused) | no | Logged once per window; the window stays visible on every desktop and is marked stuck in the model |
+| `SwitchSuperseded` | A switch was replaced by a newer request before it started | no | Drop; the newer request reports the outcome |
+| `ThumbnailUnavailable` | A thumbnail could not be registered (source gone, hidden, minimised, or refused) | no | The element draws its icon and title card |
+
+**Notifications and quick settings (inside the plugins; reported over the wire as 1009 `CommandFailed` with `data.code` set to the name below):**
+
+| Code | Plugin | Raised when | Retryable | Caller does |
+|---|---|---|---|---|
+| `IdentityMissing` | notifications | The worker has no package identity (not registered, certificate not trusted, or started without it) | no, until the setup is done | The plugin shows the Set up page |
+| `AccessDenied` | notifications | Notification access is `Denied` or `Unspecified` | no, until the user allows it | Set up page |
+| `NotificationsOff` | notifications | The account's notifications switch is off (an empty history while it is) | no, until the user switches it on | Set up page |
+| `HistoryReadFailed` | notifications | A read of the history failed | yes (next event or the 60 s resync) | Keep the last published history; log the count only (I31) |
+| `ActivationFailed` | notifications | The source application could not be started | no | Notice in the centre |
+| `DeviceAbsent` | quick-settings | No such device on this machine (no radio, no built-in panel, a monitor without DDC/CI) | no | The tile is hidden |
+| `DeviceRefused` | quick-settings | The device exists and refused the change | yes | The tile is disabled with `reason`; the real value is shown (I34) |
 
 **`ThemeErrorCode`:** `XamlParse`, `MissingRequiredKey`, `WrongTargetType`, `AssetMissing`, `PathEscape`, `ThemeApiMismatch`, `PaletteInvalid`. None is retryable. The previous appearance stays, and the errors are shown.
 
@@ -790,5 +970,14 @@ All errors are typed codes with a detail string for logs. None is a bare excepti
 - **Exact dependency properties beyond the props table**: anything a theme needs that is not a view prop (for example the panel's monitor scale, or an "is first item" flag) is added after the sample themes are attempted, as theme API 1 additions, before the vocabulary is frozen.
 - **The per-user `Winlogon\Shell` value on build 26200** (design open question 6): to be confirmed on a real sign-in (S17.7); the fallback is the per-user Custom User Interface value.
 - **Explorer-hosted features without Explorer** (design open question 7): the expected state of each is recorded in `docs/replacement-mode.md` (S23); a week of daily use confirms it (S23.1).
+
+Second release (the design's open questions 1–12 are the full list; these are the ones that leave a signature undetermined):
+
+- **How the effects thread hides a window.** `IWindowEffects` fixes the port. Whether hide-and-show alone is enough, or cloaking from a shell-role process is possible (design question 8), decides if `Thumbnail` can show another desktop's windows live.
+- **The progress and overlay message format** received on the host's `Shell_TrayWnd` (design question 9). `ITaskbarBackchannel` fixes the port; the decoding is set by the taskbar slice.
+- **The jump-list reading API** (design question 10): which source gives destinations without Explorer. `windows.openJumpList` and the `jumplist` popup are fixed; the feed behind them is not.
+- **The quick-settings device ports** (design question 11): `IRadioControl` and `IBrightnessControl` are named, not declared.
+- **Whether notification actions beyond "open the application" exist** (design question 1). `notifications.activate { id }` is the only action until then.
+- **The WinX folder reading** for `subzerodev.power-menu`: the entry shape (`{ title, target, args?, icon? }`) is the intended one, the folder enumeration is the slice's.
 
 Settled since the design: the Windows App SDK release is 1.8.260317003 (decision "S1: Pin Windows App SDK 1.8.260317003"), and the performance budgets are in `docs/budgets.md` (decisions "S16: performance budgets" and "S23: replacement mode qualified for daily use").

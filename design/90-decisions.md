@@ -10,8 +10,76 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 - **Prototype checks**: runtime XAML templates with visual states, transparent shaped panels with backdrops, and app bars from WinUI 3. A failure is a new entry here.
 - **Windows App SDK release**: pinned in the foundation slice.
 - **Per-user shell value on build 26200**: honoured by Windows? Default until S17's check: yes; otherwise the per-user Custom User Interface value.
+- **Second release, for Ben** (design § Second release, open questions 1–5; each has a default the slices follow until answered): what "acted on" means for a notification (default: open the originating application; no buttons or replies); which rows of the replacement-mode doc are in scope (default: Toasts, Notification centre without the calendar flyout, Quick Settings, Task View and virtual desktops, Win+X, Taskbar; Start and Snap layouts untouched; the themed Alt+Tab last and droppable); which toggles beyond Bluetooth and brightness (default: Wi-Fi, airplane mode, do not disturb); whether jump lists pin and unpin (default: read and launch only); who signs the notifications package (default: signed on the machine, key never leaves it).
+- **Second release, checks the slices run** (design questions 6–12): notifications reaching the history with Explorer not running (first notifications slice, the gate); identity under the job-object launch; cloaking other applications' windows; progress and overlay messages on the host's `Shell_TrayWnd`; jump lists without Explorer; radio and DDC/CI access from an unpackaged process; DWM thumbnails in a WinUI popup. A failure is a new entry here, not a workaround.
+- **Brief's second-release open items** now settled by premises (Ben, 2026-11-03): see the entries dated 2026-11-03 below. The brief's wording is Ben's and is left for Ben to update.
 
 ---
+
+## 2026-11-03 — Second release: the shell's own virtual desktops
+- **Context:** the brief's second item asks for several sets of windows, switched and moved between from the keyboard and a panel item, in replacement mode. Windows' own desktops live in Explorer and are driven through an undocumented interface that changes between builds.
+- **Chosen:** the shell's own desktops. A desktop is a set of windows. Switching hides the current desktop's windows and shows the target's with non-blocking window-position calls, from a single window-effects thread, after the hidden set has been written to the recovery journal (new entry kind `hiddenWindows`). Moving a window re-files it. Only the desktop list and names persist; membership does not, and a host restart merges all windows onto the first desktop (the guardian shows every window it finds hidden). Applications that ask Windows which desktop they are on do not see ours.
+- **Rejected:**
+  - **Windows' own desktops:** absent without Explorer; the manager interface for other processes' windows is internal and version-specific; the documented interface moves only a caller's own windows.
+  - **Cloaking instead of hiding:** documented for an application's own windows only. Kept as a check (design question 8) because it would allow live thumbnails of other desktops.
+  - **Moving windows off screen:** applications clamp, restore and re-place themselves, and their taskbar buttons stay.
+  - **Minimising:** destroys the user's real minimised state.
+- **Known gap:** a window of a higher integrity level cannot be hidden by a medium-integrity shell. It stays visible on every desktop (`WindowNotMovable`).
+
+## 2026-11-03 — Second release: one window model in the host
+- **Context:** grouping, hover thumbnails, jump lists, badges, desktops, Task View and the switcher all need the same facts about the same windows. The first release's running-windows plugin scans windows by itself, in its own process.
+- **Chosen:** approach A. The host owns one authoritative model (window key of handle, process id and start time; desktop membership; grouping key; progress and overlay state), published as the `host.windows` and `host.desktops` feeds with commands. Running windows, Task View and the switcher are plugin views of it. The model runs in both modes; the features built on it are replacement-mode only. Thumbnails need one new host-drawn element, because a DWM thumbnail needs a host window handle. Notifications are independent of the model.
+- **Rejected:**
+  - **Self-contained plugins (approach B):** several scanners, hiding racing the strip's rescan, and window identity derived in each plugin.
+  - **Putting the model in the running-windows plugin:** every other plugin would depend on it, and hiding windows has to sit behind the host's journal (I6).
+- **Known gap:** a host restart forgets which desktop each window was on.
+
+## 2026-11-03 — Second release: notifications through a packaged worker
+- **Context:** probed on Ben's machine (build 26200, Explorer running): an unpackaged process is refused the notification history (`0x80070005`); a packaged one reads it, subscribes to changes, and sees its own and other applications' toasts. Three one-time steps by the user are needed (trust the certificate, allow notification access from a visible window, switch notifications on). The same check without Explorer has not been run.
+- **Chosen:** the shell draws its own pop-ups and centre from the history a packaged worker reads (premise 1). Package identity is confined to the notifications worker's executable, through a signed sparse package with the plugin folder as its external location (premise 2). The setup is a guided Set up page showing the status of each step and the commands to copy; nothing is run silently (I32). The first release's no-administrator promise covers shell registration only. The design does not depend on the result without Explorer; that is the first notifications slice's gate.
+- **Rejected:**
+  - **Packaging the host (decision "S1: unpackaged" stands):** identity would reach every plugin and bring the file and registry virtualisation that decision avoided.
+  - **Relying on Windows' own pop-ups:** they come from Explorer's shell experience, unverified without it.
+  - **Legacy balloon capture:** covers only old tray applications.
+  - **Undocumented notification-platform subscriptions:** break between builds.
+  - **Persisting notification content in the shell:** Windows keeps the history; the shell reads it (I31).
+- **Known gap:** toast buttons and inline replies cannot be invoked through the listener interface, so the centre opens the application and nothing more (design question 1, Ben's).
+
+## 2026-11-03 — Second release: hover thumbnails and badges
+- **Context:** the fifth item asks for a thumbnail on hover and progress and overlay badges in running windows.
+- **Chosen:** DWM thumbnails drawn into the popup's own window by a new `Thumbnail` element (registration released with the element, I36). Progress and overlay are received on the host's own `Shell_TrayWnd`, the way applications send them to the shell, and `TaskbarButtonCreated` is broadcast so applications start sending. The check that the message arrives is the taskbar slice's gate (design question 9); if it fails the design is reopened.
+- **Rejected:**
+  - **Screen-capture sessions:** poll, cost a GPU copy, and may show a capture border.
+  - **Per-window bitmap grabs:** cannot show minimised windows and are slow.
+  - **Injecting into applications or reading window titles for progress:** invasive or wrong.
+
+## 2026-11-03 — Second release: the desktop's file menu in the desktop-icons worker
+- **Context:** the sixth item asks for the usual file context menu on desktop icons.
+- **Chosen:** the shell's own context menu, built in the `subzerodev.desktop-icons` worker with a hidden owner window and shown at the pointer after the host grants foreground rights (I18). Rename opens a popup with a text input. Wallpaper per monitor is `presets` `schemaVersion` 2 with `{ default?, monitors? }`; the v1 → v2 migration wraps the old object as `default`.
+- **Rejected:**
+  - **A hand-made menu of verbs:** loses every installed extension (archivers, source control).
+  - **Building the menu in the host:** third-party shell-extension code would load into the process that owns the desktop (I37; I1's reason).
+  - **Keeping the single wallpaper and adding a second field:** two ways to say the same thing.
+
+## 2026-11-03 — Second release: the Windows keys, quick settings and the power-user menu
+- **Context:** Win+A, Win+N, Win+Tab and Win+X must reach replacements; quick settings need toggles Windows hides inside Explorer.
+- **Chosen:** extend the existing low-level Windows-key hook (S21) with a user-editable chord table (`windowsKeys`). A chord is swallowed only when its command has a `Running` provider at key-down, so it passes through otherwise (I35). Alt+Tab is a sequence (step on Tab, commit on Alt's release, cancel on Esc) with a themed switcher scheduled last and droppable. Win+X reads Windows' own WinX folders, with a built-in list as the fallback. Quick settings re-read the device after every change (I34); do-not-disturb is the shell's own switch and does not change Windows' setting.
+- **Rejected:**
+  - **`RegisterHotKey`:** Windows reserves its own Windows-key chords.
+  - **A fixed Win+X list:** loses the user's customisations.
+  - **Showing the requested value after a change:** hides a device that refused.
+
+## 2026-11-03 — Second release: scope settled by the premises
+- **Context:** the brief's second-release list left four items open. Ben agreed all six premises of the design on 2026-11-03.
+- **Chosen:**
+  - Every second-release feature is replacement-mode only; the window model and its feeds run in both modes because they change nothing visible.
+  - Custom plugin UI in host windows, a theme editor and automatic updates are out of this release and deferred, not open.
+  - The design assumes issue #28's manual checks pass; a failure reopens it.
+  - Slices follow Ben's priority order, notifications first, one pull request each.
+- **Rejected:**
+  - **Coexistence for these features:** Win+A, Win+N and Win+Tab would compete with Explorer's own handling of the keys.
+  - **Pulling the deferred items in:** each widens the release.
+- **Known gap:** the brief's open list still reads Open for these items; it is Ben's file and is updated by Ben.
 
 ## 2026-11-02 — S23: replacement mode qualified for daily use
 - **Context:** the brief's replacement-mode criterion is a complete daily desktop. The automated slices prove each piece with fakes; what remains is a measured start and a record of real daily use, without the tests touching the user's real shell, sign-in or devices.
