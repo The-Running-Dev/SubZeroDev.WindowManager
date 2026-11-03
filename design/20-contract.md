@@ -40,7 +40,7 @@ Second release (from [10-design.md](10-design.md) § Second release):
 | # | Invariant | Owner |
 |---|---|---|
 | I25 | The window model has one writer, the host UI thread. Tracker, hook and backchannel threads only post observations; everything else reads immutable snapshots. | Host.Core (`IWindowModel`) |
-| I26 | A window is identified by its window key (handle, process id and process start time). A handle reused by another process never inherits a window's desktop, group or badges. | Host.Core (`IWindowModel`) |
+| I26 | A window's lifetime identity is its lifetime key (handle plus a host-assigned generation, never reused within a host run), verified by a fingerprint (process id, process start time, thread id, class) at every rescan and before every state-changing command. A handle reused by another window never inherits a window's desktop, group or badges. Lifetime identity is separate from `groupKey`. Handle, process id and start time alone are not the identity. | Host.Core (`IWindowModel`) |
 | I27 | Only the window-effects thread hides or shows another process's window, and it uses non-blocking calls. | Host.Platform (`IWindowEffects`) |
 | I28 | A window is hidden by the shell only after a journal entry listing it was flushed (I6), and the entry stops listing it only after it was shown. | Host.Platform (`IWindowEffects`), Host.Core (journal writer) |
 | I29 | At least one desktop exists, and `currentId` names one. | Host.Core (`IDesktopSet`) |
@@ -53,6 +53,10 @@ Second release (from [10-design.md](10-design.md) § Second release):
 | I36 | A DWM thumbnail registration lives no longer than the `Thumbnail` element that asked for it, and is released on unload. | Host.Surfaces, Host.Platform (`IThumbnailService`) |
 | I37 | Third-party shell-extension code loads only in the `subzerodev.desktop-icons` worker, never in the host. | `subzerodev.desktop-icons` |
 | I38 | No second-release test touches the user's real notifications, desktops, windows, devices or settings; every device port has a fake in the test hook. | Host.App (test hook) |
+| I39 | The host is the only discoverer of windows. No plugin runs a window tracker, hook or rescan of its own, and `windows.running` is derived from `host.windows`; there are never two authoritative trackers. | Host.Platform (`IWindowTracker`), `subzerodev.running-windows` |
+| I40 | A window leaves the registry only when it is destroyed (a Destroy event, an invalid handle, or a fingerprint mismatch). Hiding, minimising, cloaking, being on another desktop, or being left out of a view never removes it. | Host.Core (`IWindowModel`) |
+| I41 | A command or thumbnail that names a window by `windowKey` acts only if the reference's epoch is the current one, the generation is live and the fingerprint verifies. Otherwise it is rejected (`StaleWindowReference`, `WindowGone`) with no side effect. | Host.Core (`IWindowModel`), Host.Platform |
+| I42 | `host.windows` and `host.desktops` are produced from one snapshot and carry the same `revision`; neither reports a desktop change before the plan that makes it has completed (I30). | Host.Core |
 
 ## Public surface
 
@@ -691,11 +695,12 @@ Icon sizes: the theme sets `Wm.IconSize.Small|Medium|Large` (`x:Double`, DIPs). 
 ### Second release (Host.Core, Host.Platform, Host.Surfaces, first-party plugins)
 
 **Protocol and host API 1.1 (additive).** `ProtocolVersion` stays 1; `HostApiVersion` becomes 1.1.0. A 1.0 plugin runs unchanged. A plugin that uses anything below declares `hostApi: "^1.1"`.
-- `ElementKind` gains `Thumbnail`: props `window: number` (a window handle from the `host.windows` feed; a binding is allowed) and `size: "small"|"medium"|"large" = "medium"`. The theme sets `Wm.Thumbnail.Width|Height.Small|Medium|Large` (`x:Double`, DIPs; defaults 160×90, 240×135 and 320×180), because I11 allows no literal pixel sizes. A `Thumbnail` whose window is gone, hidden or minimised draws an icon and title card.
+- `ElementKind` gains `Thumbnail` (a public SDK element, host-rendered, so a worker requests and arranges thumbnails without drawing windows; delivered by S26): props `window: string` (the `windowKey` of a `host.windows` item; a binding is allowed) and `size: "small"|"medium"|"large" = "medium"`. The theme sets `Wm.Thumbnail.Width|Height.Small|Medium|Large` (`x:Double`, DIPs; defaults 160×90, 240×135 and 320×180), because I11 allows no literal pixel sizes. A `Thumbnail` whose reference is stale or whose window is gone, hidden or minimised draws an icon and title card (`ThumbnailUnavailable`, `StaleWindowReference`, `WindowGone` are logged once per element, not raised to the plugin). It depends on S25 (references and the registry) and on `IThumbnailService`.
 - Every element gains the common prop `hoverPopup?: { popup: string, delayMs: number = 400 }`: the host opens the named popup of the same plugin at the element, without taking focus, and closes it when the pointer leaves both.
 - The manifest `popups` entries gain `placement: "anchored" | "toast" | "overlay" = "anchored"`. `toast` is a non-activating stack on a work-area corner (the corner is a host setting `toastCorner`, default bottom right). `overlay` is a full-monitor surface that takes keyboard focus and closes on Esc or a click outside.
 - `command.invoke` from the host gains an optional `trigger: "pointer" | "keyboard" | "chord"`, so the receiving plugin knows whether to open for keyboard navigation.
-- Feed items of `host.windows` may be referenced by `Thumbnail.window` and `IconRef { "window": hwnd }`.
+- Feed items of `host.windows` may be referenced by `Thumbnail.window` and `IconRef { "window": windowKey }`.
+- **Window reference.** A `windowKey` is the opaque string `wk1:<epoch>:<generation>` (I26, I41). Plugins treat it as opaque, compare it for equality only, and never persist it: it is valid until the window is destroyed or the host restarts. `hwnd` stays in feed items for display and for the legacy commands below.
 
 **Host built-in commands (replacement mode only unless stated; `NotInReplacementMode` otherwise).**
 
@@ -705,12 +710,21 @@ Icon sizes: the theme sets `Wm.IconSize.Small|Medium|Large` (`x:Double`, DIPs). 
 | `host.desktops.create` | `{ name?: string, switchTo: bool = false }` | `{ id: string }` | |
 | `host.desktops.remove` | `{ id: string }` | none | Its windows move to the previous desktop. `LastDesktop` if it is the only one |
 | `host.desktops.rename` | `{ id: string, name: string }` | none | |
-| `host.window.moveToDesktop` | `{ hwnd: number, id: string \| "new" }` | `{ id: string }` | `WindowGone`, `DesktopNotFound`. Flow 11 |
-| `host.window.pinToAllDesktops` | `{ hwnd: number, pinned: bool }` | none | |
-| `host.window.close` | `{ hwnd: number }` | none | Posts a close request; never terminates the process |
+| `host.window.moveToDesktop` | `{ windowKey: string, id: string \| "new" }` | `{ id: string }` | `StaleWindowReference`, `WindowGone`, `DesktopNotFound`, `WindowNotMovable`. Flows 11 and 19 |
+| `host.window.pinToAllDesktops` | `{ windowKey: string, pinned: bool }` | none | `StaleWindowReference`, `WindowGone` |
+| `host.window.close` | `{ windowKey: string }` | none | Posts a close request; never terminates the process. `StaleWindowReference`, `WindowGone` |
 | `host.notifications.setDoNotDisturb` | `{ on: bool }` | none | The shell's own switch; Windows' setting is not changed |
 
-The `host.window.activate` and `host.window.minimize` commands of the first release also work for a window on another desktop: `activate` switches to its desktop first (flow 10), then activates it.
+**Window commands: arguments, results and stale references.** The first release's `host.window.activate { hwnd }` and `host.window.minimize { hwnd }` are extended; the new commands above take `windowKey` only.
+
+| Command | Arguments | Result | Errors |
+|---|---|---|---|
+| `host.window.activate` | exactly one of `{ windowKey }` or `{ hwnd }` | with `windowKey`: `{ outcome: "foreground" \| "requested" }`; with `hwnd`: none (as in 1.0) | `StaleWindowReference`, `WindowGone`; for a 1.0 caller (`hostApi ^1.0`) both are reported as 1009 `CommandFailed` |
+| `host.window.minimize` | exactly one of `{ windowKey }` or `{ hwnd }` | none | as above |
+
+- `activate` works for a window on another desktop: it switches to that desktop first (flow 10), then restores and foregrounds the window (flow 19). `outcome: "foreground"` means the host confirmed the window as foreground after about 250 ms; `"requested"` means the request was posted and the system did not confirm it. A posted activation is never reported as `foreground` (the shell cannot always take the foreground).
+- **Legacy `hwnd` mapping and its limit.** An `hwnd` argument is resolved to the registry's *current holder* of that handle at the moment the command arrives. If the registry has no holder but `IsWindow(hwnd)` is true, the window is treated as unmanaged: `activate` and `minimize` still act on it (the first release's behaviour) and nothing else is recorded; if `IsWindow` is false the result is `WindowGone`. The limit: an `hwnd` carries no lifetime identity, so a caller that holds a handle across a destroy-and-reuse acts on whichever window has it now. This is the first release's behaviour and the reason new commands and the `Thumbnail` take `windowKey`.
+- **Stale references.** A `windowKey` whose epoch is not the host's current epoch (the host restarted) gives `StaleWindowReference`; a current-epoch key whose generation is gone, or whose fingerprint no longer verifies (I26), gives `WindowGone`. Neither has a side effect (I41). A caller recovers by re-reading `host.windows`.
 
 **Chords** (`settings.json` `windowsKeys`, chord → command id; defaults below; a chord naming a command with no `Running` provider passes through, I35):
 
@@ -726,14 +740,23 @@ The `host.window.activate` and `host.window.minimize` commands of the first rele
 | Alt+Tab, Alt+Shift+Tab | `switcher.step { backwards }`, then `switcher.commit` on Alt release, `switcher.cancel` on Esc | `subzerodev.switcher` |
 
 **Host feeds (provider `host`, any plugin may subscribe).**
-- `host.windows`: array of `{ key, hwnd, processId, title, exe?, aumid?, groupKey, monitorId, desktopId, pinnedToAll, active, minimized, attention, progress: { state: "none"\|"indeterminate"\|"normal"\|"error"\|"paused", value?: number }, overlay?: { icon: IconRef, description?: string } }`. `key` is the window key (I26) rendered as a string. Every managed window on every desktop appears, including hidden ones.
-- `host.desktops`: `{ current: string, desktops: [ { id, name?, windowCount, hasAttention } ] }`.
+- `host.windows`: `{ revision: number, windows: [ ... ] }`. Each item publishes facts only; no view's eligibility is encoded in it (I40). Fields: `windowKey` (the reference above), `hwnd`, `processId`, `title`, `exe?`, `aumid?`, `groupKey` (application grouping identity, not lifetime identity, I26), `ownerKey?` (the `windowKey` of the owner, for owned windows), `monitorId`, `desktopId`, `pinnedToAll`, `visible`, `cloak: "none"\|"app"\|"shell"\|"inherited"`, `shellHidden`, `toolWindow`, `noActivate`, `appWindow`, `titled`, `firstSeen` and `activatedAt` (monotonic ticks, ordering only), `active`, `minimized`, `attention`, `progress: { state: "none"\|"indeterminate"\|"normal"\|"error"\|"paused", value?: number }`, `overlay?: { icon: IconRef, description?: string }`. Every tracked window on every desktop appears, including hidden, cloaked and minimised ones (I40).
+- `host.desktops`: `{ revision: number, current: string, busy: bool, switching?: { from: string, to: string }, desktops: [ { id, name?, windowCount, hasAttention } ] }`. `windowCount` counts the tracked windows filed on that desktop; pinned windows are not counted on any.
+- **Consistency (I42).** Both feeds are built from the same snapshot in the same dispatcher turn and carry the same `revision`; they are published as completed state only (I30), and `busy` is true from the moment a switch is planned until it completes. A subscriber to both feeds renders only when the revisions are equal. If they differ it holds the newer value for 250 ms, re-reads the lagging feed, then renders from the lower revision and marks its view stale (`ShellView.Stale`). The SDK's paired view does this once for all plugins. Differences between plugin views that come from their own filters (a running-windows list that omits other desktops while Task View shows them) are not inconsistencies.
+
+**View eligibility is not in the feed.** Each plugin filters the published facts. The defaults (the view rules in `10-design.md`, Data model) are:
+
+| View | Desktops and monitors | Window rule | Order |
+|---|---|---|---|
+| Running windows (`windows.running`) | current plus pinned; all monitors, or this monitor per the `scope` setting | `visible`, `cloak` none, not `toolWindow` unless `appWindow`, `titled`, not `noActivate` (the first release's style rule) | `firstSeen` ascending |
+| Task View | every desktop, by `desktopId`; a pinned window appears once, in an all-desktops row | `visible` or `shellHidden`; `cloak` none or shell; same style rule | `activatedAt` descending |
+| Alt+Tab | current plus pinned; all monitors | as running windows; an owned window folds into its owner | `activatedAt` descending; the first step selects the second entry |
 
 **First-party plugin contracts (second release).**
 
 | Plugin id | Commands | Feeds | Popups | Contributions |
 |---|---|---|---|---|
-| `subzerodev.running-windows` (changed) | the first release's two, plus `windows.openJumpList { groupKey, x, y }` | `windows.running` (unchanged shape, current desktop only) | `preview` (placement `anchored`, the hover popup with its `Thumbnail` per window), `jumplist` | `windows` (settings gain `grouping: "always"\|"whenFull"\|"never" = "always"`, `labels: bool`) |
+| `subzerodev.running-windows` (changed) | the first release's two (`windows.activate { hwnd }`, `windows.minimize { hwnd }`, unchanged), plus `windows.openJumpList { groupKey, x, y }` | `windows.running` (compatibility projection of `host.windows`; see the table below) | `preview` (placement `anchored`, the hover popup with its `Thumbnail` per window), `jumplist` | `windows` (settings gain `grouping: "always"\|"whenFull"\|"never" = "always"`, `labels: bool`) |
 | `subzerodev.notifications` | `notifications.openCentre`, `notifications.dismiss { id }`, `notifications.clear { appId? }`, `notifications.activate { id }` | `notifications.history` (array of `{ id, appId, appName, title, body, at, read, silent }`), `notifications.status` (`{ identity: "ok"\|"none", access: "allowed"\|"denied"\|"unspecified", switchedOn: bool, unread: number, doNotDisturb: bool }`) | `toast` (placement `toast`), `centre` (placement `anchored`), `setup` | `bell` (panelItem: a button with the unread count; settings: `popupSeconds: integer 2–30 = 6`, `maxVisible: integer 1–5 = 3`, `popups: bool = true`). `modes: ["replacement"]` |
 | `subzerodev.desktops` | `desktops.openOverview` | none (subscribes to `host.windows`, `host.desktops`) | `overview` (placement `overlay`: one tile per desktop, thumbnails of its windows, drag to re-file, "new desktop") | `desktops` (panelItem: the current desktop's name, click for the overview). `modes: ["replacement"]` |
 | `subzerodev.switcher` | `switcher.step { backwards: bool }`, `switcher.commit`, `switcher.cancel` | none | `switcher` (placement `overlay`) | none. `modes: ["replacement"]` |
@@ -741,37 +764,88 @@ The `host.window.activate` and `host.window.minimize` commands of the first rele
 | `subzerodev.power-menu` | `powermenu.open` | none | `menu` (the WinX entries, then a built-in set when the folders are unreadable) | none. `modes: ["replacement"]` |
 | `subzerodev.desktop-icons` (changed) | `desktop.open` (unchanged), `desktop.contextMenu { path?: string, x: number, y: number }` | none | `rename` (a TextInput) | `icons` (unchanged contribution) |
 
+**`windows.running` and the window commands: compatibility and migration (S25).** The first release's behaviour below is read from the shipped plugin and host, not from the first-release table at "First-party plugin contracts", which omits `attention`.
+
+| Aspect | First release (documented from the code) | Second release | Compatibility decision |
+|---|---|---|---|
+| Provider and availability | provider `subzerodev.running-windows`; the feed exists only while that plugin is `Running` and is `available: false` otherwise (S6) | same provider and feed id. The plugin is a compatibility adapter: it subscribes to `host.windows` and projects it. When the plugin is disabled or crashed, the feed is `available: false` (S6) and the shared model keeps running (C4) | Compatible: unchanged |
+| Item shape | `{ key, hwnd, title, exe?, aumid, monitorId, active, minimized, attention }`; `aumid` always null | the same fields, plus `windowKey`, `groupKey`, `desktopId`; `aumid` is populated when the model knows it | Compatible: additive fields only; the wire protocol ignores unknown properties, so a 1.0 consumer is unaffected. `aumid` was always null in 1.0, so a consumer cannot have relied on it |
+| Key meaning | `key` is the decimal handle; it is stable for the window's life and reused after destruction | `key` stays the decimal handle, unchanged. Lifetime identity is the new `windowKey`; `key` does not change meaning | Compatible. `key` is documented as a display and diffing key, not a lifetime identity (I26) |
+| Desktop and monitor scope | all monitors, one desktop (there was only one); the `scope` setting (`thisMonitor`) is applied inside each plugin instance by monitor id | the current desktop plus pinned windows; with one desktop the set is identical to the first release; `scope` unchanged | Compatible: with one desktop the content is identical. With several desktops it narrows to the current one, which is what the old feed would have shown if windows had been hidden by a shell desktop |
+| Ordering | first appearance (the plugin's own insertion order) | `firstSeen` ascending, assigned by the model at first sight | Compatible in practice; the old order was an implementation detail and is now stated. The model's `firstSeen` can differ from the old order only at host start, when the model enumerates once |
+| `windows.activate { hwnd }` | toggle: activates, or minimises if the window is already active; forwards to `host.window.activate` / `minimize`; no result | unchanged arguments and meaning; resolves through the legacy `hwnd` mapping above | Compatible. A handle that is no longer a window gives 1009 `CommandFailed` as before; a handle on another desktop now also works |
+| `windows.minimize { hwnd }` | forwards to `host.window.minimize`; no result | unchanged | Compatible |
+| Errors | `CommandFailed` (1009) for a handle that is not a window; a command to its provider fails without starting the worker when the plugin is down (S6) | the same; the new codes `StaleWindowReference` and `WindowGone` are mapped to 1009 for callers declared `hostApi ^1.0` | Compatible |
+| Consumers of the feed | the test plugin, `RunningWindowsTests`, `FeedTests` and the copy shipped under `artifacts/release` | updated in S25 to the same shape; they read `key` and `hwnd` as before | Compatible |
+
+No change above is incompatible, so there is **no rename and no feed version bump**: the plugin declares `hostApi: "^1.1"` (it subscribes to `host.windows`) and keeps the feed id `windows.running`. If a later change had to break a field of `windows.running`, it would ship as a new feed id with a `.v2` suffix next to the old one for one release, and the old feed would be marked deprecated in its provider's manifest; that is not needed now.
+
+**Single-tracker cutover (S25, one change).**
+1. The host starts `IWindowTracker` (event hooks, the shell-hook window and the 2 s rescan) before it starts plugins, and publishes `host.windows` revision 1 from an initial enumeration before any plugin is supervised.
+2. In the same change the running-windows plugin drops its own scanner, hooks, shell-hook window and reconcile loop, and builds `windows.running` from a `host.windows` subscription. The old code is deleted, not disabled by a flag (I39).
+3. **Clean start**: enumerate, publish revision 1, then supervise plugins. A plugin that starts before the first revision sees `available: false` until it arrives.
+4. **Plugin restart**: the adapter resubscribes and republishes; the model is untouched and keeps its generations.
+5. **Version mismatch**: a plugin that declares `hostApi ^1.1` on a 1.0 host is rejected with `HostApiMismatch` / `Incompatible`, so a mixed install cannot start an adapter without a model. The reverse (a 1.0 plugin on a 1.1 host) runs unchanged.
+6. **Rollback**: one release zip carries the host and the built-in plugins together, so rolling back restores the old plugin and the old tracker together. Two trackers cannot coexist, because the old plugin ships with its own tracker and the new host has none outside the model.
+7. **User override of the built-in id**: a user package with id `subzerodev.running-windows` replaces the built-in one (first release rule, `OverridesBuiltIn`). It can keep a private scanner of its own; it is not an authoritative tracker, and the shared model does not read it.
+
 **Host internals (second release).** Declarations are signatures only.
 
 ```csharp
 namespace SubZeroDev.WindowManager.Host.Core;
 
-public readonly record struct WindowKey(nint Handle, int ProcessId, long ProcessStartTicks);
+// Lifetime identity (I26). The generation is assigned by the model on the UI thread at admission and is
+// never reused within a host run. A handle alone, or a handle with process id and start time, is not a lifetime identity.
+public readonly record struct WindowKey(nint Handle, long Generation);
 
+// Re-verified at every rescan and before every state-changing command; any mismatch means the window is gone.
+public readonly record struct WindowFingerprint(int ProcessId, long ProcessStartTicks, int ThreadId, string ClassName);
+
+// The public reference "wk1:<epoch>:<generation>". The epoch is random per host start.
+public readonly record struct WindowReference(long Epoch, long Generation)
+{
+    public override string ToString();                      // "wk1:..."
+    public static bool TryParse(string text, out WindowReference reference);
+}
+
+public enum CloakState { None, App, Shell, Inherited }
 public enum ProgressState { None, Indeterminate, Normal, Error, Paused }
 public sealed record WindowProgress(ProgressState State, double? Value);
 public sealed record WindowOverlay(IconRef Icon, string? Description);
 
+// Facts only. There is no model-wide "eligible" flag: each view derives its own list (I40).
 public sealed record ManagedWindow(
-    WindowKey Key, string Title, string? ExePath, string? Aumid, string GroupKey, string MonitorId,
-    Guid DesktopId, bool PinnedToAll, bool Active, bool Minimised, bool Attention,
+    WindowKey Key, WindowFingerprint Fingerprint, string Title, string? ExePath, string? Aumid,
+    string GroupKey, WindowKey? Owner, string MonitorId, Guid DesktopId, bool PinnedToAll,
+    bool Visible, CloakState Cloak, bool ShellHidden,
+    bool ToolWindow, bool NoActivate, bool AppWindow, bool Titled,
+    long FirstSeen, long ActivatedAt, bool Active, bool Minimised, bool Attention,
     WindowProgress Progress, WindowOverlay? Overlay);
 
 public sealed record WindowSnapshot(long Revision, IReadOnlyList<ManagedWindow> Windows);
 
+// What a command or the thumbnail service resolves a reference or handle to.
+public sealed record WindowTarget(nint Handle, ManagedWindow? Managed);   // Managed is null for an unmanaged legacy handle
+
 public interface IWindowModel
 {
     WindowSnapshot Current { get; }
+    long Epoch { get; }                                     // random per host start
     event EventHandler<WindowSnapshot> Changed;             // raised on the UI thread, at most once per frame
     void Observe(WindowObservation observation);           // callable from any thread; posts to the UI thread (I25)
+    Outcome<WindowTarget> Resolve(string windowKey);       // StaleWindowReference (epoch) or WindowGone (generation, fingerprint)
+    Outcome<WindowTarget> ResolveHandle(nint handle);      // the legacy path: current holder, else unmanaged if IsWindow, else WindowGone
     void SetProgress(WindowKey key, WindowProgress progress);
     void SetOverlay(WindowKey key, WindowOverlay? overlay);
 }
 
-public abstract record WindowObservation(WindowKey Key);   // Created, Shown, Hidden, Destroyed, TitleChanged, Foreground, Minimised, Restored
+// The tracker reports handles only; the model assigns generations and fingerprints (I26, I39).
+public enum ObservationKind { Created, Shown, Hidden, Cloaked, Destroyed, TitleChanged, Foreground, Minimised, Restored, RescanMissing }
+public sealed record WindowObservation(nint Handle, ObservationKind Kind);
 
 public sealed record DesktopInfo(Guid Id, string? Name);
-public sealed record SwitchPlan(Guid From, Guid To, IReadOnlyList<WindowKey> Hide, IReadOnlyList<WindowKey> Show);
+public sealed record PlannedWindow(WindowKey Key, WindowFingerprint Fingerprint);
+public sealed record SwitchPlan(Guid From, Guid To, IReadOnlyList<PlannedWindow> Hide, IReadOnlyList<PlannedWindow> Show);
 
 public interface IDesktopSet
 {
@@ -783,7 +857,7 @@ public interface IDesktopSet
     Outcome Rename(Guid id, string name);
     Outcome<SwitchPlan> PlanSwitch(Guid target);           // does not change anything
     Task<Outcome> SwitchAsync(Guid target, CancellationToken ct);       // journal, effects, then CurrentId (I28, I30)
-    Task<Outcome> MoveAsync(WindowKey window, Guid target, CancellationToken ct);
+    Task<Outcome> MoveAsync(WindowKey window, Guid target, CancellationToken ct);   // WindowGone if it closes first (flow 19)
     Outcome PinToAll(WindowKey window, bool pinned);
 }
 
@@ -791,14 +865,18 @@ namespace SubZeroDev.WindowManager.Host.Platform;
 
 public interface IWindowEffects                             // the effects thread (I27)
 {
-    // Journals the hidden set first, then applies the plan. Windows that cannot be moved are returned in Stuck.
+    // Journals the union of the old and the about-to-hide sets first, re-verifies fingerprints, applies the plan,
+    // then replaces the journal entry with the exact set. Windows that cannot be moved are returned in Stuck;
+    // windows that closed meanwhile are returned in Gone and are neither stuck nor an error.
     Task<Outcome<EffectsResult>> ApplyAsync(SwitchPlan plan, CancellationToken ct);
     Task<Outcome> ShowAllAsync(CancellationToken ct);       // used at exit and by recovery paths
 }
-public sealed record EffectsResult(IReadOnlyList<WindowKey> Stuck);
+public sealed record EffectsResult(IReadOnlyList<WindowKey> Stuck, IReadOnlyList<WindowKey> Gone);
 
-public interface IWindowTracker                             // WinEvent hooks, 2 s rescan, shell-hook window
+public interface IWindowTracker                             // WinEvent hooks, 2 s rescan, shell-hook window; the only discoverer (I39)
 {
+    Task<IReadOnlyList<nint>> EnumerateAsync(CancellationToken ct);   // the initial enumeration, before revision 1
+    WindowFingerprint? Capture(nint handle);                // null if the handle is not a window
     void Start(Action<WindowObservation> sink);
     void Stop();
 }
@@ -810,8 +888,10 @@ public interface ITaskbarBackchannel                        // the host's Shell_
     void Stop();
 }
 
-public interface IThumbnailService                          // I36
+public interface IThumbnailService                          // I36, I41
 {
+    // The element's windowKey is resolved through IWindowModel.Resolve at registration and again when the
+    // source becomes available; a stale reference registers nothing and the element shows its title card.
     Outcome<IThumbnailRegistration> Register(WindowKey source, nint destinationWindow);
 }
 public interface IThumbnailRegistration : IDisposable
@@ -820,6 +900,8 @@ public interface IThumbnailRegistration : IDisposable
     bool SourceAvailable { get; }
 }
 ```
+
+**SDK additions (1.1, additive; S25 and S26).** `WindowsFeedState(long Revision, IReadOnlyList<WindowFeedItem> Windows)` and `DesktopsFeedState(long Revision, string Current, bool Busy, DesktopSwitch? Switching, IReadOnlyList<DesktopFeedItem> Desktops)` are the typed feed payloads. `ShellView` is the paired view of the two feeds: it exposes `Windows`, `Desktops`, `Revision` and `Stale`, and raises one change only when the revisions are equal or after the 250 ms hold (I42). `WindowFeedItem.WindowKey` is an opaque string and is compared for equality only. A worker built against the published SDK alone consumes the feeds and commands through these types and arranges `Thumbnail` elements (C6).
 
 **Plugin-side (workers).** The notifications worker uses an `INotificationHistory` port (`ReadAsync`, `Changed`, `DismissAsync`, `ClearAsync`, `ActivateAsync`), and the quick-settings worker one port per device (`IRadioControl`, `IBrightnessControl`). Each has a real implementation and a fake in the plugin's test project; the plugin never calls Windows from a code path that has no port (I38).
 
@@ -888,7 +970,7 @@ Constraints:
 **Migration of existing data:** none exists; this is a new project. Every document type starts at `schemaVersion` 1 (or `manifestVersion` 1). A later version's migration is a pure function `vN → vN+1`, applied in sequence on load and written back only when the document next changes.
 
 **Second-release additions:**
-- **Recovery journal** (`recovery\session-<sessionId>.json`): a third entry kind, `hiddenWindows`: `{ kind: "hiddenWindows", windows: [ { hwnd, processId, processStartTicks } ] }`. There is at most one such entry; it is replaced whole on each switch (I28). The guardian shows each listed window whose process id and start time still match, then clears the entry. It does not change `schemaVersion`: the journal's entry kinds are already open-ended, and an older guardian ignores a kind it does not know (a mixed install cannot happen, because the guardian and host ship together).
+- **Recovery journal** (`recovery\session-<sessionId>.json`): a third entry kind, `hiddenWindows`: `{ kind: "hiddenWindows", windows: [ { hwnd, processId, processStartTicks, threadId, className } ] }`. There is at most one such entry; it is replaced whole on each switch (I28). Before a switch applies any hide, the entry is written as the union of the previously hidden set and the about-to-hide set, and flushed (so a crash mid-switch strands nothing); after the effects complete it is replaced with the exact hidden set. The guardian shows each listed window only if all five fields still match (a handle reused by another window fails the check), and only if it is not already visible, using a no-activate, no-restore show that leaves a minimised window minimised; then it clears the entry. Generations are not persisted: after the relaunch every window is on the first desktop and any earlier `windowKey` is a `StaleWindowReference`. The added fields do not change `schemaVersion`: the journal's entry kinds are already open-ended, and an older guardian ignores a kind it does not know (a mixed install cannot happen, because the guardian and host ship together).
 - **`settings.json`**: optional `windowsKeys` (object: chord → command id; chords match `^(Win|Ctrl|Alt|Shift)(\+(Win|Ctrl|Alt|Shift))*\+[A-Za-z0-9]+$` or `Alt+Tab`/`Alt+Shift+Tab`; an unknown chord, or a command id that does not resolve, is ignored with a diagnostic) and `toastCorner` (`"topLeft"|"topRight"|"bottomLeft"|"bottomRight"`, default `bottomRight`). `schemaVersion` stays 1 because both keys are optional.
 - **`plugin-data\subzerodev.notifications\state.json`**: `{ lastSeen: string (ISO 8601 instant), doNotDisturb: bool }`. No notification content (I31).
 - **Plugin manifest**: popups entries accept `placement` (`anchored`, `toast`, `overlay`). `manifestVersion` stays 1. An unknown `placement` makes the manifest `Invalid`.
@@ -933,7 +1015,8 @@ All errors are typed codes with a detail string for logs. None is a bare excepti
 | `StartFailed` | The process could not be created, or job assignment failed | yes (supervisor backoff) | Fault path |
 | `HotkeyInUse` | Hotkey registration refused | no | Leave unbound; settings shows the conflict |
 | `AppBarRefused` | Shell refused app-bar registration | yes, on "taskbar created" | Fall back to `overlay` |
-| `WindowGone` | `host.window.*` on a window that no longer exists | no | Return the error to the caller plugin |
+| `WindowGone` | A command or thumbnail names a window that no longer exists: the generation is gone, the fingerprint failed (a reused handle), or it closed during the operation (flow 19) | no | Return the error to the caller plugin; no side effect except the cleanup flow 19 defines. A caller re-reads `host.windows` |
+| `StaleWindowReference` | A `windowKey` carries an epoch from an earlier host start | no | Return the error to the caller; the caller re-reads `host.windows`. Reported to a 1.0 caller as 1009 `CommandFailed` |
 | `ForegroundDenied` | Windows refused activation | no | Fall back to flashing the window's taskbar button; return an error |
 | `ShellRoleTaken` | Another process holds the shell window | no | Guardian: exit 6 unless `--take-over`. Host: run without the shell roles and log it |
 | `ShellOverridden` | `--shell on` found a policy or Shell Launcher overriding the per-user value | no | Report it; change nothing |
@@ -944,7 +1027,7 @@ All errors are typed codes with a detail string for logs. None is a bare excepti
 | `LastDesktop` | `host.desktops.remove` on the only desktop | no | Notice at the element |
 | `WindowNotMovable` | The effects thread could not hide a window (hung, elevated, or refused) | no | Logged once per window; the window stays visible on every desktop and is marked stuck in the model |
 | `SwitchSuperseded` | A switch was replaced by a newer request before it started | no | Drop; the newer request reports the outcome |
-| `ThumbnailUnavailable` | A thumbnail could not be registered (source gone, hidden, minimised, or refused) | no | The element draws its icon and title card |
+| `ThumbnailUnavailable` | A thumbnail could not be registered (source hidden, minimised, or refused; a stale or gone source is `StaleWindowReference` or `WindowGone`, shown the same way) | no | The element draws its icon and title card |
 
 **Notifications and quick settings (inside the plugins; reported over the wire as 1009 `CommandFailed` with `data.code` set to the name below):**
 
@@ -971,7 +1054,11 @@ All errors are typed codes with a detail string for logs. None is a bare excepti
 - **The per-user `Winlogon\Shell` value on build 26200** (design open question 6): to be confirmed on a real sign-in (S17.7); the fallback is the per-user Custom User Interface value.
 - **Explorer-hosted features without Explorer** (design open question 7): the expected state of each is recorded in `docs/replacement-mode.md` (S23); a week of daily use confirms it (S23.1).
 
-Second release (the design's open questions 1–12 are the full list; these are the ones that leave a signature undetermined):
+Second release (the design's open questions 1–15 are the full list; questions 1–5 are Ben's choices and 6–15 are engineering validation gates; these are the ones that leave a signature or a rule undetermined):
+
+- **Handle-churn safety of the lifetime identity** (design question 13, S25). The first draft claimed that handle, process id and start time alone identify a window; that claim is withdrawn (I26). The generation plus the five-field fingerprint is the design. The residual risk is a same-handle, same-thread, same-class successor within one rescan interval; a fixture that destroys and recreates windows at reused handles must show wrong-window actions at zero, or the fingerprint is widened (a decision entry).
+- **Tracking every admitted window within budget** (design question 14, S25): events and idle cost with hundreds of windows, against `docs/budgets.md`.
+- **A show that neither activates nor restores** (design question 15, S26): whether it keeps a minimised window minimised on the supported builds. `IWindowEffects.ShowAllAsync` and the guardian use it; if no such form exists the guardian shows minimised windows minimised by another route, a decision entry.
 
 - **How the effects thread hides a window.** `IWindowEffects` fixes the port. Whether hide-and-show alone is enough, or cloaking from a shell-role process is possible (design question 8), decides if `Thumbnail` can show another desktop's windows live.
 - **The progress and overlay message format** received on the host's `Shell_TrayWnd` (design question 9). `ITaskbarBackchannel` fixes the port; the decoding is set by the taskbar slice.

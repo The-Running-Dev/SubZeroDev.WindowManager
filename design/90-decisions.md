@@ -11,10 +11,62 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 - **Windows App SDK release**: pinned in the foundation slice.
 - **Per-user shell value on build 26200**: honoured by Windows? Default until S17's check: yes; otherwise the per-user Custom User Interface value.
 - **Second release, for Ben** (design § Second release, open questions 1–5; each has a default the slices follow until answered): what "acted on" means for a notification (default: open the originating application; no buttons or replies); which rows of the replacement-mode doc are in scope (default: Toasts, Notification centre without the calendar flyout, Quick Settings, Task View and virtual desktops, Win+X, Taskbar; Start and Snap layouts untouched; the themed Alt+Tab last and droppable); which toggles beyond Bluetooth and brightness (default: Wi-Fi, airplane mode, do not disturb); whether jump lists pin and unpin (default: read and launch only); who signs the notifications package (default: signed on the machine, key never leaves it).
-- **Second release, checks the slices run** (design questions 6–12): notifications reaching the history with Explorer not running (first notifications slice, the gate); identity under the job-object launch; cloaking other applications' windows; progress and overlay messages on the host's `Shell_TrayWnd`; jump lists without Explorer; radio and DDC/CI access from an unpackaged process; DWM thumbnails in a WinUI popup. A failure is a new entry here, not a workaround.
+- **Second release, engineering validation gates** (design questions 6–15; not choices for Ben, and each is run by the slice named): notifications reaching the history with Explorer not running (S24, the gate); identity under the job-object launch (S24); cloaking other applications' windows (S26); progress and overlay messages on the host's `Shell_TrayWnd` (S29); jump lists without Explorer (S29); radio and DDC/CI access from an unpackaged process (S27); DWM thumbnails in a WinUI popup (S26); wrong-window actions under handle churn (S25); tracking every admitted window within the idle and event budgets (S25); a show that neither activates nor restores keeping a minimised window minimised (S26). A failure is a new entry here, not a workaround.
+- **Second release, planned acceptance checks C1–C7** (design § Second release, acceptance checks): each has an owning slice and an evidence method in `30-slices.md`. They are planned requirements. None has run.
+- **Source of the revision**: [the second-release design handoff](2026-11-03-second-release-design-handoff.md) (shared window model, approach A) and the corrections to it recorded in the 2026-11-03 entries below.
 - **Brief's second-release open items** now settled by premises (Ben, 2026-11-03): see the entries dated 2026-11-03 below. The brief's wording is Ben's and is left for Ben to update.
 
 ---
+
+## 2026-11-03 — Second release: slice order, and why the first window slice is large
+- **Context:** the handoff asks for the window model to be the first window-related slice, without moving desktops ahead of notifications, and for the larger slice to be explained. The `Thumbnail` element needs a delivery slice and a dependency.
+- **Chosen:** S24 notifications, S25 the shared window model with running windows migrated onto it, S26 virtual desktops and Task View (with the `Thumbnail` element and the thumbnail service, because Task View is its first consumer and it needs S25's window references), S27 quick settings, S28 remaining Windows keys and Win+X, S29 taskbar depth, S30 the desktop file menu and per-monitor wallpaper, S31 the optional themed Alt+Tab. S25 is large because choosing approach A makes desktop membership and window identity shared shell state: the model, its public feed and commands, the compatibility adapter and the removal of the old tracker cannot be split without leaving two trackers or an unpublished contract. Win+X (S28) does not depend on the window model.
+- **Rejected:**
+  - **Desktops before notifications:** reorders Ben's priorities.
+  - **Building desktops with a model of their own and extracting it later:** every consumer migrates twice.
+  - **Splitting S25 into a model slice and a migration slice:** the intermediate state has two trackers (I39).
+  - **Shipping `Thumbnail` in S25:** no consumer yet, and an untested public element.
+
+## 2026-11-03 — Second release: shared window eligibility
+- **Context:** the first draft carried a model-wide `eligible` flag, as if one answer to "should this window be listed" served every view. Running windows, Task View and Alt+Tab disagree by design.
+- **Chosen:** the registry tracks every admitted window and publishes facts; each view applies its own rule. A window is admitted once it is a top-level window of another process that is visible with a non-empty title (or that the shell hid), and leaves only when destroyed (a Destroy event, an invalid handle or a fingerprint mismatch). Hiding, minimising, cloaking and being on another desktop are facts, not removal (I40). The contract states the default rule and order for running windows, Task View and Alt+Tab. `host.windows` and `host.desktops` carry one `revision` from one snapshot, completed state only; the paired SDK view renders only on equal revisions, holds the newer for 250 ms otherwise, then renders from the lower and marks itself stale (I42). Differences that come from a view's own filter are not inconsistencies.
+- **Rejected:**
+  - **A model-wide `eligible` flag:** it would force every feature to show the same windows and would make the registry forget hidden windows.
+  - **Dropping windows the shell hid:** they would vanish from Task View and could not be shown again.
+  - **Letting each plugin read the windows itself:** the several-scanners problem approach A exists to remove.
+
+## 2026-11-03 — Second release: window lifetime identity
+- **Context:** the first draft said that handle, process id and start time identify a window across handle reuse. That is wrong: a handle recycled by another window of the same process has all three. The handoff also requires lifetime identity to stay separate from `groupKey`.
+- **Chosen:** the host assigns a 64-bit generation at admission, on the UI thread, never reused within a host run. The lifetime key is (handle, generation). A fingerprint (process id, process start time, thread id, class) is re-verified at every rescan and before every state-changing command, so a handle reused by another window is dropped as gone. The public reference is `wk1:<epoch>:<generation>` with a random per-start epoch: a wrong epoch is `StaleWindowReference`, a gone generation or a failed fingerprint is `WindowGone`. New commands and `Thumbnail` take `windowKey` and reject stale references with no side effect (I41). Legacy `hwnd` commands resolve to the registry's current holder, fall back to unmanaged when `IsWindow` is true and give `WindowGone` otherwise; their limit (a handle held across reuse) is stated. Generations do not survive a restart; the journal records the five fields so the guardian shows only the windows it stored.
+- **Stated limit:** a successor window with the same handle, thread and class inside one rescan interval is a residual risk, bounded by the 2 s rescan and the command-time check. The handle-churn fixture (design question 13, S25) must show wrong-window actions at zero, or the fingerprint is widened.
+- **Rejected:**
+  - **Handle, process id and start time alone:** the withdrawn claim above.
+  - **`groupKey` as identity:** it names an application and is shared by many windows.
+  - **Persisting generations:** nothing could verify them after a restart, and a stale reference is safer than a guessed match.
+
+## 2026-11-03 — Second release: compatibility and the single-tracker cutover
+- **Context:** `windows.running` and the window commands exist in the first release and have consumers (the plugin's tests, the feed tests, the test plugin and the shipped artifact). The handoff asks for compatibility or explicit versioning, and for never leaving two authoritative trackers.
+- **Chosen:** the first release's contract is documented from its code in `20-contract.md` (provider, availability, item shape and key meaning, scope, ordering, commands, results, errors) and each change decided: the feed id, `key` (decimal handle), `hwnd`, ordering and the commands are unchanged; `windowKey`, `groupKey`, `desktopId` and a populated `aumid` are additive; one desktop gives the same set. No change is incompatible, so there is no rename and no version bump; the adapter declares `hostApi ^1.1`. `windows.running` becomes a compatibility projection of `host.windows`, built in the running-windows plugin. The cutover is one change: the host starts the tracker before plugins, the plugin subscribes, and the old scanner, hooks, shell-hook window and reconcile loop are deleted (I39). Plugin disabled: `windows.running` is `available: false` and the model continues. Version mismatch: a 1.1 plugin on a 1.0 host is `Incompatible`. Rollback: one zip restores the old plugin and tracker together. If a later change had to break a field, it would ship as a new feed id next to the old one for one release.
+- **Rejected:**
+  - **Moving the feed into the host:** takes it from a plugin that can be disabled, and the first release's S6 behaviour (`available: false`) would not hold.
+  - **A flagged old tracker kept for a release:** two trackers.
+  - **Renaming the feed:** breaks consumers for nothing.
+- **Superseded in part:** the window key in the entry "one window model in the host" below (handle, process id and start time) is replaced by the lifetime identity above; the rest of that entry stands.
+
+## 2026-11-03 — Second release: when a window closes during an operation
+- **Context:** activating or moving a window races with the window closing. The handoff asks for a defined outcome.
+- **Chosen:** activation validates, switches desktops if needed, then restores and foregrounds, and verifies after about 250 ms. The outcome is `foreground`, `requested` (posted, never claimed as foreground) or `WindowGone`. A move validates, creates the new desktop for `"new"`, re-files (journal first), then hides. A close before the re-file gives `WindowGone` and removes the empty desktop created for the call. A close after the re-file but before the hide cleans the model, hidden set and journal, returns `WindowGone` or success according to whether the destruction was seen before publish, and the filed-on desktop stays. During a switch a closed window is dropped and never marked stuck, and a completed switch stays completed. After any return there are no leftover entries.
+- **Rejected:**
+  - **Reporting `foreground` for a posted activation:** the system can refuse or delay it.
+  - **Rolling back a completed switch when the window closes:** the user's desktop change was real.
+  - **Marking a closed window stuck:** it would never leave the model.
+
+## 2026-11-03 — Second release: planned acceptance checks
+- **Context:** the handoff lists seven things the design must demonstrate. They are requirements for the slices, not claims that they pass.
+- **Chosen:** C1 desktop consistency (S26, with the paired view built in S25); C2 hidden windows stay tracked (S26, with the registry rule in S25); C3 closing during an operation (S25 for activation, S26 for move and switch); C4 plugin independence (S25 for running windows, S26 for Task View); C5 recovery (S26, with the clean start and rollback in S25); C6 SDK interoperability (S25 for the feeds, commands, negotiation and stale rejection, S26 for `Thumbnail`); C7 budgets and isolation (every slice, S25 for the model). Evidence is automated where the test hook can create its own windows and desktops, and *native* on a throwaway host where only the real system can answer; none touches the user's own windows or settings (I38).
+- **Rejected:**
+  - **Declaring the checks passed in the design:** none has run.
+  - **One end-to-end test for all seven:** a failure would not point at a slice.
 
 ## 2026-11-03 — Second release: the shell's own virtual desktops
 - **Context:** the brief's second item asks for several sets of windows, switched and moved between from the keyboard and a panel item, in replacement mode. Windows' own desktops live in Explorer and are driven through an undocumented interface that changes between builds.
@@ -28,7 +80,7 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ## 2026-11-03 — Second release: one window model in the host
 - **Context:** grouping, hover thumbnails, jump lists, badges, desktops, Task View and the switcher all need the same facts about the same windows. The first release's running-windows plugin scans windows by itself, in its own process.
-- **Chosen:** approach A. The host owns one authoritative model (window key of handle, process id and start time; desktop membership; grouping key; progress and overlay state), published as the `host.windows` and `host.desktops` feeds with commands. Running windows, Task View and the switcher are plugin views of it. The model runs in both modes; the features built on it are replacement-mode only. Thumbnails need one new host-drawn element, because a DWM thumbnail needs a host window handle. Notifications are independent of the model.
+- **Chosen:** approach A. The host owns one authoritative model (lifetime key, which the entry "window lifetime identity" above corrects from handle, process id and start time to handle plus generation; desktop membership; grouping key; progress and overlay state), published as the `host.windows` and `host.desktops` feeds with commands. Running windows, Task View and the switcher are plugin views of it. The model runs in both modes; the features built on it are replacement-mode only. Thumbnails need one new host-drawn element, because a DWM thumbnail needs a host window handle. Notifications are independent of the model.
 - **Rejected:**
   - **Self-contained plugins (approach B):** several scanners, hiding racing the strip's rescan, and window identity derived in each plugin.
   - **Putting the model in the running-windows plugin:** every other plugin would depend on it, and hiding windows has to sit behind the host's journal (I6).

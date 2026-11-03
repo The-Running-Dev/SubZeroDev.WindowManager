@@ -338,3 +338,124 @@ Acceptance:
   - S23.3 Each way back to Explorer is exercised once on a real sign-in: `--shell off`, Settings, `host.shell.restoreExplorer`, Shift at sign-in, and the automatic fallback after a host that cannot start (forced with a broken install), *manual*.
   - S23.4 A restart and sign-in with the app registered reach a usable desktop with no `explorer.exe` process running, *manual*.
 Out of scope: other machines and editions, beyond recording what is known.
+
+# Second release
+
+Built from the Second release parts of [10-design.md](10-design.md) and [20-contract.md](20-contract.md), in the order of the brief's priorities (notifications first). Every slice here is `todo`. The acceptance checks C1 to C7 are planned requirements, each with an owning slice below; none has been run. Where an item says *manual* or *native*, it runs on a throwaway host with its own data root and with windows the test itself creates, never the user's own windows, notifications, desktops or settings (I38).
+
+Two things about the order, stated openly:
+- **S25 is larger than a normal slice.** Choosing approach A makes window identity and desktop membership shared shell state. The model, its public feed and commands, the compatibility adapter for `windows.running` and the removal of the old tracker cannot be split without leaving two trackers or an unpublished contract (I39). It is the first *window-related* slice. It does not move virtual desktops ahead of notifications: S24 is notifications, S25 follows it, and S26 builds desktops on S25.
+- **The `Thumbnail` element is delivered in S26**, its first consumer (the Task View overview). It depends on S25's window references, so S25 does not ship it; S25 ships the references and the registry it will resolve against, and S26 extends the C6 interoperability fixture to the element.
+
+## S24 — Notifications
+Status: todo
+Delivers: In replacement mode Ben sees Windows notifications as pop-ups in the shell, can open a centre listing them, and can open, dismiss and clear them, with a setup page that guides the one-time steps Ben does himself.
+Touches: Protocol and Sdk (1.1: `placement` on popups, `trigger` on `command.invoke`); Host.Surfaces (`toast` and `overlay` placements); Host.Platform (the extended `IWindowsKeyHook` with the chord table, Win+N); Host.Core (`host.notifications.setDoNotDisturb`, chord bindings in `settings.json`); plugin `subzerodev.notifications` (worker, `notifications.history` and `notifications.status` feeds, `toast`, `centre` and `setup` popups, `bell` contribution); the sparse package, its script and the `.cer`; a fake `INotificationHistory`
+Depends on: S23
+Acceptance:
+  - S24.1 The validation gate runs first, *manual*: with Explorer not running, notifications reach the history, and Windows is observed to show its own pop-ups or not (design question 6); a worker created suspended and assigned to the job object keeps its package identity, and starting an application by AUMID with the notification's launch string reaches it (design question 7). The result is recorded in the pull request. A failure is a decision entry before the rest of the slice merges.
+  - S24.2 With the history port faked, `notifications.history` lists each notification with `id`, `appId`, `appName`, `title`, `body`, `at`, `read` and `silent`, newest first, and updates within 500 ms of the fake raising a change. No notification content is written to disk or logs (I31).
+  - S24.3 A new notification shows a `toast` pop-up on the configured corner for `popupSeconds`, stacking up to `maxVisible`, without taking focus. With do-not-disturb on, no pop-up shows and the history still lists it.
+  - S24.4 The centre lists, opens (starting the source application by AUMID with the launch string), dismisses and clears (all, or one application's). Activation of a notification whose application cannot start reports `ActivationFailed` in the centre.
+  - S24.5 `notifications.status` reports `identity`, `access`, `switchedOn`, `unread` and `doNotDisturb`; with `identity: "none"`, `access: "denied"` or `switchedOn: false`, the `setup` page names the step and the plugin publishes the matching error (`IdentityMissing`, `AccessDenied`, `NotificationsOff`).
+  - S24.6 Win+N invokes `notifications.openCentre` only while that plugin is `Running`; otherwise the chord passes through (I35). The chord table of the contract is read from `settings.json`, and an unknown chord or command id is ignored with a diagnostic.
+  - S24.7 The plugin runs without Explorer and its crash leaves the host, the panel and every other plugin running (C4 for this plugin): the bell shows `Faulted`, and a restart republishes the history.
+  - S24.8 Budgets (C7): an idle notifications worker uses no CPU beyond the budgets in `docs/budgets.md`, and the pop-up path adds no measurable cost to host start.
+  - S24.9 The package's certificate trust, notification access and the notifications switch are done by Ben, *manual*; no step in this slice changes system or security settings.
+Out of scope: toast buttons and inline replies (not available through Windows' listener interface); the calendar flyout; any window-model work.
+
+## S25 — The shared window model and running windows on it
+Status: todo
+Delivers: Ben's running-windows strip looks and behaves as before, but its list now comes from one host-owned registry of windows that outlives hiding, with lifetime references the other features and independently built plugins can rely on.
+Touches: Host.Core (`IWindowModel`, `ManagedWindow`, `WindowKey`, `WindowFingerprint`, `WindowReference`, the registry, `Resolve`, `ResolveHandle`, the published facts, `Epoch`); Host.Platform (`IWindowTracker` with `EnumerateAsync` and `Capture`, the one set of event hooks, shell-hook window and 2 s rescan); Host.App (start order: tracker before plugins); Protocol and Sdk (`host.windows` and `host.desktops` feeds with `revision`, `host.window.activate` and `minimize` with `windowKey`, `StaleWindowReference`, `WindowsFeedState`, `DesktopsFeedState`, `ShellView`); plugin `subzerodev.running-windows` (the compatibility adapter; its own tracker removed); the test plugin and an out-of-repo fixture plugin built against the published SDK only
+Depends on: S24
+Acceptance:
+  - S25.1 (C2) Admission is sticky: a window that becomes hidden, minimised or cloaked, or that the shell hides, stays in `host.windows` with its `desktopId`, and leaves only on a Destroy event, an invalid handle or a fingerprint mismatch (I40). A test creates a window, hides it, and asserts it is still published, then destroys it and asserts it is gone within 2 s.
+  - S25.2 Lifetime identity (I26): the fixture destroys and recreates windows at reused handles. Each recreated window gets a new generation; no desktop, group or badge carries over; and `Resolve` of the old `windowKey` returns `WindowGone` while a key with another epoch returns `StaleWindowReference`. Wrong-window actions under the churn fixture are zero (design question 13); otherwise the fingerprint is widened and a decision entry records it.
+  - S25.3 The published facts match the contract (`visible`, `cloak`, `shellHidden`, `ownerKey`, `toolWindow`, `noActivate`, `appWindow`, `titled`, `desktopId`, `pinnedToAll`, `firstSeen`, `activatedAt`, `active`, `minimized`, `attention`). There is no model-wide `eligible` field: a test reads the feed schema and fails if one appears.
+  - S25.4 (C4) `windows.running` is built only from a `host.windows` subscription. An architecture test fails the build if a plugin project contains a window hook, a rescan or an enumeration of top-level windows (I39). The old scanner, hooks, shell-hook window and reconcile loop are deleted in this slice.
+  - S25.5 (C4) Compatibility: for one desktop the `windows.running` feed has the same items, keys and order as the first release for a recorded fixture (the first release's `RunningWindowsTests` and `FeedTests` pass unchanged); `windows.activate { hwnd }` and `windows.minimize { hwnd }` keep their arguments and results; the additive `windowKey`, `groupKey`, `desktopId` and a populated `aumid` appear; the compatibility table in the contract is checked field by field.
+  - S25.6 (C4) Disabling the running-windows plugin, and killing its worker, leaves `host.windows` and `host.desktops` published and their revisions advancing; `windows.running` reports `available: false` and returns after a restart; the model keeps its generations across the plugin restart. A 1.1 plugin on a 1.0 host is `Incompatible` (`HostApiMismatch`); a 1.0 plugin runs on 1.1.
+  - S25.7 (C3, activate) `host.window.activate { windowKey }` returns `outcome: "foreground"` when the host confirms the foreground within about 250 ms, `"requested"` when it cannot, and never describes a merely posted activation as foreground. If the window closes before or during the activation the result is `WindowGone`, with no leftover state. A stale key gives `StaleWindowReference` and has no side effect (I41). The legacy `hwnd` form resolves to the registry's current holder, falls back to unmanaged when `IsWindow` is true, and gives `WindowGone` otherwise; the limit (a handle held across reuse) is stated in the contract.
+  - S25.8 (C1, paired view) `host.windows` and `host.desktops` carry the same `revision` from one snapshot. `ShellView` renders only on equal revisions; when they differ it holds the newer for 250 ms, re-reads the lagging feed, then renders from the lower revision with `Stale` set. A test drives the lag and asserts no mixed render (I42).
+  - S25.9 (C6) A plugin built outside the repository against the published SDK package alone, with the fixture plugin, subscribes to both feeds, calls `host.window.activate` and `minimize` with a `windowKey`, and receives `StaleWindowReference` and `WindowGone` as the contract says. An architecture test shows it references only `Sdk` (I2).
+  - S25.10 (C5, startup) A clean start enumerates and publishes revision 1 before plugins are supervised; a plugin restart resubscribes. Rollback is one release zip restoring the old plugin and the old tracker together; a test installs the previous zip over the new one and asserts one tracker.
+  - S25.11 (C7) Tracking every admitted window, not only the visible ones, stays inside the idle and event-rate budgets with hundreds of windows (design question 14); the budget checks of `docs/budgets.md` pass, and the test hook is the only source of windows in tests, so no test touches the user's own windows (I38).
+Out of scope: virtual desktops and the `Thumbnail` element (S26); grouping, jump lists and thumbnails on the strip (S29); Task View and the switcher.
+
+## S26 — Virtual desktops and Task View
+Status: todo
+Delivers: Ben has several desktops of his own: he can switch with Win+Ctrl+arrows, open an overview with Win+Tab, drag windows between desktops, and a crash of the host never strands a hidden window.
+Touches: Host.Core (`IDesktopSet`, `SwitchPlan`, `desktops.json`, the journal entry `hiddenWindows`, `host.desktops.*`, `host.window.moveToDesktop`, `pinToAllDesktops`, `close`); Host.Platform (`IWindowEffects` on its own thread, `IThumbnailService`); Recovery (the guardian's recovery of shell-hidden windows); Host.Surfaces and Protocol and Sdk (`Thumbnail` element, `Wm.Thumbnail.*` tokens, `IconRef.window`); the chord table (Win+Tab, Win+Ctrl+Left, Right, D, F4); plugin `subzerodev.desktops` (the overview) and the `desktops` panel item
+Depends on: S25
+Acceptance:
+  - S26.1 (C1) A desktop switch is atomic with respect to feeds: while it runs, `host.desktops.busy` is true and `host.desktops.current` has not changed; after it, `host.windows` and `host.desktops` carry the new `desktopId` assignments and the same `revision`. The running-windows list and the Task View overview, rendered from one `ShellView`, never show a window on both the old and the new desktop, and never show a window on neither unless it is pinned or tracked-but-hidden by design. View-filter differences are not counted as inconsistencies (the Running windows view omits other desktops by design).
+  - S26.2 (C2) A window hidden because it is on another desktop remains in `host.windows` with `shellHidden` and its `desktopId`; Task View lists it on its desktop; switching back shows it; a window hidden by the shell is never treated as destroyed (I40). A window closed while hidden is removed from the registry and from the overview within 2 s.
+  - S26.3 (C3, move) `host.window.moveToDesktop` validates the key, the target and the window, creates the new desktop for `"new"`, re-files (journal first), then hides. A window closed before the re-file gives `WindowGone` and the empty desktop created for the call is removed; a window closed after the re-file but before the hide leaves the model, the hidden set and the journal cleaned, returns `WindowGone` or success according to whether the destruction was seen before publish, and the filed-on desktop stays. After return there are no leftover journal or hidden-set entries, and a posted activation is never described as foreground.
+  - S26.4 (C3, switch) A window that closes during a switch is dropped and never marked stuck; if the last-active window of the target closed, the target's next window in z-order is activated. A switch that completed stays completed if the window being activated closes after it. A superseded switch reports `SwitchSuperseded`.
+  - S26.5 (C5) With the host killed after a switch has hidden windows, the guardian restores them: it shows only windows that are not visible and whose five fingerprint fields match, using a show that does not activate or restore (design question 15), so a minimised window stays minimised; after the relaunch all windows are on the first desktop and old references give `StaleWindowReference`. A crash during the switch itself (the union entry) strands nothing. A failed journal write (`JournalWriteFailed`) stops the switch before any window is hidden.
+  - S26.6 (C4) Disabling or crashing `subzerodev.desktops` leaves `host.windows`, `host.desktops` and the chords `Win+Ctrl+arrows` working (they are host commands); Win+Tab passes through while the plugin is not `Running` (I35).
+  - S26.7 (C6) The out-of-repo fixture plugin of S25.9 is extended to arrange `Thumbnail` elements, switch desktops and move a window through the published SDK alone. A `Thumbnail` with a stale or gone reference draws its icon and title card and the plugin is not raised an error.
+  - S26.8 `Thumbnail` shows a live image of a visible window and a card for a hidden or minimised one; DWM thumbnails inside a WinUI popup are checked for placement, clipping and DPI (design question 12), *native*, on a throwaway host.
+  - S26.9 Whether the shell-role process can cloak other applications' windows (design question 8) is checked and recorded; the slice works with hide-and-show either way, and live thumbnails of other desktops ship only if the check passes.
+  - S26.10 (C7) The switch of a hundred windows stays inside the budgets in `docs/budgets.md` and uses non-blocking calls on the effects thread only (I27); no test hides, shows or moves a window that the test did not create (I38).
+Out of scope: Windows' own virtual desktops; the themed Alt+Tab switcher (S31); hover thumbnails on the strip (S29).
+
+## S27 — Quick settings
+Status: todo
+Delivers: Win+A opens a themed panel with Wi-Fi, Bluetooth, airplane mode, brightness and do-not-disturb, each with its real state.
+Touches: plugin `subzerodev.quick-settings` (worker, `quicksettings.state`, `quicksettings.open`, `quicksettings.set`, `panel`); `IRadioControl` and `IBrightnessControl` with fakes; the chord table (Win+A)
+Depends on: S24
+Acceptance:
+  - S27.1 Each tile shows the device's real value, updated within 1 s of a change made elsewhere; a tile for a device the machine does not have is hidden (`DeviceAbsent`).
+  - S27.2 `quicksettings.set` changes a device through its port and a refusal disables the tile with a reason and keeps the real value shown (`DeviceRefused`, I34).
+  - S27.3 Do-not-disturb is the shell's own switch (`host.notifications.setDoNotDisturb`); Windows' setting is unchanged.
+  - S27.4 Radio control for an unpackaged process, DDC/CI on Ben's monitors and a built-in panel are checked and recorded (design question 11), *manual*.
+  - S27.5 Win+A is handled only while the plugin is `Running` (I35). Tests use the fake ports and never change the machine's real radios, brightness or settings (I38).
+Out of scope: Wi-Fi network selection; volume (S22).
+
+## S28 — Remaining Windows keys and the Win+X menu
+Status: todo
+Delivers: The remaining Windows-key chords work in replacement mode, and Win+X opens a power-user menu built from the same WinX folders Windows uses, falling back to a built-in set.
+Touches: Host.Platform (the chord table); plugin `subzerodev.power-menu` (`menu` popup)
+Depends on: S24
+Acceptance:
+  - S28.1 The default chords in the contract's table are bound, an unknown chord or command id is ignored with a diagnostic, and a chord whose command has no `Running` provider passes through (I35).
+  - S28.2 Win+X opens the menu with the WinX entries, then the built-in set when the folders are unreadable. The menu does not depend on the window model (the plugin has no `windows.read` capability).
+  - S28.3 Entry selection launches through the shell, with foreground rights granted to the started process.
+Out of scope: Start menu; Snap layouts.
+
+## S29 — Taskbar depth
+Status: todo
+Delivers: The running-windows strip groups windows by application, shows a hover preview with a live thumbnail, opens jump lists, and shows progress and overlays on buttons.
+Touches: plugin `subzerodev.running-windows` (`grouping`, `labels`, `windows.openJumpList`, `preview` and `jumplist` popups); Host.Platform (`ITaskbarBackchannel`); Protocol and Sdk (`hoverPopup`)
+Depends on: S26
+Acceptance:
+  - S29.1 Grouping is presentation in the plugin: windows with the same `groupKey` are grouped per the `grouping` setting; the host adds no grouping behaviour beyond publishing `groupKey`.
+  - S29.2 Hovering a group for `delayMs` opens the `preview` popup at the element without taking focus, with a `Thumbnail` per window, and closes it when the pointer leaves both.
+  - S29.3 Whether the host's `Shell_TrayWnd` receives progress and overlay once `TaskbarButtonCreated` is broadcast is checked first (design question 9), *manual*; if it does not, badges do not ship and the design is reopened. When it does, `progress` and `overlay` appear in `host.windows` and on the button.
+  - S29.4 Whether jump-list tasks and custom categories can be read without Explorer (design question 10) is checked and recorded; the `jumplist` popup shows what is readable and launches only (pinning is not in this release, design question 4).
+  - S29.5 No test touches the user's real taskbar windows or `Shell_TrayWnd` (I38).
+Out of scope: pinning and unpinning; thumbnails of other desktops' windows beyond what S26.9 recorded.
+
+## S30 — Desktop file context menu and per-monitor wallpaper
+Status: todo
+Delivers: Ben can right-click a desktop icon or the desktop for the usual file operations, and each monitor can show its own wallpaper.
+Touches: plugin `subzerodev.desktop-icons` (`desktop.contextMenu`, `rename` popup); Host.Surfaces and Host.Theming (per-monitor wallpaper, presets v2)
+Depends on: S23
+Acceptance:
+  - S30.1 `desktop.contextMenu { path?, x, y }` offers open, rename, delete (to the Recycle Bin), copy and paste for a file, and new folder and paste for the desktop; deletes never remove permanently.
+  - S30.2 Presets accept a wallpaper per monitor (`presets` schema v2); a v1 preset still loads and applies to all monitors; built-in presets ship at v2.
+  - S30.3 Tests act only on files they created in a temporary Desktop folder (I38).
+Out of scope: drag placement of icons.
+
+## S31 — Themed Alt+Tab switcher
+Status: todo
+Delivers: Alt+Tab shows a themed switcher listing windows by recent activation, with Windows' own classic switcher as the fallback.
+Touches: plugin `subzerodev.switcher` (`switcher.step`, `switcher.commit`, `switcher.cancel`, the `switcher` overlay popup); the chord table (Alt+Tab, Alt+Shift+Tab)
+Depends on: S26
+Acceptance:
+  - S31.1 While Alt is held, Tab and Shift+Tab step the selection, releasing Alt commits, Esc cancels; the first step selects the second entry. The list is the current desktop plus pinned windows on all monitors, ordered by `activatedAt` descending, owned windows folded into their owner.
+  - S31.2 When the plugin is not `Running` the chord passes through and the classic switcher works (I35).
+  - S31.3 The slice is droppable: if it is not built, nothing else depends on it and the classic switcher remains.
+Out of scope: window previews beyond what `Thumbnail` provides.
