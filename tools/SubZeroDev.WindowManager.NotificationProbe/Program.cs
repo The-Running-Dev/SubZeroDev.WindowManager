@@ -32,13 +32,17 @@ if (access != UserNotificationListenerAccessStatus.Allowed)
 {
     try
     {
-        // Windows shows the consent prompt only for a request made on a thread with a message loop.
+        // Windows shows the consent prompt only for a request made from a visible window's thread, with a message loop.
         var ui = Windows.System.DispatcherQueueController.CreateOnDedicatedThread();
         var requested = new TaskCompletionSource<UserNotificationListenerAccessStatus>();
         ui.DispatcherQueue.TryEnqueue(async () =>
         {
+            var window = Native.CreateWindowEx(0, "STATIC", "SubZeroDev notification probe",
+                Native.WsOverlappedWindow | Native.WsVisible, 200, 200, 480, 160, 0, 0, 0, 0);
+            Native.SetForegroundWindow(window);
             try { requested.SetResult(await listener.RequestAccessAsync()); }
             catch (Exception e) { requested.SetException(e); }
+            finally { Native.DestroyWindow(window); }
         });
         access = await requested.Task.WaitAsync(TimeSpan.FromMinutes(2));
         Report("accessRequested", access);
@@ -85,7 +89,8 @@ try
     manager.Register();
     var marker = Guid.NewGuid().ToString("N");
     var toast = new AppNotificationBuilder().AddText("SubZeroDev probe").AddText(marker).BuildNotification();
-    toast.SuppressDisplay = true;
+    // --visible shows the pop-up, which may be what puts a notification in the history.
+    toast.SuppressDisplay = !args.Contains("--visible");
     toast.Tag = "probe";
     manager.Show(toast);
     Report("ownShown", toast.Id != 0);
@@ -115,4 +120,22 @@ catch (Exception e)
 finally
 {
     try { manager.Unregister(); } catch (Exception e) { Report("unregisterError", e.Message.Trim()); }
+}
+
+static class Native
+{
+    public const uint WsOverlappedWindow = 0x00CF0000;
+    public const uint WsVisible = 0x10000000;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    public static extern nint CreateWindowEx(uint exStyle, string className, string title, uint style, int x, int y,
+        int width, int height, nint parent, nint menu, nint instance, nint parameter);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    public static extern bool SetForegroundWindow(nint window);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    public static extern bool DestroyWindow(nint window);
 }
