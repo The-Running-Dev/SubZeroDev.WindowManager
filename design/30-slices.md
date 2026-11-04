@@ -384,7 +384,7 @@ Acceptance:
 Out of scope: virtual desktops and the `Thumbnail` element (S26); grouping, jump lists and thumbnails on the strip (S29); Task View and the switcher.
 
 ## S26 — Virtual desktops and Task View
-Status: todo
+Status: done
 Delivers: Ben has several desktops of his own: he can switch with Win+Ctrl+arrows, open an overview with Win+Tab, drag windows between desktops, and a crash of the host never strands a hidden window.
 Touches: Host.Core (`IDesktopSet`, `SwitchPlan`, `desktops.json`, the journal entry `hiddenWindows`, `host.desktops.*`, `host.window.moveToDesktop`, `pinToAllDesktops`, `close`); Host.Platform (`IWindowEffects` on its own thread, `IThumbnailService`); Recovery (the guardian's recovery of shell-hidden windows); Host.Surfaces and Protocol and Sdk (`Thumbnail` element, `Wm.Thumbnail.*` tokens, `IconRef.window`); the chord table (Win+Tab, Win+Ctrl+Left, Right, D, F4); plugin `subzerodev.desktops` (the overview) and the `desktops` panel item
 Depends on: S25

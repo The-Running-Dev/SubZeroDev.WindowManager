@@ -105,6 +105,9 @@ internal sealed class TestHook
     /// <summary>The model-only windows tests add, retitle and destroy (S25.11).</summary>
     internal SyntheticWindows? Synthetic { get; init; }
 
+    /// <summary>The virtual desktops in replacement mode; null otherwise (S26).</summary>
+    public DesktopSet? Desktops { get; init; }
+
     public void Start()
     {
         Directory.CreateDirectory(_directory);
@@ -254,8 +257,9 @@ internal sealed class TestHook
     }
 
     /// <summary>
-    /// Runs <c>{ "op": "add" | "retitle" | "destroy", "count": n }</c> on the model-only windows; an add may carry
-    /// <c>"strip": false</c> for windows no strip lists.
+    /// Runs <c>{ "op": "add" | "retitle" | "destroy" | "refuse" | "close", "count": n }</c> on the model-only windows; an
+    /// add may carry <c>"strip": false</c> for windows no strip lists, <c>refuse</c> makes the oldest windows refuse to
+    /// be hidden, and <c>close</c> has the application close the oldest ones.
     /// </summary>
     private void RunSyntheticWindows(string json)
     {
@@ -275,6 +279,12 @@ internal sealed class TestHook
                 break;
             case "destroy":
                 synthetic.Destroy(number);
+                break;
+            case "refuse":
+                synthetic.Refuse(number);
+                break;
+            case "close":
+                synthetic.CloseOldest(number);
                 break;
         }
     }
@@ -500,6 +510,22 @@ internal sealed class TestHook
                 ["revision"] = Windows.Model.Current.Revision,
                 ["windows"] = Windows.Model.Current.Windows.Count,
                 ["synthetic"] = Synthetic?.Count,
+                ["syntheticHidden"] = Synthetic?.HiddenCount,
+                ["firstSynthetic"] = Synthetic is null ? null : new JsonArray(Windows.Model.Current.Windows
+                    .Where(w => Synthetic.Owns(w.Key.Handle)).Take(6).Select(w => (JsonNode?)new JsonObject
+                    {
+                        ["key"] = new WindowReference(Windows.Model.Epoch, w.Key.Generation).ToString(),
+                        ["desktop"] = w.DesktopId.ToString("D"),
+                        ["shellHidden"] = w.ShellHidden,
+                        ["visible"] = w.Visible,
+                    }).ToArray()),
+            },
+            ["desktops"] = Desktops is null ? null : new JsonObject
+            {
+                ["current"] = Desktops.CurrentId.ToString("D"),
+                ["count"] = Desktops.Desktops.Count,
+                ["ids"] = new JsonArray(Desktops.Desktops.Select(d => (JsonNode?)d.Id.ToString("D")).ToArray()),
+                ["problem"] = Desktops.Problem,
             },
             ["monitors"] = new JsonArray(_monitors.Monitors.Select(monitor => (JsonNode?)new JsonObject
             {

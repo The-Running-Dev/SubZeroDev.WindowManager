@@ -31,6 +31,7 @@
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Session\SubZeroDev.WindowManager.Plugins.Session.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Indicators\SubZeroDev.WindowManager.Plugins.Indicators.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Notifications\SubZeroDev.WindowManager.Plugins.Notifications.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Desktops\SubZeroDev.WindowManager.Plugins.Desktops.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
   <ItemGroup>
     <!-- Built-in themes, layouts and presets ship beside the host. They are None, not Content, so the
@@ -48,6 +49,7 @@
       <SessionFiles Include="..\SubZeroDev.WindowManager.Plugins.Session\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
       <IndicatorsFiles Include="..\SubZeroDev.WindowManager.Plugins.Indicators\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
       <NotificationsFiles Include="..\SubZeroDev.WindowManager.Plugins.Notifications\bin\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\**\*" />
+      <DesktopsFiles Include="..\SubZeroDev.WindowManager.Plugins.Desktops\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(ClockFiles)" DestinationFiles="@(ClockFiles->'$(OutDir)content\plugins\subzerodev.clock\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(RunningWindowsFiles)" DestinationFiles="@(RunningWindowsFiles->'$(OutDir)content\plugins\subzerodev.running-windows\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
@@ -57,5 +59,6 @@
     <Copy SourceFiles="@(SessionFiles)" DestinationFiles="@(SessionFiles->'$(OutDir)content\plugins\subzerodev.session\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(IndicatorsFiles)" DestinationFiles="@(IndicatorsFiles->'$(OutDir)content\plugins\subzerodev.indicators\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(NotificationsFiles)" DestinationFiles="@(NotificationsFiles->'$(OutDir)content\plugins\subzerodev.notifications\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DesktopsFiles)" DestinationFiles="@(DesktopsFiles->'$(OutDir)content\plugins\subzerodev.desktops\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

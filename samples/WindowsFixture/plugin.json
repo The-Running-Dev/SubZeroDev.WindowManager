@@ -15,7 +15,10 @@
   ],
   "commands": [
     { "id": "example.windows.activate", "title": "Activate window", "argsSchema": { "type": "object", "properties": { "windowKey": { "type": "string" } } } },
-    { "id": "example.windows.minimize", "title": "Minimise window", "argsSchema": { "type": "object", "properties": { "windowKey": { "type": "string" } } } }
+    { "id": "example.windows.minimize", "title": "Minimise window", "argsSchema": { "type": "object", "properties": { "windowKey": { "type": "string" } } } },
+    { "id": "example.windows.switchDesktop", "title": "Switch desktop", "argsSchema": { "type": "object", "properties": { "id": { "type": "string" } } } },
+    { "id": "example.windows.moveWindow", "title": "Move window to a desktop", "argsSchema": { "type": "object", "properties": { "windowKey": { "type": "string" }, "id": { "type": "string" } } } },
+    { "id": "example.windows.showThumbnail", "title": "Show a window's thumbnail", "argsSchema": { "type": "object", "properties": { "windowKey": { "type": "string" } } } }
   ],
   "subscribes": [ "host.windows", "host.desktops" ],
   "settingsVersion": 1

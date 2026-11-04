@@ -1,0 +1,32 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.desktops",
+  "version": "0.1.0",
+  "displayName": "Desktops",
+  "publisher": "SubZeroDev",
+  "description": "Shows the current desktop on a panel and opens the overview: every desktop with live pictures of its windows.",
+  "hostApi": "^1.1",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.Desktops.exe", "args": [] },
+  "capabilities": [ "windows.read", "windows.activate" ],
+  "modes": [ "replacement" ],
+  "requiresExplorer": false,
+  "contributions": [
+    {
+      "id": "desktops",
+      "kind": "panelItem",
+      "displayName": "Desktops",
+      "multiInstance": false
+    }
+  ],
+  "commands": [
+    { "id": "desktops.openOverview", "title": "Show the desktop overview" },
+    { "id": "desktops.closeOverview", "title": "Close the desktop overview" },
+    { "id": "desktops.switchTo", "title": "Switch to a desktop", "argsSchema": { "type": "object", "properties": { "id": { "type": "string" } } } },
+    { "id": "desktops.create", "title": "Add a desktop" },
+    { "id": "desktops.activateWindow", "title": "Go to a window", "argsSchema": { "type": "object", "properties": { "windowKey": { "type": "string" } } } },
+    { "id": "desktops.moveWindow", "title": "Move a window to the next desktop", "argsSchema": { "type": "object", "properties": { "windowKey": { "type": "string" } } } }
+  ],
+  "popups": [ { "id": "overview", "placement": "overlay" } ],
+  "subscribes": [ "host.windows", "host.desktops" ],
+  "settingsVersion": 1
+}

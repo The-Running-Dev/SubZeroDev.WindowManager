@@ -14,6 +14,7 @@ internal sealed class SyntheticWindows(IWindowFacts inner, string monitorId) : I
     private const long FirstHandle = 0x7A00_0000_0000;
 
     private readonly ConcurrentDictionary<nint, WindowFacts> _windows = new();
+    private readonly ConcurrentDictionary<nint, byte> _refusing = new();
     private long _next = FirstHandle;
     private int _titleVersion;
     private IWindowModel? _model;
@@ -57,12 +58,61 @@ internal sealed class SyntheticWindows(IWindowFacts inner, string monitorId) : I
         }
     }
 
+    /// <summary>Whether <paramref name="handle"/> is one of these model-only windows.</summary>
+    public bool Owns(nint handle) => _windows.ContainsKey(handle);
+
+    /// <summary>Synthetic windows that are not shown.</summary>
+    public int HiddenCount => _windows.Values.Count(f => !f.Visible);
+
+    /// <summary>Whether the window refuses to be hidden, as an elevated or hung one does.</summary>
+    public bool Refuses(nint handle) => _refusing.ContainsKey(handle);
+
+    /// <summary>Makes the oldest <paramref name="count"/> windows refuse to be hidden.</summary>
+    public void Refuse(int count)
+    {
+        foreach (var handle in _windows.Keys.OrderBy(h => h).Take(count))
+        {
+            _refusing[handle] = 0;
+        }
+    }
+
+    /// <summary>Shows or hides one window, as the effects thread does, and tells the model.</summary>
+    public void SetVisible(nint handle, bool visible)
+    {
+        if (_windows.TryGetValue(handle, out var facts) && facts.Visible != visible)
+        {
+            _windows[handle] = facts with { Visible = visible };
+            _model!.Observe(new WindowObservation(handle, visible ? ObservationKind.Shown : ObservationKind.Hidden));
+        }
+    }
+
+    /// <summary>The application closes the window: it goes, and the model is told.</summary>
+    public void Close(nint handle)
+    {
+        if (_windows.TryRemove(handle, out _))
+        {
+            _refusing.TryRemove(handle, out _);
+            _model!.Observe(new WindowObservation(handle, ObservationKind.Destroyed));
+        }
+    }
+
+    /// <summary>The application closes <paramref name="count"/> windows (oldest first), as <see cref="Close"/> does for one.</summary>
+    /// <param name="count">How many windows to close.</param>
+    public void CloseOldest(int count)
+    {
+        foreach (var handle in _windows.Keys.OrderBy(h => h).Take(count))
+        {
+            Close(handle);
+        }
+    }
+
     /// <summary>Destroys <paramref name="count"/> windows (oldest first) and tells the model.</summary>
     public void Destroy(int count)
     {
         foreach (var handle in _windows.Keys.OrderBy(h => h).Take(count))
         {
             _windows.TryRemove(handle, out _);
+            _refusing.TryRemove(handle, out _);
             _model!.Observe(new WindowObservation(handle, ObservationKind.Destroyed));
         }
     }
