@@ -99,6 +99,12 @@ internal sealed class TestHook
     /// <summary>The Windows-key hook in replacement mode.</summary>
     public WindowsKeyHook? WindowsKeys { get; init; }
 
+    /// <summary>The window registry and its two feeds.</summary>
+    public WindowService? Windows { get; init; }
+
+    /// <summary>The model-only windows tests add, retitle and destroy (S25.11).</summary>
+    internal SyntheticWindows? Synthetic { get; init; }
+
     public void Start()
     {
         Directory.CreateDirectory(_directory);
@@ -221,6 +227,11 @@ internal sealed class TestHook
             {
                 Post(() => RunSettingsUi(settingsUi));
             }
+
+            if (Take("synthetic-windows") is { Length: > 0 } synthetic)
+            {
+                Post(() => RunSyntheticWindows(synthetic[0]));
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -240,6 +251,32 @@ internal sealed class TestHook
             var bounds = new RectInt((int)m["left"]!, (int)m["top"]!, (int)m["right"]!, (int)m["bottom"]!);
             return new MonitorInfo((string)m["id"]!, 0, bounds, bounds, (uint)(int)m["dpi"]!, false);
         }));
+    }
+
+    /// <summary>
+    /// Runs <c>{ "op": "add" | "retitle" | "destroy", "count": n }</c> on the model-only windows; an add may carry
+    /// <c>"strip": false</c> for windows no strip lists.
+    /// </summary>
+    private void RunSyntheticWindows(string json)
+    {
+        if (Synthetic is not { } synthetic || JsonNode.Parse(json) is not JsonObject request
+            || request["count"] is not JsonValue count || !count.TryGetValue<int>(out var number))
+        {
+            return;
+        }
+
+        switch ((string?)request["op"])
+        {
+            case "add":
+                synthetic.Add(number, request["strip"] is not JsonValue strip || !strip.TryGetValue<bool>(out var listed) || listed);
+                break;
+            case "retitle":
+                synthetic.Retitle(number);
+                break;
+            case "destroy":
+                synthetic.Destroy(number);
+                break;
+        }
     }
 
     /// <summary>Reads and deletes a request file, or returns null when there is none.</summary>
@@ -456,6 +493,13 @@ internal sealed class TestHook
                 ["installed"] = WindowsKeys.Installed,
                 ["events"] = WindowsKeys.Events,
                 ["maxAnswerMs"] = WindowsKeys.SlowestAnswer.TotalMilliseconds,
+            },
+            ["windowModel"] = Windows is null ? null : new JsonObject
+            {
+                ["epoch"] = Windows.Model.Epoch,
+                ["revision"] = Windows.Model.Current.Revision,
+                ["windows"] = Windows.Model.Current.Windows.Count,
+                ["synthetic"] = Synthetic?.Count,
             },
             ["monitors"] = new JsonArray(_monitors.Monitors.Select(monitor => (JsonNode?)new JsonObject
             {

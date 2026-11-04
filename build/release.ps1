@@ -9,6 +9,7 @@ Layout under -Output (default artifacts\):
   packages\                     SubZeroDev.WindowManager.Sdk and SubZeroDev.WindowManager.PackTool .nupkg files
   plugins\<id>.zip              wm-pack output for each built-in plugin, extracted into release\host\content\plugins
   sample\example.hello.zip      the samples\ plugin, built from packages\ only and packed by the installed tool
+  sample\example.windows.zip    the samples\ window fixture, built and packed the same way
 
 -Verify packs the built-in plugins again and checks that the packages and the release folders match them byte for
 byte (S15.4). It builds nothing.
@@ -175,5 +176,10 @@ Invoke-Checked dotnet @('tool', 'install', 'SubZeroDev.WindowManager.PackTool', 
 $sampleProject = Join-Path $root 'samples\HelloPlugin\HelloPlugin.csproj'
 Invoke-Checked dotnet @('build', $sampleProject, '-c', 'Release', '--force')
 Invoke-Checked (Join-Path $tools 'wm-pack.exe') @((Join-Path $root 'samples\HelloPlugin\bin\Release\net10.0'), '--out', (Join-Path $sample 'example.hello.zip'))
+
+# The window fixture (S25.9): a plugin that reads the shell's window feeds from the same packages.
+$fixtureProject = Join-Path $root 'samples\WindowsFixture\WindowsFixture.csproj'
+Invoke-Checked dotnet @('build', $fixtureProject, '-c', 'Release', '--force')
+Invoke-Checked (Join-Path $tools 'wm-pack.exe') @((Join-Path $root 'samples\WindowsFixture\bin\Release\net10.0'), '--out', (Join-Path $sample 'example.windows.zip'))
 
 "Release $Version written to $Output."

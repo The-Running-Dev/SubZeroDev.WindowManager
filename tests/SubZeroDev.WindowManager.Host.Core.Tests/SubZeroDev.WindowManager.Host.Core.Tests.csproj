@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Host.Theming\SubZeroDev.WindowManager.Host.Theming.csproj" />
     <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Host.Platform\SubZeroDev.WindowManager.Host.Platform.csproj" />
     <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.PackTool\SubZeroDev.WindowManager.PackTool.csproj" />
+    <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Sdk\SubZeroDev.WindowManager.Sdk.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="..\..\content\**\*" LinkBase="content" CopyToOutputDirectory="PreserveNewest" />

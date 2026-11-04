@@ -13,8 +13,10 @@ public sealed class ReleaseTests
 {
     private const string ReleaseVariable = "SUBZERODEV_WM_RELEASE_DIR";
     private const string SampleVariable = "SUBZERODEV_WM_SAMPLE_PACKAGE";
+    private const string FixtureVariable = "SUBZERODEV_WM_FIXTURE_PACKAGE";
     private const string Clock = "subzerodev.clock";
     private const string Sample = "example.hello";
+    private const string Fixture = "example.windows";
     private static readonly TimeSpan Startup = TimeSpan.FromSeconds(30);
 
     [Fact]
@@ -36,22 +38,72 @@ public sealed class ReleaseTests
         await run.WaitForAsync(s => HostRun.Texts(s, Clock).Count == 1, Startup);
         Assert.StartsWith(Path.GetFullPath(Path.Combine(release, "runtime")), RuntimeOf(run.Process!), StringComparison.OrdinalIgnoreCase);
 
-        await SettingsUiAsync(run, new JsonObject { ["page"] = "plugins" },
-            new JsonObject { ["set"] = "Plugins.InstallPath", ["value"] = sample });
-        await SettingsUiAsync(run, new JsonObject { ["invoke"] = "Plugins.Install" });
-        await run.WaitForAsync(s => State(s, Sample) == "Disabled", Startup);
-
-        await SettingsUiAsync(run, new JsonObject { ["select"] = Sample });
-        await SettingsUiAsync(run, new JsonObject { ["invoke"] = "Plugin.Enable" });
-
-        // A plugin starts when an instance of it is placed, so place one as a user would.
-        await SettingsUiAsync(run, new JsonObject { ["page"] = "layout" });
-        await SettingsUiAsync(run,
-            new JsonObject { ["set"] = "Layout.Contribution", ["value"] = $"{Sample}/hello" },
-            new JsonObject { ["set"] = "Layout.TargetZone", ["value"] = "start" });
-        await SettingsUiAsync(run, new JsonObject { ["invoke"] = "Layout.Add" });
+        await InstallAndPlaceAsync(run, sample, Sample, "hello");
         await run.WaitForAsync(s => State(s, Sample) == "Running" && HostRun.Texts(s, Sample).Any(texts => texts.Contains("Hello, world")), Startup);
         Assert.Equal(0, await run.StopAsync());
+    }
+
+    [Fact]
+    public async Task S25_9_a_fixture_built_from_the_packages_reads_both_feeds_and_acts_by_window_key()
+    {
+        var release = Environment.GetEnvironmentVariable(ReleaseVariable);
+        var fixture = Environment.GetEnvironmentVariable(FixtureVariable);
+        if (string.IsNullOrEmpty(release) || string.IsNullOrEmpty(fixture))
+        {
+            Assert.Skip($"Set {ReleaseVariable} and {FixtureVariable} after build\\release.ps1 to run this.");
+        }
+
+        HostRun.RequireDesktop();
+        var host = Path.Combine(release, "host", "SubZeroDev.WindowManager.Host.exe");
+        Assert.True(File.Exists(host), $"No released host at {host}.");
+        using var run = HostRun.Create();
+        run.WriteDefaultLayout((Guid.NewGuid(), Clock, "clock"));
+        run.Start(host);
+        await run.WaitForAsync(s => HostRun.Texts(s, Clock).Count == 1, Startup);
+
+        await InstallAndPlaceAsync(run, fixture, Fixture, "status");
+        var status = await run.WaitForAsync(s => State(s, Fixture) == "Running"
+            && HostRun.Texts(s, Fixture).Any(texts => texts.Any(text => text.StartsWith("Windows r", StringComparison.Ordinal))), Startup);
+        var epoch = (long)status["windowModel"]!["epoch"]!;
+
+        // A key from this run that names no window, and a key from another run (S25.7, S25.2).
+        var gone = await InvokeAsync(run, "example.windows.activate", new JsonObject { ["windowKey"] = $"wk1:{epoch}:999999" });
+        Assert.False((bool)gone["ok"]!);
+        Assert.Contains("WindowGone", (string?)gone["detail"], StringComparison.Ordinal);
+
+        var stale = await InvokeAsync(run, "example.windows.minimize", new JsonObject { ["windowKey"] = $"wk1:{epoch + 1}:1" });
+        Assert.False((bool)stale["ok"]!);
+        Assert.Contains("StaleWindowReference", (string?)stale["detail"], StringComparison.Ordinal);
+        Assert.Equal(0, await run.StopAsync());
+    }
+
+    /// <summary>Installs a plugin package through the settings pages, enables it and places one instance, as a user would.</summary>
+    private static async Task InstallAndPlaceAsync(HostRun run, string package, string plugin, string contribution)
+    {
+        await SettingsUiAsync(run, new JsonObject { ["page"] = "plugins" },
+            new JsonObject { ["set"] = "Plugins.InstallPath", ["value"] = package });
+        await SettingsUiAsync(run, new JsonObject { ["invoke"] = "Plugins.Install" });
+        await run.WaitForAsync(s => State(s, plugin) == "Disabled", Startup);
+
+        await SettingsUiAsync(run, new JsonObject { ["select"] = plugin });
+        await SettingsUiAsync(run, new JsonObject { ["invoke"] = "Plugin.Enable" });
+
+        // A plugin starts when an instance of it is placed.
+        await SettingsUiAsync(run, new JsonObject { ["page"] = "layout" });
+        await SettingsUiAsync(run,
+            new JsonObject { ["set"] = "Layout.Contribution", ["value"] = $"{plugin}/{contribution}" },
+            new JsonObject { ["set"] = "Layout.TargetZone", ["value"] = "start" });
+        await SettingsUiAsync(run, new JsonObject { ["invoke"] = "Layout.Add" });
+    }
+
+    private static async Task<JsonObject> InvokeAsync(HostRun run, string command, JsonObject args)
+    {
+        var before = (await run.WaitForStatusAsync())["lastInvoke"]?.ToJsonString();
+        await File.WriteAllLinesAsync(Path.Combine(run.HookDirectory, "invoke"), [command, "keyboard", args.ToJsonString()],
+            TestContext.Current.CancellationToken);
+        var status = await run.WaitForAsync(s => s["lastInvoke"] is JsonObject last && (string?)last["command"] == command
+            && last.ToJsonString() != before, Startup);
+        return status["lastInvoke"]!.AsObject();
     }
 
     /// <summary>Where the process loaded the .NET runtime from: the folder holding its <c>coreclr.dll</c>.</summary>

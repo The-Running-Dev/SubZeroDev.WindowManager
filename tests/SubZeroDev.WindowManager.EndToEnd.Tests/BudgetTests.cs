@@ -23,6 +23,7 @@ public sealed partial class BudgetTests
     private const string RunningWindows = "subzerodev.running-windows";
     private const string Launcher = "subzerodev.launcher";
     private const double Tolerance = 1.10;
+    private const int Windows = 300;
     private static readonly string[] Plugins = [Clock, RunningWindows, Launcher];
     private static readonly TimeSpan Startup = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan Idle = TimeSpan.FromSeconds(60);
@@ -115,6 +116,141 @@ public sealed partial class BudgetTests
                 $"Over budget ({mode}): {ReplacementStartup}: median {median:0.##} > budget {budgets[ReplacementStartup]:0.##} + 10%");
         }
     }
+
+    /// <summary>
+    /// Slice S25.11: three hundred model-only windows change in bursts. A burst is one revision however many windows
+    /// it touches, so the feeds, and the plugins behind them, see a few updates rather than hundreds.
+    /// </summary>
+    [Fact]
+    public async Task S25_11_hundreds_of_window_changes_publish_a_few_revisions()
+    {
+        HostRun.RequireDesktop();
+        using var run = HostRun.Create();
+        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows"));
+        run.Start(HostRun.HostExe);
+        var status = await run.WaitForAsync(s => s["windowModel"] is JsonObject, Startup);
+        var baseline = (int)status["windowModel"]!["windows"]!;
+
+        Synthetic(run, "add", Windows);
+        status = await run.WaitForAsync(s => (int?)s["windowModel"]!["synthetic"] == Windows, Startup);
+        Assert.Equal(baseline + Windows, (int)status["windowModel"]!["windows"]!);
+        var settled = (long)status["windowModel"]!["revision"]!;
+
+        Synthetic(run, "retitle", Windows);
+        await Task.Delay(Reaction, TestContext.Current.CancellationToken);
+        status = await run.WaitForStatusAsync();
+        Assert.InRange((long)status["windowModel"]!["revision"]! - settled, 0, 5);
+
+        Synthetic(run, "destroy", Windows);
+        status = await run.WaitForAsync(s => (int?)s["windowModel"]!["synthetic"] == 0, Startup);
+        Assert.Equal(baseline, (int)status["windowModel"]!["windows"]!);
+        Assert.Equal(0, await run.StopAsync());
+    }
+
+    /// <summary>
+    /// Slice S25.11: with three hundred windows in the model the host idles inside the same budgets as with none.
+    /// <c>measure</c> records three runs; <c>reference</c> or <c>ci</c> checks the median against that column.
+    /// </summary>
+    [Fact]
+    public async Task S25_11_idle_with_hundreds_of_windows_stays_within_budget()
+    {
+        var mode = Environment.GetEnvironmentVariable(ModeVariable);
+        if (mode is not ("measure" or "reference" or "ci"))
+        {
+            Assert.Skip($"Set {ModeVariable} to measure, reference or ci to measure the host with {Windows} windows.");
+        }
+
+        HostRun.RequireDesktop();
+        var runs = new List<Dictionary<string, double>>();
+        for (var i = 0; i < Runs(3); i++)
+        {
+            runs.Add(await MeasureWithWindowsOnceAsync());
+            TestContext.Current.TestOutputHelper?.WriteLine(
+                $"run {i + 1}: " + string.Join(", ", runs[^1].Select(pair => $"{pair.Key}={pair.Value:0.##}")));
+        }
+
+        string[] metrics = ["hostPrivateMb", "hostIdleCpuPercent"];
+        var budgets = mode == "measure" ? null : ReadBudgets(mode);
+        Write(Summarise(runs, metrics, budgets), "windows.json");
+        if (budgets is not null)
+        {
+            var over = metrics
+                .Where(metric => Median(runs, metric) > budgets[metric] * Tolerance)
+                .Select(metric => $"{metric}: median {Median(runs, metric):0.##} > budget {budgets[metric]:0.##} + 10%")
+                .ToList();
+            Assert.True(over.Count == 0, $"Over budget ({mode}):{Environment.NewLine}{string.Join(Environment.NewLine, over)}");
+        }
+    }
+
+    private static async Task<Dictionary<string, double>> MeasureWithWindowsOnceAsync()
+    {
+        using var run = HostRun.Create();
+        run.WriteDefaultLayout((Guid.NewGuid(), Clock, "clock"), (Guid.NewGuid(), RunningWindows, "windows"), (Guid.NewGuid(), Launcher, "launcher"));
+        run.Start(HostRun.GuardianExe);
+        var status = await run.WaitForAsync(AllLive, Startup);
+        using var host = Process.GetProcessById((int)status["hostPid"]!);
+        var privateBefore = Megabytes(host.PrivateMemorySize64);
+
+        // Cloaked, as windows on other desktops are: tracked and published, but not drawn as three hundred strip buttons.
+        Synthetic(run, "add", Windows, strip: false);
+        status = await run.WaitForAsync(s => (int?)s["windowModel"]?["synthetic"] == Windows, Startup);
+
+        host.Refresh();
+        var settle = await SettleAsync(host);
+        var revisionBefore = (long)(await run.WaitForStatusAsync())["windowModel"]!["revision"]!;
+        var cpuBefore = host.TotalProcessorTime;
+        var wall = Stopwatch.StartNew();
+        var slices = new List<string>();
+        for (var slice = 0; slice < Idle.TotalSeconds / 10; slice++)
+        {
+            var sliceCpu = host.TotalProcessorTime;
+            var sliceWall = Stopwatch.StartNew();
+            await Task.Delay(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            host.Refresh();
+            slices.Add($"{(host.TotalProcessorTime - sliceCpu).TotalMilliseconds / sliceWall.Elapsed.TotalMilliseconds * 100:0.#}");
+        }
+
+        host.Refresh();
+        var revisionAfter = (long)(await run.WaitForStatusAsync())["windowModel"]!["revision"]!;
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            $"private MB before the windows {privateBefore:0.#}; settled after {settle}; revisions during idle {revisionAfter - revisionBefore}; cpu % per 10 s: {string.Join(", ", slices)}");
+        var measured = new Dictionary<string, double>(StringComparer.Ordinal)
+        {
+            ["hostIdleCpuPercent"] = (host.TotalProcessorTime - cpuBefore).TotalMilliseconds / wall.Elapsed.TotalMilliseconds * 100,
+            ["hostPrivateMb"] = Megabytes(host.PrivateMemorySize64),
+        };
+        Assert.Equal(0, await run.StopAsync());
+        return measured;
+    }
+
+    /// <summary>
+    /// Waits for the burst of adding the windows to be over (two consecutive two-second slices at or under the quiet
+    /// threshold, at most forty seconds) so the idle measurement is of the steady state, not of the work the burst queued.
+    /// </summary>
+    /// <param name="host">The host process.</param>
+    private static async Task<TimeSpan> SettleAsync(Process host)
+    {
+        const double QuietPercent = 4;
+        var elapsed = Stopwatch.StartNew();
+        var quiet = 0;
+        while (quiet < 2 && elapsed.Elapsed < TimeSpan.FromSeconds(40))
+        {
+            host.Refresh();
+            var cpu = host.TotalProcessorTime;
+            var slice = Stopwatch.StartNew();
+            await Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            host.Refresh();
+            var percent = (host.TotalProcessorTime - cpu).TotalMilliseconds / slice.Elapsed.TotalMilliseconds * 100;
+            quiet = percent <= QuietPercent ? quiet + 1 : 0;
+        }
+
+        return elapsed.Elapsed;
+    }
+
+    private static void Synthetic(HostRun run, string op, int count, bool strip = true) =>
+        File.WriteAllText(
+            Path.Combine(run.HookDirectory, "synthetic-windows"),
+            new JsonObject { ["op"] = op, ["count"] = count, ["strip"] = strip }.ToJsonString());
 
     /// <summary>One guardian start in replacement mode with no layout of its own, so the shell layout is shown.</summary>
     private static async Task<double> MeasureReplacementOnceAsync()

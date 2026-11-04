@@ -65,8 +65,7 @@ internal sealed class Commands(Connection connection, IReadOnlySet<string> decla
 
         if (response.Error is { } error)
         {
-            var retryable = error.Data is JsonObject data && data["retryable"] is JsonValue v && v.TryGetValue<bool>(out var r) && r;
-            return new(null, new SdkError((ErrorCode)error.Code, error.Message, retryable));
+            return new(null, SdkError.FromWire(error));
         }
 
         return new(response.ResultAs<CommandResult>() ?? new CommandResult(null), null);

@@ -45,6 +45,7 @@ jobs:
         run: |
           $env:SUBZERODEV_WM_RELEASE_DIR = (Resolve-Path artifacts/release).Path
           $env:SUBZERODEV_WM_SAMPLE_PACKAGE = (Resolve-Path artifacts/sample/example.hello.zip).Path
+          $env:SUBZERODEV_WM_FIXTURE_PACKAGE = (Resolve-Path artifacts/sample/example.windows.zip).Path
           dotnet test tests/SubZeroDev.WindowManager.EndToEnd.Tests -c Release --no-build --filter "FullyQualifiedName~SubZeroDev.WindowManager.EndToEnd.Tests.ReleaseTests" --logger "console;verbosity=normal"
       - name: Keep the build
         uses: actions/upload-artifact@v4

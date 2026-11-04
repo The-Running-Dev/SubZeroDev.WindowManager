@@ -5,7 +5,7 @@
   "displayName": "Running windows",
   "publisher": "SubZeroDev",
   "description": "Lists open application windows on a panel and switches between them.",
-  "hostApi": "^1.0",
+  "hostApi": "^1.1",
   "entry": { "path": "SubZeroDev.WindowManager.Plugins.RunningWindows.exe", "args": [] },
   "capabilities": [ "windows.read", "windows.activate" ],
   "modes": [ "coexistence", "replacement" ],
@@ -31,9 +31,10 @@
     }
   ],
   "commands": [
-    { "id": "windows.activate", "title": "Switch to window", "argsSchema": { "type": "object", "properties": { "hwnd": { "type": "integer" } } } },
-    { "id": "windows.minimize", "title": "Minimise window", "argsSchema": { "type": "object", "properties": { "hwnd": { "type": "integer" } } } }
+    { "id": "windows.activate", "title": "Switch to window", "argsSchema": { "type": "object", "properties": { "hwnd": { "type": "integer" }, "windowKey": { "type": "string" } } } },
+    { "id": "windows.minimize", "title": "Minimise window", "argsSchema": { "type": "object", "properties": { "hwnd": { "type": "integer" }, "windowKey": { "type": "string" } } } }
   ],
   "feeds": [ { "id": "windows.running", "schema": {} } ],
+  "subscribes": [ "host.windows", "host.desktops" ],
   "settingsVersion": 1
 }
