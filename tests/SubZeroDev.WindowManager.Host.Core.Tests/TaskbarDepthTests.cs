@@ -265,7 +265,9 @@ public sealed class TaskbarDepthTests
         var (key, progress) = Assert.Single(run.Progress);
         Assert.Equal(new WindowKey(42, 1), key);
         Assert.Equal(ProgressState.Normal, progress.State);
-        Assert.Empty(run.Log);
+
+        // A decoded message is not logged. Other applications broadcast registered messages to every top-level window, so the log may hold lines about other numbers.
+        Assert.DoesNotContain(run.Log, line => line.Contains("0xC200", StringComparison.Ordinal));
     }
 
     [Fact]
