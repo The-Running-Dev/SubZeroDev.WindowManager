@@ -402,7 +402,7 @@ Acceptance:
 Out of scope: Windows' own virtual desktops; the themed Alt+Tab switcher (S31); hover thumbnails on the strip (S29).
 
 ## S27 — Quick settings
-Status: todo
+Status: done
 Delivers: Win+A opens a themed panel with Wi-Fi, Bluetooth, airplane mode, brightness and do-not-disturb, each with its real state.
 Touches: plugin `subzerodev.quick-settings` (worker, `quicksettings.state`, `quicksettings.open`, `quicksettings.set`, `panel`); `IRadioControl` and `IBrightnessControl` with fakes; the chord table (Win+A)
 Depends on: S24

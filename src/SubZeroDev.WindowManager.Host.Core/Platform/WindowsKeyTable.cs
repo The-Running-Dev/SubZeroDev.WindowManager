@@ -15,6 +15,9 @@ public sealed partial class WindowsKeyTable
 {
     public const string NotificationCentreCommand = "notifications.openCentre";
 
+    /// <summary>The panel command of the <c>subzerodev.quick-settings</c> plugin; Win+A is left to Windows while it is not running (S27.5).</summary>
+    public const string QuickSettingsCommand = "quicksettings.open";
+
     /// <summary>The overview command of the <c>subzerodev.desktops</c> plugin; Win+Tab is left to Windows while it is not running (S26.6).</summary>
     public const string OverviewCommand = "desktops.openOverview";
 
@@ -52,6 +55,8 @@ public sealed partial class WindowsKeyTable
 
         var centre = new KeyChord(KeyModifiers.Win, 'N');
         _entries[centre] = new Entry(new WindowsKeyBinding(centre, NotificationCentreCommand, null), null);
+        var quick = new KeyChord(KeyModifiers.Win, 'A');
+        _entries[quick] = new Entry(new WindowsKeyBinding(quick, QuickSettingsCommand, null), null);
         foreach (var binding in DesktopBindings)
         {
             _entries[binding.Chord] = new Entry(binding, null);

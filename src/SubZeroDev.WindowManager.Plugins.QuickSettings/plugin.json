@@ -1,0 +1,32 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.quick-settings",
+  "version": "0.1.0",
+  "displayName": "Quick settings",
+  "publisher": "SubZeroDev",
+  "description": "A panel of quick settings: Wi-Fi, Bluetooth, airplane mode, brightness and do-not-disturb.",
+  "hostApi": "^1.1",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.QuickSettings.exe", "args": [] },
+  "capabilities": [],
+  "modes": [ "replacement" ],
+  "requiresExplorer": false,
+  "subscribes": [ "host.notifications.doNotDisturb" ],
+  "contributions": [
+    { "id": "quicksettings", "kind": "panelItem", "displayName": "Quick settings", "multiInstance": false }
+  ],
+  "commands": [
+    { "id": "quicksettings.open", "title": "Open the quick settings" },
+    { "id": "quicksettings.set", "title": "Change a quick setting", "argsSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }
+        } } }
+  ],
+  "feeds": [
+    { "id": "quicksettings.state", "schema": {} }
+  ],
+  "popups": [
+    { "id": "panel", "placement": "anchored" }
+  ],
+  "settingsVersion": 1
+}
