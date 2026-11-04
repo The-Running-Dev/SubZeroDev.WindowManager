@@ -118,7 +118,7 @@ These come from Explorer or processes it hosts, so in replacement mode they work
 | Quick Settings (Win+A) | Replaced by the shell's own panel: Wi-Fi, Bluetooth, airplane mode, brightness and do-not-disturb; Wi-Fi network choice and volume are not in it | The network and volume items; Settings for the rest |
 | Task View and virtual desktops (Win+Tab, Win+Ctrl+arrows) | Missing | None in the first release |
 | Alt+Tab | Degrades to the classic switcher Windows keeps without Explorer | Running windows |
-| Win+X menu | Missing | The launcher and the power item |
+| Win+X menu | Supported | Win+X opens the power-menu popup from the user's WinX folders (built-in tools if there are none); its "Tools" button in the panel opens the same menu |
 | Snap layouts flyout | Degrades: Win+arrow snapping stays, the layouts flyout may not appear | — |
 
 ## Ways back to Explorer, checked on a real sign-in
@@ -148,7 +148,7 @@ Each is exercised once with the app registered (S23.3). Until then each says *pe
 
 - **Is the per-user value honoured on your build?** Windows 11 Enterprise 26200 is expected to honour it. If it does not, the fallback is the per-user Custom User Interface policy value, and that switch will be a decision entry. This is checked by hand (S17.7): after `--shell on` and signing out and in, the guardian runs and `explorer.exe` does not; after `--shell off` and another sign-in, Explorer is back.
 - Real audio, network and battery devices, and whether each `ms-settings:` page opens without Explorer, are checked by hand; the tests use a file of their own. The indicators show text labels until an asset pack gives their icons images. Wi-Fi networks are chosen in Settings, not in the popup.
-- The real Windows key and the five power commands are checked by hand; the tests inject marked keys the host swallows and record the commands. Win+Tab, virtual-desktop keys and the Win+X menu are not handled.
+- The real Windows key and the five power commands are checked by hand; the tests inject marked keys the host swallows and record the commands. Win+Tab and the virtual-desktop keys are not handled.
 - Real tray apps and docked toolbars are checked by hand; the tests use a client of their own. Other app bars are not told (`ABN_POSCHANGED`) when the host's own panels change.
 - Your real wallpaper and Desktop folders are checked by hand; the tests use files of their own. Desktop icons stack in one column, with no wrapping grid, and cannot be dragged.
 - The quick-settings panel's real radios, DDC/CI brightness on Ben's monitors and the built-in panel's brightness are checked by hand (S27.4); the tests use fake devices and never change the machine's radios or brightness. Until Ben has run those checks, whether Windows lets an unpackaged process switch a radio is not known; a refusal shows as a disabled tile with its reason. A monitor that does not answer DDC/CI has no brightness tile.

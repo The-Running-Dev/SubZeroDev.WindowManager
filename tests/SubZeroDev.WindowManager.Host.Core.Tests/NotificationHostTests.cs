@@ -218,6 +218,52 @@ public sealed class NotificationHostTests
     }
 
     [Fact]
+    public void S28_2_win_x_is_swallowed_only_while_the_power_menu_command_is_available()
+    {
+        var table = new WindowsKeyTable(new Dictionary<string, string>(), _ => { });
+        var chord = new KeyChord(KeyModifiers.Win, 'X');
+
+        Assert.False(table.SwallowsWithWin('X'));
+
+        table.Refresh(id => id == WindowsKeyTable.PowerMenuCommand, _ => true);
+        Assert.True(table.SwallowsWithWin('X'));
+        Assert.Equal(WindowsKeyTable.PowerMenuCommand, table.Find(chord)!.CommandId);
+
+        // The provider stops, or nothing declares the command: the key goes back to Windows (I35).
+        table.Refresh(id => id == WindowsKeyTable.PowerMenuCommand, _ => false);
+        Assert.False(table.SwallowsWithWin('X'));
+        Assert.Null(table.Find(chord));
+
+        table.Refresh(_ => false, _ => true);
+        Assert.False(table.SwallowsWithWin('X'));
+    }
+
+    [Fact]
+    public void S28_1_every_default_chord_is_bound_and_an_unknown_chord_or_command_is_ignored_with_a_diagnostic()
+    {
+        var warnings = new List<string>();
+        var table = new WindowsKeyTable(
+            new Dictionary<string, string> { ["Win+Nonsense"] = "samples.a", ["Windows"] = "samples.b", ["Win+Shift+S"] = "samples.snip" },
+            warnings.Add);
+
+        // Every first-release chord, Win+N, Win+A, Win+X and the five desktop chords have a binding.
+        var bound = table.Bindings.Select(b => b.Chord).ToHashSet();
+        Assert.All(WindowsKeyBindings.Defaults, binding => Assert.Contains(binding.Chord, bound));
+        Assert.Contains(new KeyChord(KeyModifiers.Win, 'N'), bound);
+        Assert.Contains(new KeyChord(KeyModifiers.Win, 'A'), bound);
+        Assert.Contains(new KeyChord(KeyModifiers.Win, 'X'), bound);
+        Assert.All(WindowsKeyTable.DesktopBindings, binding => Assert.Contains(binding.Chord, bound));
+
+        // A malformed chord is dropped with a diagnostic; a well-formed one naming a command nothing declares is left to Windows.
+        Assert.Equal(2, warnings.Count(w => w.Contains("is not a key chord", StringComparison.Ordinal)));
+        table.Refresh(_ => false, _ => true);
+        Assert.False(table.SwallowsWithWin('S'));
+        var unresolved = new List<string>();
+        table.ReportUnresolved(_ => false, unresolved.Add);
+        Assert.Contains(unresolved, w => w.Contains("→ samples.snip", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void S24_6_the_first_release_chords_stay_swallowed_with_no_plugin_running()
     {
         var table = new WindowsKeyTable(new Dictionary<string, string>(), _ => { });
@@ -254,9 +300,10 @@ public sealed class NotificationHostTests
         table.ReportUnresolved(_ => false, warnings.Add);
         table.ReportUnresolved(_ => false, warnings.Add);
 
-        var perPass = 3 + WindowsKeyTable.DesktopBindings.Count;
+        var perPass = 4 + WindowsKeyTable.DesktopBindings.Count;
         Assert.Equal(perPass, warnings.Count);
         Assert.Contains(warnings, w => w.Contains("→ samples.snip", StringComparison.Ordinal));
+        Assert.Contains(warnings, w => w.Contains("→ powermenu.open", StringComparison.Ordinal));
         Assert.Contains(warnings, w => w.Contains("→ notifications.openCentre", StringComparison.Ordinal));
         Assert.Contains(warnings, w => w.Contains("→ quicksettings.open", StringComparison.Ordinal));
 

@@ -415,7 +415,7 @@ Acceptance:
 Out of scope: Wi-Fi network selection; volume (S22).
 
 ## S28 — Remaining Windows keys and the Win+X menu
-Status: todo
+Status: done
 Delivers: The remaining Windows-key chords work in replacement mode, and Win+X opens a power-user menu built from the same WinX folders Windows uses, falling back to a built-in set.
 Touches: Host.Platform (the chord table); plugin `subzerodev.power-menu` (`menu` popup)
 Depends on: S24

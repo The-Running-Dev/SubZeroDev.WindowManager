@@ -42,6 +42,7 @@ $builtIn = @(
     @{ Id = 'subzerodev.notifications'; Project = 'SubZeroDev.WindowManager.Plugins.Notifications'; Framework = 'net10.0-windows10.0.26100.0' }
     @{ Id = 'subzerodev.desktops'; Project = 'SubZeroDev.WindowManager.Plugins.Desktops' }
     @{ Id = 'subzerodev.quick-settings'; Project = 'SubZeroDev.WindowManager.Plugins.QuickSettings'; Framework = 'net10.0-windows10.0.26100.0' }
+    @{ Id = 'subzerodev.power-menu'; Project = 'SubZeroDev.WindowManager.Plugins.PowerMenu' }
 )
 
 function Invoke-Checked {
