@@ -106,6 +106,16 @@ public static class View
         return button with { Props = props };
     }
 
+    /// <summary>The button with a <c>badge</c> prop: a short text drawn on the button, as a count or a percentage; empty draws none.</summary>
+    public static ViewNode WithBadge(this ViewNode button, Prop<string> badge)
+    {
+        var props = new Dictionary<string, JsonNode?>(button.Props ?? new Dictionary<string, JsonNode?>(), StringComparer.Ordinal)
+        {
+            ["badge"] = badge.ToJson(),
+        };
+        return button with { Props = props };
+    }
+
     /// <summary>The element with an action for a right click (a context click), as a notification icon's menu.</summary>
     public static ViewNode WithContextAction(this ViewNode element, ElementAction action) => element with { ContextAction = action };
 

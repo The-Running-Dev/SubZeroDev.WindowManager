@@ -25,14 +25,32 @@
             "default": "allMonitors",
             "title": "Windows to show",
             "description": "Every window, or only the windows on this panel's monitor."
+          },
+          "grouping": {
+            "type": "string",
+            "enum": [ "always", "whenFull", "never" ],
+            "default": "always",
+            "title": "Group windows",
+            "description": "One button per application, only once the panel holds more than eight windows, or one button per window."
+          },
+          "labels": {
+            "type": "boolean",
+            "default": true,
+            "title": "Show window titles",
+            "description": "Draw each button's title beside its icon; off leaves the icon alone."
           }
         }
       }
     }
   ],
+  "popups": [
+    { "id": "preview", "placement": "anchored" },
+    { "id": "jumplist", "placement": "anchored" }
+  ],
   "commands": [
     { "id": "windows.activate", "title": "Switch to window", "argsSchema": { "type": "object", "properties": { "hwnd": { "type": "integer" }, "windowKey": { "type": "string" } } } },
-    { "id": "windows.minimize", "title": "Minimise window", "argsSchema": { "type": "object", "properties": { "hwnd": { "type": "integer" }, "windowKey": { "type": "string" } } } }
+    { "id": "windows.minimize", "title": "Minimise window", "argsSchema": { "type": "object", "properties": { "hwnd": { "type": "integer" }, "windowKey": { "type": "string" } } } },
+    { "id": "windows.openJumpList", "title": "Open jump list", "argsSchema": { "type": "object", "properties": { "groupKey": { "type": "string" }, "x": { "type": "integer" }, "y": { "type": "integer" } } } }
   ],
   "feeds": [ { "id": "windows.running", "schema": {} } ],
   "subscribes": [ "host.windows", "host.desktops" ],

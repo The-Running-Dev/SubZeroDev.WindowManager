@@ -62,8 +62,11 @@ public interface IContributionHost
     Task<Outcome> SendPopupEventAsync(string pluginId, string popupId, string elementId, ElementEventKind kind, JsonNode? value,
         InvocationSource source, string? itemKey = null);
 
-    /// <summary>Grants the worker foreground rights (I18), then sends <c>popup.opened</c>.</summary>
-    Task<Outcome> NotifyPopupOpenedAsync(string pluginId, string popupId, PopupTrigger trigger);
+    /// <summary>
+    /// Grants the worker foreground rights (I18), then sends <c>popup.opened</c>. <paramref name="itemKey"/> is the key of
+    /// the list item a hover popup opened for, when there is one.
+    /// </summary>
+    Task<Outcome> NotifyPopupOpenedAsync(string pluginId, string popupId, PopupTrigger trigger, string? itemKey = null);
 
     Task<Outcome> NotifyPopupClosedAsync(string pluginId, string popupId, PopupCloseReason reason);
 }
@@ -138,8 +141,8 @@ public sealed class ContributionHost : IContributionHost, IAsyncDisposable
         SendToWorkerAsync(pluginId, source is InvocationSource.Pointer or InvocationSource.Keyboard or InvocationSource.Hotkey,
             Methods.ElementEvent, new ElementEventParams(PopupSurfaceId(popupId), elementId, kind, itemKey, value?.DeepClone(), source));
 
-    public Task<Outcome> NotifyPopupOpenedAsync(string pluginId, string popupId, PopupTrigger trigger) =>
-        SendToWorkerAsync(pluginId, true, Methods.PopupOpened, new PopupOpenedParams(popupId, trigger));
+    public Task<Outcome> NotifyPopupOpenedAsync(string pluginId, string popupId, PopupTrigger trigger, string? itemKey = null) =>
+        SendToWorkerAsync(pluginId, true, Methods.PopupOpened, new PopupOpenedParams(popupId, trigger, itemKey));
 
     public Task<Outcome> NotifyPopupClosedAsync(string pluginId, string popupId, PopupCloseReason reason) =>
         SendToWorkerAsync(pluginId, false, Methods.PopupClosed, new PopupClosedParams(popupId, reason));

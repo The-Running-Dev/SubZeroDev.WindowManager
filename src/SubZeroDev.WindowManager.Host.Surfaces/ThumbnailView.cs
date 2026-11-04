@@ -40,9 +40,10 @@ public interface IHoverPopupSurface
 
 /// <summary>
 /// Opens one of the view's plugin's popups anchored to <paramref name="anchor"/> without taking focus;
-/// null when it cannot (undeclared, not anchored, already open).
+/// null when it cannot (undeclared, not anchored, already open). <paramref name="itemKey"/> is the key of the list item
+/// the element belongs to, which the plugin is told so it can fill the popup for that item.
 /// </summary>
-public delegate Task<IHoverPopupSurface?> HoverPopupOpener(string popupId, FrameworkElement anchor);
+public delegate Task<IHoverPopupSurface?> HoverPopupOpener(string popupId, FrameworkElement anchor, string? itemKey);
 
 /// <summary>
 /// Keeps one Thumbnail element's DWM registration in step with its window, its size and its place on
@@ -84,6 +85,9 @@ internal sealed class ThumbnailBinding
 
     /// <summary>"live" while the window is drawn over the element, otherwise "card".</summary>
     public string Mode => _element.Live ? "live" : "card";
+
+    /// <summary>The <c>windowKey</c> the element shows, or null while it shows none.</summary>
+    public string? Window => _key;
 
     public void SetWindow(string? key)
     {
@@ -332,6 +336,7 @@ internal sealed class HoverPopupController
 {
     private readonly FrameworkElement _element;
     private readonly HoverPopupOpener _open;
+    private readonly Func<string?> _itemKey;
     private readonly HoverPopupState _state = new();
     private DispatcherQueueTimer? _timer;
     private IHoverPopupSurface? _surface;
@@ -340,10 +345,11 @@ internal sealed class HoverPopupController
     private int _generation;
     private bool _detached;
 
-    public HoverPopupController(FrameworkElement element, HoverPopupOpener open)
+    public HoverPopupController(FrameworkElement element, HoverPopupOpener open, Func<string?>? itemKey = null)
     {
         _element = element;
         _open = open;
+        _itemKey = itemKey ?? (() => null);
         element.PointerEntered += OnEntered;
         element.PointerExited += OnExited;
         element.PointerCanceled += OnExited;
@@ -447,7 +453,7 @@ internal sealed class HoverPopupController
         IHoverPopupSurface? surface;
         try
         {
-            surface = await _open(_popupId, _element);
+            surface = await _open(_popupId, _element, _itemKey());
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {

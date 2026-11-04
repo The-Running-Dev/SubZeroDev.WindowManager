@@ -18,6 +18,8 @@
     <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Host.Platform\SubZeroDev.WindowManager.Host.Platform.csproj" />
     <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.PackTool\SubZeroDev.WindowManager.PackTool.csproj" />
     <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Sdk\SubZeroDev.WindowManager.Sdk.csproj" />
+    <!-- The running-windows plugin's grouping and jump-list reader are plain code; they are tested in-process. -->
+    <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Plugins.RunningWindows\SubZeroDev.WindowManager.Plugins.RunningWindows.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- The Thumbnail and hoverPopup decisions carry no WinUI, so they are tested without the Surfaces project. -->

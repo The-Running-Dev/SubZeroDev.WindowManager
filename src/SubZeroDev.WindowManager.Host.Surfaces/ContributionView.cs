@@ -112,6 +112,10 @@ public sealed class ContributionView
         [.. Walk().OfType<WmText>().Select(text => (text, InfoOf(text)?.StyleKey))];
 
     /// <summary>Every Button and Toggle shown now, in tree order.</summary>
+    /// <summary>The Thumbnail elements the view holds, each with its id, its mode (<c>live</c> or <c>card</c>) and the window key it shows.</summary>
+    public IReadOnlyList<(string Id, string Mode, string? Window)> Thumbnails() =>
+        [.. _thumbnails.Select(pair => (pair.Key.Name, pair.Value.Mode, pair.Value.Window))];
+
     public IReadOnlyList<Control> InteractiveElements() => [.. Walk().Where(element => element is WmButton or WmToggle or WmSlider).Cast<Control>()];
 
     /// <summary>What the view knows about an element it built: its style key, item key and icon source.</summary>
@@ -429,7 +433,7 @@ public sealed class ContributionView
 
                 if (!_hovers.TryGetValue(built, out var controller))
                 {
-                    controller = new HoverPopupController(built, openHover);
+                    controller = new HoverPopupController(built, openHover, () => scope.ItemKey);
                     _hovers[built] = controller;
                 }
 

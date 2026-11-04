@@ -238,7 +238,7 @@ public sealed class SurfaceManager : ISurfaceManager
     /// not declared or not anchored, is already open, or the worker could not be told; a problem is logged,
     /// never sent to the plugin.
     /// </summary>
-    internal async Task<IHoverPopupSurface?> OpenHoverPopupAsync(string pluginId, string popupId, FrameworkElement anchor)
+    internal async Task<IHoverPopupSurface?> OpenHoverPopupAsync(string pluginId, string popupId, FrameworkElement anchor, string? itemKey = null)
     {
         if (!_contributions.DeclaresPopup(pluginId, popupId))
         {
@@ -267,7 +267,7 @@ public sealed class SurfaceManager : ISurfaceManager
 
         window.Open(placement.Monitor, placement.Place, activate: false);
         var surface = new HoverSurface(this, window);
-        var told = await _contributions.NotifyPopupOpenedAsync(pluginId, popupId, PopupTrigger.Element);
+        var told = await _contributions.NotifyPopupOpenedAsync(pluginId, popupId, PopupTrigger.Element, itemKey);
         if (!told.Ok)
         {
             _log.Write(LogLevel.Warning, "surfaces", $"Telling {pluginId} that hover popup '{popupId}' opened: {told.Error!.Detail}");
@@ -958,7 +958,7 @@ public sealed class SurfaceManager : ISurfaceManager
             var view = new ContributionView(instance, axis, Lookup, _retry, _actions, _icons,
                 (popupId, anchor, _) => OpenPopupAsync(instance.Plugin, popupId, anchor, MonitorAnchor.Active, PopupTrigger.Element,
                     CancellationToken.None),
-                Services((popupId, anchor) => OpenHoverPopupAsync(instance.Plugin, popupId, anchor)));
+                Services((popupId, anchor, itemKey) => OpenHoverPopupAsync(instance.Plugin, popupId, anchor, itemKey)));
             _views[instance.Id] = view;
             view.Render(_contributions.Describe(instance.Id));
             placements.Add(new InstancePlacement(instance, context));

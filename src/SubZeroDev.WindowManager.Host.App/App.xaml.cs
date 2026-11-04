@@ -45,6 +45,7 @@ public sealed partial class App : Application
     private IAppBarService? _appBarService;
     private ShellRoleService? _shellRoles;
     private TrayHost? _trayHost;
+    private TaskbarBackchannel? _taskbar;
     private DesktopSurface? _desktop;
     private ShowDesktop? _showDesktop;
     private WindowsKeyHook? _windowsKeys;
@@ -232,6 +233,13 @@ public sealed partial class App : Application
             feeds.PublishHost(TrayFeed.FeedId, TrayFeed.Snapshot(_trayHost.Icons));
             feeds.PublishHost(DoNotDisturbFeed.FeedId, DoNotDisturbFeed.Snapshot(false));
 
+            // Progress and overlay badges arrive at the same window (S29); the model keeps them.
+            var model = windows.Model;
+            _taskbar = new TaskbarBackchannel(_trayHost,
+                handle => model.ResolveHandle(handle) is { Value.Managed: { } managed } ? managed.Key : null,
+                line => log.Write(LogLevel.Warning, "taskbar", line));
+            _taskbar.Start(model.SetProgress, model.SetOverlay);
+
             // Nothing else answers the Windows key without Explorer (S21).
             // The table says which Win+key chords it may swallow now: a chord whose provider is not running goes to Windows (I35).
             var keyTable = _keyTable = new WindowsKeyTable(settings.WindowsKeys, line => log.Write(LogLevel.Warning, "keys", line));
@@ -267,6 +275,7 @@ public sealed partial class App : Application
             // The panels are up: the welcome screen can go, and start-up programs run once per session.
             _shellRoles!.SignalDesktopReady();
             _shellRoles.HideMinimizedWindows();
+            _taskbar?.BroadcastButtonCreated();
             Action<string> startupLog = line => log.Write(LogLevel.Info, "startup", line);
             _ = Task.Run(() =>
             {
@@ -302,7 +311,7 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost, Desktop = _desktop, WindowsKeys = _windowsKeys, Windows = _windows, Synthetic = _syntheticWindows, Desktops = _desktopSet };
+                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost, Taskbar = _taskbar, Desktop = _desktop, WindowsKeys = _windowsKeys, Windows = _windows, Synthetic = _syntheticWindows, Desktops = _desktopSet };
             _testHook.Start();
         }
     }
@@ -745,6 +754,7 @@ public sealed partial class App : Application
         }
 
         _desktop?.Close();
+        _taskbar?.Dispose();
         _trayHost?.Dispose();
         (_appBarService as IDisposable)?.Dispose();
         _shellRoles?.Dispose();

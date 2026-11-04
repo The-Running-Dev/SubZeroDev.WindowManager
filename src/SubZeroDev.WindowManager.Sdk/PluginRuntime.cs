@@ -239,9 +239,16 @@ public static class PluginRuntime
                     break;
                 case Methods.PopupOpened:
                     var opened = message.ParamsAs<PopupOpenedParams>()!;
-                    Enqueue(message, () => plugin.Context?.PopupTable.Find(opened.PopupId) is { } shown
-                        ? plugin.OnPopupOpenedAsync(shown, opened.Trigger, CancellationToken.None)
-                        : Task.CompletedTask);
+                    Enqueue(message, () =>
+                    {
+                        if (plugin.Context?.PopupTable.Find(opened.PopupId) is not { } shown)
+                        {
+                            return Task.CompletedTask;
+                        }
+
+                        shown.OpenedFor = opened.ItemKey;
+                        return plugin.OnPopupOpenedAsync(shown, opened.Trigger, CancellationToken.None);
+                    });
                     break;
                 case Methods.PopupClosed:
                     var closed = message.ParamsAs<PopupClosedParams>()!;

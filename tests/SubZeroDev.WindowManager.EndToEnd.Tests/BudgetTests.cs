@@ -126,7 +126,7 @@ public sealed partial class BudgetTests
     {
         HostRun.RequireDesktop();
         using var run = HostRun.Create();
-        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows"));
+        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows", RunningWindowsTests.PerWindow()));
         run.Start(HostRun.HostExe);
         var status = await run.WaitForAsync(s => s["windowModel"] is JsonObject, Startup);
         var baseline = (int)status["windowModel"]!["windows"]!;
@@ -185,7 +185,7 @@ public sealed partial class BudgetTests
     private static async Task<Dictionary<string, double>> MeasureWithWindowsOnceAsync()
     {
         using var run = HostRun.Create();
-        run.WriteDefaultLayout((Guid.NewGuid(), Clock, "clock"), (Guid.NewGuid(), RunningWindows, "windows"), (Guid.NewGuid(), Launcher, "launcher"));
+        run.WriteDefaultLayout((Guid.NewGuid(), Clock, "clock", null), (Guid.NewGuid(), RunningWindows, "windows", RunningWindowsTests.PerWindow()), (Guid.NewGuid(), Launcher, "launcher", null));
         run.Start(HostRun.GuardianExe);
         var status = await run.WaitForAsync(AllLive, Startup);
         using var host = Process.GetProcessById((int)status["hostPid"]!);
@@ -291,7 +291,7 @@ public sealed partial class BudgetTests
     {
         var measured = new Dictionary<string, double>(StringComparer.Ordinal);
         using var run = HostRun.Create();
-        run.WriteDefaultLayout((Guid.NewGuid(), Clock, "clock"), (Guid.NewGuid(), RunningWindows, "windows"), (Guid.NewGuid(), Launcher, "launcher"));
+        run.WriteDefaultLayout((Guid.NewGuid(), Clock, "clock", null), (Guid.NewGuid(), RunningWindows, "windows", RunningWindowsTests.PerWindow()), (Guid.NewGuid(), Launcher, "launcher", null));
         if (LauncherTests.OpenChord.Override is { } chord)
         {
             run.WriteDataFile("settings.json", new JsonObject
