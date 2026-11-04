@@ -12,7 +12,8 @@
       "zones": {
         "start": [
           { "id": "a56ee404-071e-4968-b100-994ed71b60d8", "plugin": "subzerodev.launcher", "contribution": "launcher" },
-          { "id": "e4b1f6a2-3c7d-4a58-9d10-6b2f8c0a7e35", "plugin": "subzerodev.desktops", "contribution": "desktops" }
+          { "id": "e4b1f6a2-3c7d-4a58-9d10-6b2f8c0a7e35", "plugin": "subzerodev.desktops", "contribution": "desktops" },
+          { "id": "6d2a8f13-b7c4-4e90-a1d5-3c8e0f7b2a49", "plugin": "subzerodev.power-menu", "contribution": "menu" }
         ],
         "center": [
           { "id": "c8c0bf21-84fb-43e7-a249-f6e76a00a1f9", "plugin": "subzerodev.running-windows", "contribution": "windows" }

@@ -23,7 +23,7 @@ Each budget is the 90th percentile of ten measured runs plus 20%, rounded down. 
 3. The hotkey opens the launcher once, closes it, then times the second open, as S8.1 does.
 4. A test window is minimised and its item clicked; the test polls for it to become the foreground window.
 
-Replacement startup (S23) is measured separately: the guardian starts with `--mode replacement` and no layout of its own, so the host shows the built-in `subzerodev.shell` layout with all eleven items. The test hook fakes Explorer, the shell roles and the indicator devices, so nothing on the machine changes. Its runs go to `replacement.json`.
+Replacement startup (S23) is measured separately: the guardian starts with `--mode replacement` and no layout of its own, so the host shows the built-in `subzerodev.shell` layout with all twelve items. The test hook fakes Explorer, the shell roles and the indicator devices, so nothing on the machine changes. Its runs go to `replacement.json`.
 
 The notifications worker (S24.8) is guarded rather than budgeted: `NotificationsTests` runs it against a fake history for 10 s with nothing changing and fails when it uses 2% of a core or more. It reads Windows' history only when told of a change, so an idle worker should sit at zero. The pop-up path creates no window until the first notification, so it adds nothing to host start.
 

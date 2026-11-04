@@ -1,0 +1,23 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.power-menu",
+  "version": "0.1.0",
+  "displayName": "Power user menu",
+  "publisher": "SubZeroDev",
+  "description": "The Win+X menu: the entries of Windows' own WinX folders, or a built-in list when they cannot be read.",
+  "hostApi": "^1.0",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.PowerMenu.exe", "args": [] },
+  "capabilities": [],
+  "modes": [ "replacement" ],
+  "requiresExplorer": false,
+  "contributions": [
+    { "id": "menu", "kind": "panelItem", "displayName": "Power user menu", "multiInstance": false }
+  ],
+  "commands": [
+    { "id": "powermenu.open", "title": "Open the power user menu" }
+  ],
+  "popups": [
+    { "id": "menu", "placement": "anchored" }
+  ],
+  "settingsVersion": 1
+}

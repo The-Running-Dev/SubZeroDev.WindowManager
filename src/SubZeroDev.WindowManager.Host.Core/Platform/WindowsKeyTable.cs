@@ -18,6 +18,9 @@ public sealed partial class WindowsKeyTable
     /// <summary>The panel command of the <c>subzerodev.quick-settings</c> plugin; Win+A is left to Windows while it is not running (S27.5).</summary>
     public const string QuickSettingsCommand = "quicksettings.open";
 
+    /// <summary>The menu command of the <c>subzerodev.power-menu</c> plugin; Win+X is left to Windows while it is not running (S28.2).</summary>
+    public const string PowerMenuCommand = "powermenu.open";
+
     /// <summary>The overview command of the <c>subzerodev.desktops</c> plugin; Win+Tab is left to Windows while it is not running (S26.6).</summary>
     public const string OverviewCommand = "desktops.openOverview";
 
@@ -57,6 +60,8 @@ public sealed partial class WindowsKeyTable
         _entries[centre] = new Entry(new WindowsKeyBinding(centre, NotificationCentreCommand, null), null);
         var quick = new KeyChord(KeyModifiers.Win, 'A');
         _entries[quick] = new Entry(new WindowsKeyBinding(quick, QuickSettingsCommand, null), null);
+        var powerMenu = new KeyChord(KeyModifiers.Win, 'X');
+        _entries[powerMenu] = new Entry(new WindowsKeyBinding(powerMenu, PowerMenuCommand, null), null);
         foreach (var binding in DesktopBindings)
         {
             _entries[binding.Chord] = new Entry(binding, null);
