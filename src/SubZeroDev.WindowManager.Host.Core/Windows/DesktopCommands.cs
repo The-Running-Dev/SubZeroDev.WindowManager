@@ -17,6 +17,9 @@ public static class DesktopCommands
     public const string PinToAll = "host.window.pinToAllDesktops";
     public const string Close = "host.window.close";
 
+    /// <summary>The <c>id</c> that names whichever desktop is current when the command runs (Win+Ctrl+F4).</summary>
+    public const string CurrentDesktop = "current";
+
     public static async Task<Outcome<CommandResult>> SwitchAsync(IDesktopSet desktops, JsonObject? args, CancellationToken ct)
     {
         var id = Id(args, "id");
@@ -58,10 +61,13 @@ public static class DesktopCommands
         return Outcome<CommandResult>.Success(new CommandResult(new JsonObject { ["id"] = created.Value.ToString("D") }));
     }
 
-    public static async Task<Outcome<CommandResult>> RemoveAsync(IDesktopSet desktops, JsonObject? args, CancellationToken ct) =>
-        Id(args, "id") is { } id
-            ? Done(await desktops.RemoveAsync(id, ct).ConfigureAwait(false))
-            : Bad(Remove + " needs { id: string }.");
+    public static async Task<Outcome<CommandResult>> RemoveAsync(IDesktopSet desktops, JsonObject? args, CancellationToken ct)
+    {
+        var id = Text(args, "id") == CurrentDesktop ? desktops.CurrentId : Id(args, "id");
+        return id is { } found
+            ? Done(await desktops.RemoveAsync(found, ct).ConfigureAwait(false))
+            : Bad(Remove + " needs { id: string | \"current\" }.");
+    }
 
     public static Task<Outcome<CommandResult>> RenameAsync(IDesktopSet desktops, JsonObject? args)
     {

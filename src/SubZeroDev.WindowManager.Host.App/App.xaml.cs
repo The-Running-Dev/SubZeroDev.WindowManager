@@ -215,7 +215,7 @@ public sealed partial class App : Application
             var keyTable = _keyTable = new WindowsKeyTable(settings.WindowsKeys, line => log.Write(LogLevel.Warning, "keys", line));
             _router.CommandsChanged += (_, _) => RefreshKeyTable(report: true);
             RefreshKeyTable(report: false);
-            _windowsKeys = WindowsKeyHook.Start(hooked is not null, keyTable.SwallowsWithWin,
+            _windowsKeys = WindowsKeyHook.Start(hooked is not null, keyTable.Swallows,
                 line => log.Write(LogLevel.Warning, "keys", line));
             _windowsKeys.Pressed += (_, chord) => _ = OnWindowsKeyAsync(chord);
         }

@@ -234,14 +234,15 @@ public sealed class NotificationHostTests
         table.ReportUnresolved(_ => false, warnings.Add);
         table.ReportUnresolved(_ => false, warnings.Add);
 
-        Assert.Equal(2, warnings.Count);
+        var perPass = 2 + WindowsKeyTable.DesktopBindings.Count;
+        Assert.Equal(perPass, warnings.Count);
         Assert.Contains(warnings, w => w.Contains("→ samples.snip", StringComparison.Ordinal));
         Assert.Contains(warnings, w => w.Contains("→ notifications.openCentre", StringComparison.Ordinal));
 
         table.ReportUnresolved(_ => true, warnings.Add);
         table.ReportUnresolved(_ => false, warnings.Add);
 
-        Assert.Equal(4, warnings.Count);
+        Assert.Equal(2 * perPass, warnings.Count);
     }
 
     [Fact]

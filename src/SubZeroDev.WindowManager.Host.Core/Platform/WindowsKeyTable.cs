@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace SubZeroDev.WindowManager.Host.Core;
@@ -13,6 +14,24 @@ namespace SubZeroDev.WindowManager.Host.Core;
 public sealed partial class WindowsKeyTable
 {
     public const string NotificationCentreCommand = "notifications.openCentre";
+
+    /// <summary>The overview command of the <c>subzerodev.desktops</c> plugin; Win+Tab is left to Windows while it is not running (S26.6).</summary>
+    public const string OverviewCommand = "desktops.openOverview";
+
+    private const uint Tab = 0x09;
+    private const uint Left = 0x25;
+    private const uint Right = 0x27;
+    private const uint F4 = 0x73;
+
+    /// <summary>The virtual-desktop chords (S26): the host's own commands, so they work whatever plugins run; only Win+Tab needs the plugin.</summary>
+    public static IReadOnlyList<WindowsKeyBinding> DesktopBindings { get; } =
+    [
+        new(new KeyChord(KeyModifiers.Win, Tab), OverviewCommand, null),
+        new(new KeyChord(KeyModifiers.Win | KeyModifiers.Ctrl, Left), DesktopCommands.Switch, new JsonObject { ["direction"] = "previous" }),
+        new(new KeyChord(KeyModifiers.Win | KeyModifiers.Ctrl, Right), DesktopCommands.Switch, new JsonObject { ["direction"] = "next" }),
+        new(new KeyChord(KeyModifiers.Win | KeyModifiers.Ctrl, 'D'), DesktopCommands.Create, new JsonObject { ["switchTo"] = true }),
+        new(new KeyChord(KeyModifiers.Win | KeyModifiers.Ctrl, F4), DesktopCommands.Remove, new JsonObject { ["id"] = DesktopCommands.CurrentDesktop }),
+    ];
 
     /// <summary>One chord: what the table or user binds it to, and the first-release binding it falls back to.</summary>
     private sealed record Entry(WindowsKeyBinding Binding, WindowsKeyBinding? Fallback);
@@ -33,6 +52,11 @@ public sealed partial class WindowsKeyTable
 
         var centre = new KeyChord(KeyModifiers.Win, 'N');
         _entries[centre] = new Entry(new WindowsKeyBinding(centre, NotificationCentreCommand, null), null);
+        foreach (var binding in DesktopBindings)
+        {
+            _entries[binding.Chord] = new Entry(binding, null);
+        }
+
         foreach (var (text, commandId) in settings)
         {
             var parsed = KeyChord.Parse(text);
@@ -60,6 +84,10 @@ public sealed partial class WindowsKeyTable
 
     /// <summary>True when the hook should swallow <c>Win+vk</c>: bound, and its command able to answer.</summary>
     public bool SwallowsWithWin(uint vk) => _snapshot.WithWin.Contains(vk);
+
+    /// <summary>True when the hook should swallow this chord (it holds Windows): bound, and its command able to answer.</summary>
+    public bool Swallows(KeyModifiers modifiers, uint vk) =>
+        modifiers.HasFlag(KeyModifiers.Win) && vk != 0 && _snapshot.Effective.ContainsKey(new KeyChord(modifiers, vk));
 
     /// <summary>Rebuilds the snapshot after a command's provider starts or stops.</summary>
     /// <param name="exists">Whether any plugin or the host declares the command.</param>

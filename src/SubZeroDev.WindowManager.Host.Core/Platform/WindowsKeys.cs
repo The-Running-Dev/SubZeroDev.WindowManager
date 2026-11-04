@@ -17,16 +17,28 @@ public readonly record struct KeyVerdict(bool Swallow, KeyChord? Chord, bool Mas
 /// swallowed and completed; every other key goes to Windows, so Win+L still locks. Not thread-safe: the
 /// hook's thread is its only caller.
 /// </summary>
-public sealed class WindowsKeyTracker(Func<uint, bool> boundWithWin)
+public sealed class WindowsKeyTracker
 {
     public const uint LeftWin = 0x5B;
     public const uint RightWin = 0x5C;
     public const uint Escape = 0x1B;
 
+    private readonly Func<KeyModifiers, uint, bool> _bound;
     private readonly HashSet<uint> _held = [];
     private readonly HashSet<uint> _swallowed = [];
     private bool _winOther;
     private bool _winPassedOther;
+
+    /// <summary>A tracker that swallows Win+key for the keys <paramref name="boundWithWin"/> names.</summary>
+    public WindowsKeyTracker(Func<uint, bool> boundWithWin) : this((modifiers, vk) => modifiers == KeyModifiers.Win && boundWithWin(vk))
+    {
+    }
+
+    /// <summary>A tracker that swallows any chord that holds Windows and that <paramref name="bound"/> accepts (Win+Ctrl+Left, say).</summary>
+    public WindowsKeyTracker(Func<KeyModifiers, uint, bool> bound)
+    {
+        _bound = bound;
+    }
 
     /// <summary>A tracker whose Win-bound keys never change.</summary>
     public WindowsKeyTracker(IReadOnlySet<uint> boundWithWin) : this(boundWithWin.Contains)
@@ -62,10 +74,10 @@ public sealed class WindowsKeyTracker(Func<uint, bool> boundWithWin)
         if (modifiers.HasFlag(KeyModifiers.Win))
         {
             _winOther = true;
-            if (!repeat && modifiers == KeyModifiers.Win && boundWithWin(vk))
+            if (!repeat && _bound(modifiers, vk))
             {
                 _swallowed.Add(vk);
-                return new KeyVerdict(true, new KeyChord(KeyModifiers.Win, vk), false);
+                return new KeyVerdict(true, new KeyChord(modifiers, vk), false);
             }
 
             _winPassedOther = true;
