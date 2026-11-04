@@ -120,6 +120,36 @@
         </Setter>
     </Style>
 
+    <!-- Sizes come from the Wm.Thumbnail.* and Wm.IconSize.* tokens, set by the host in code. -->
+    <Style TargetType="wm:WmThumbnail">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="#FFE6E6E6" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="wm:WmThumbnail">
+                    <Grid Background="{TemplateBinding Background}">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="ThumbnailStates">
+                                <VisualState x:Name="Card" />
+                                <VisualState x:Name="Live">
+                                    <VisualState.Setters>
+                                        <Setter Target="CardPart.Visibility" Value="Collapsed" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <StackPanel x:Name="CardPart" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Image Source="{TemplateBinding Icon}" Width="{TemplateBinding IconSize}" Height="{TemplateBinding IconSize}"
+                                   HorizontalAlignment="Center" Stretch="Uniform" />
+                            <TextBlock Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" TextAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Text="{TemplateBinding Title}" />
+                        </StackPanel>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style TargetType="wm:WmList">
         <Setter Property="Template">
             <Setter.Value>

@@ -62,6 +62,8 @@ public sealed class SurfaceManager : ISurfaceManager
     private readonly IconResolver? _icons;
     private readonly IForegroundService? _foreground;
     private readonly Func<ToastCorner> _toastCorner;
+    private readonly IThumbnailService? _thumbnails;
+    private readonly IWindowModel? _windows;
     private readonly List<PanelWindow> _panels = [];
     private readonly Dictionary<Guid, ContributionView> _views = [];
     private readonly Dictionary<(string Plugin, string Popup), PopupWindow> _popups = [];
@@ -77,8 +79,11 @@ public sealed class SurfaceManager : ISurfaceManager
 
     public SurfaceManager(IConfigStore config, IMonitorService monitors, IAppBarService appBars, IThemeEngine theme,
         IContributionHost contributions, IHostLog log, Action<string>? retry = null, IElementActions? actions = null,
-        IForegroundService? foreground = null, IconResolver? icons = null, Func<ToastCorner>? toastCorner = null)
+        IForegroundService? foreground = null, IconResolver? icons = null, Func<ToastCorner>? toastCorner = null,
+        IThumbnailService? thumbnails = null, IWindowModel? windows = null)
     {
+        _thumbnails = thumbnails;
+        _windows = windows;
         _toastCorner = toastCorner ?? (() => ToastCorner.BottomRight);
         _retry = retry;
         _icons = icons;
@@ -163,18 +168,7 @@ public sealed class SurfaceManager : ISurfaceManager
             return Outcome.Fail(CoreErrorCode.Undeclared, $"{pluginId} does not declare popup '{popupId}'.");
         }
 
-        var key = (pluginId, popupId);
-        if (!_popups.TryGetValue(key, out var window))
-        {
-            var view = ContributionView.ForPopup(pluginId, Lookup, _actions,
-                (elementId, kind, value, source, itemKey) =>
-                    _contributions.SendPopupEventAsync(pluginId, popupId, elementId, kind, value, source, itemKey),
-                _icons);
-            window = new PopupWindow(pluginId, popupId, view, _contributions.PlacementOf(pluginId, popupId));
-            window.Dismissed += (_, reason) => _ = ClosePopupAsync(pluginId, popupId, reason, CancellationToken.None);
-            _popups[key] = window;
-        }
-
+        var window = PopupFor(pluginId, popupId);
         window.Frame.Style = Lookup("Wm.Popup") as Style;
         window.View.Render(_contributions.DescribePopup(pluginId, popupId));
         var placed = window.Placement switch
@@ -218,6 +212,147 @@ public sealed class SurfaceManager : ISurfaceManager
         }
 
         return told;
+    }
+
+    /// <summary>The plugin's popup window, made on first use and kept between opens.</summary>
+    private PopupWindow PopupFor(string pluginId, string popupId)
+    {
+        var key = (pluginId, popupId);
+        if (!_popups.TryGetValue(key, out var window))
+        {
+            var view = ContributionView.ForPopup(pluginId, Lookup, _actions,
+                (elementId, kind, value, source, itemKey) =>
+                    _contributions.SendPopupEventAsync(pluginId, popupId, elementId, kind, value, source, itemKey),
+                _icons, Services(null));
+            window = new PopupWindow(pluginId, popupId, view, _contributions.PlacementOf(pluginId, popupId));
+            window.Dismissed += (_, reason) => _ = ClosePopupAsync(pluginId, popupId, reason, CancellationToken.None);
+            _popups[key] = window;
+        }
+
+        return window;
+    }
+
+    /// <summary>
+    /// Opens one of the plugin's anchored popups at <paramref name="anchor"/> for a hoverPopup prop, without
+    /// taking focus or the foreground, then tells the worker (trigger <c>element</c>). Null when the popup is
+    /// not declared or not anchored, is already open, or the worker could not be told; a problem is logged,
+    /// never sent to the plugin.
+    /// </summary>
+    internal async Task<IHoverPopupSurface?> OpenHoverPopupAsync(string pluginId, string popupId, FrameworkElement anchor)
+    {
+        if (!_contributions.DeclaresPopup(pluginId, popupId))
+        {
+            _log.Write(LogLevel.Warning, "surfaces", $"hoverPopup of {pluginId} names popup '{popupId}', which it does not declare.");
+            return null;
+        }
+
+        if (_contributions.PlacementOf(pluginId, popupId) != PopupPlacement.Anchored)
+        {
+            _log.Write(LogLevel.Warning, "surfaces", $"hoverPopup of {pluginId} names popup '{popupId}', which is not anchored.");
+            return null;
+        }
+
+        var window = PopupFor(pluginId, popupId);
+        if (window.IsOpen)
+        {
+            return null;
+        }
+
+        window.Frame.Style = Lookup("Wm.Popup") as Style;
+        window.View.Render(_contributions.DescribePopup(pluginId, popupId));
+        if (PlaceBy(anchor) is not { } placement)
+        {
+            return null;
+        }
+
+        window.Open(placement.Monitor, placement.Place, activate: false);
+        var surface = new HoverSurface(this, window);
+        var told = await _contributions.NotifyPopupOpenedAsync(pluginId, popupId, PopupTrigger.Element);
+        if (!told.Ok)
+        {
+            _log.Write(LogLevel.Warning, "surfaces", $"Telling {pluginId} that hover popup '{popupId}' opened: {told.Error!.Detail}");
+            window.Hide();
+            return null;
+        }
+
+        if (!window.IsOpen)
+        {
+            // Closed while the worker was told.
+            surface.Dispose();
+            return null;
+        }
+
+        return surface;
+    }
+
+    /// <summary>The host window an element is shown in: a panel's or a popup's; 0 when neither.</summary>
+    private nint HostWindowOf(FrameworkElement element)
+    {
+        if (element.XamlRoot is not { } root)
+        {
+            return 0;
+        }
+
+        return _panels.FirstOrDefault(window => window.Panel.XamlRoot == root)?.Handle
+            ?? _popups.Values.FirstOrDefault(window => window.Frame.XamlRoot == root)?.Handle
+            ?? 0;
+    }
+
+    private ViewServices Services(HoverPopupOpener? hoverPopup) =>
+        new(_thumbnails, _windows, _log, HostWindowOf, hoverPopup);
+
+    /// <summary>A hover-opened popup as its <see cref="HoverPopupController"/> sees it.</summary>
+    private sealed class HoverSurface : IHoverPopupSurface, IDisposable
+    {
+        private readonly SurfaceManager _owner;
+        private readonly PopupWindow _window;
+        private bool _done;
+
+        public HoverSurface(SurfaceManager owner, PopupWindow window)
+        {
+            _owner = owner;
+            _window = window;
+            window.Frame.PointerEntered += OnEntered;
+            window.Frame.PointerExited += OnExited;
+            window.Hidden += OnHidden;
+        }
+
+        public event EventHandler? PointerEntered;
+
+        public event EventHandler? PointerExited;
+
+        public event EventHandler? Closed;
+
+        public void Close()
+        {
+            if (!_done && _window.IsOpen)
+            {
+                _ = _owner.ClosePopupAsync(_window.PluginId, _window.PopupId, PopupCloseReason.LightDismiss, CancellationToken.None);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_done)
+            {
+                return;
+            }
+
+            _done = true;
+            _window.Frame.PointerEntered -= OnEntered;
+            _window.Frame.PointerExited -= OnExited;
+            _window.Hidden -= OnHidden;
+        }
+
+        private void OnEntered(object sender, PointerRoutedEventArgs e) => PointerEntered?.Invoke(this, EventArgs.Empty);
+
+        private void OnExited(object sender, PointerRoutedEventArgs e) => PointerExited?.Invoke(this, EventArgs.Empty);
+
+        private void OnHidden(object? sender, EventArgs e)
+        {
+            Dispose();
+            Closed?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     public async Task<Outcome> ClosePopupAsync(string pluginId, string popupId, PopupCloseReason reason, CancellationToken ct)
@@ -822,7 +957,8 @@ public sealed class SurfaceManager : ISurfaceManager
         {
             var view = new ContributionView(instance, axis, Lookup, _retry, _actions, _icons,
                 (popupId, anchor, _) => OpenPopupAsync(instance.Plugin, popupId, anchor, MonitorAnchor.Active, PopupTrigger.Element,
-                    CancellationToken.None));
+                    CancellationToken.None),
+                Services((popupId, anchor) => OpenHoverPopupAsync(instance.Plugin, popupId, anchor)));
             _views[instance.Id] = view;
             view.Render(_contributions.Describe(instance.Id));
             placements.Add(new InstancePlacement(instance, context));

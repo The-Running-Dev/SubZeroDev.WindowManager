@@ -48,6 +48,9 @@ public sealed class ContributionView
     private readonly Dictionary<string, ListItems> _lists = new(StringComparer.Ordinal);
     private readonly Dictionary<FrameworkElement, Action<InvocationSource>> _invokers = [];
     private readonly List<ElementNotice> _notices = [];
+    private readonly ViewServices _services;
+    private readonly Dictionary<FrameworkElement, ThumbnailBinding> _thumbnails = [];
+    private readonly Dictionary<FrameworkElement, HoverPopupController> _hovers = [];
     private Scope _root = new(null);
     private IReadOnlyDictionary<string, JsonNode?> _state = new Dictionary<string, JsonNode?>();
     private long _revision = -1;
@@ -55,16 +58,19 @@ public sealed class ContributionView
     public static readonly TimeSpan NoticeDuration = TimeSpan.FromSeconds(4);
 
     public ContributionView(ContributionInstance instance, Orientation panelAxis, Func<string, object?> lookup,
-        Action<string>? retry = null, IElementActions? actions = null, IconResolver? icons = null, PopupOpener? openPopup = null)
+        Action<string>? retry = null, IElementActions? actions = null, IconResolver? icons = null, PopupOpener? openPopup = null,
+        ViewServices? services = null)
         : this(instance, instance.Plugin, panelAxis, lookup, retry, actions,
             actions is null ? null : (elementId, kind, value, source, itemKey) => actions.SendEventAsync(instance.Id, elementId, kind, value, source, itemKey),
-            openPopup, icons)
+            openPopup, icons, services)
     {
     }
 
     private ContributionView(ContributionInstance? instance, string pluginId, Orientation panelAxis, Func<string, object?> lookup,
-        Action<string>? retry, IElementActions? actions, ElementEventSink? sendEvent, PopupOpener? openPopup, IconResolver? icons)
+        Action<string>? retry, IElementActions? actions, ElementEventSink? sendEvent, PopupOpener? openPopup, IconResolver? icons,
+        ViewServices? services)
     {
+        _services = services ?? new ViewServices();
         _instance = instance;
         PluginId = pluginId;
         _panelAxis = panelAxis;
@@ -79,8 +85,8 @@ public sealed class ContributionView
 
     /// <summary>A view for a plugin's popup surface: vertical by default, events sent through <paramref name="sendEvent"/>.</summary>
     public static ContributionView ForPopup(string pluginId, Func<string, object?> lookup, IElementActions? actions,
-        ElementEventSink? sendEvent, IconResolver? icons = null) =>
-        new(null, pluginId, Orientation.Vertical, lookup, null, actions, sendEvent, null, icons);
+        ElementEventSink? sendEvent, IconResolver? icons = null, ViewServices? services = null) =>
+        new(null, pluginId, Orientation.Vertical, lookup, null, actions, sendEvent, null, icons, services);
 
     /// <summary>The instance shown; a popup view has none.</summary>
     public ContributionInstance Instance => _instance ?? throw new InvalidOperationException("A popup view has no contribution instance.");
@@ -174,6 +180,18 @@ public sealed class ContributionView
 
     private void Reset()
     {
+        foreach (var thumbnail in _thumbnails.Values)
+        {
+            thumbnail.Detach();
+        }
+
+        foreach (var hover in _hovers.Values)
+        {
+            hover.Detach();
+        }
+
+        _thumbnails.Clear();
+        _hovers.Clear();
         _info.Clear();
         _lists.Clear();
         _invokers.Clear();
@@ -373,8 +391,50 @@ public sealed class ContributionView
                 slider.Committed += (_, value) => Act(slider, scope, sliderAction, ElementEventKind.ValueChanged, JsonValue.Create(value));
                 built = slider;
                 break;
+            case "thumbnail":
+                var thumb = new WmThumbnail { Name = element["id"]?.GetValue<string>() ?? string.Empty };
+                var thumbnail = new ThumbnailBinding(thumb, _services, _lookup, PluginId, handle =>
+                    SetIcon(thumb, info, handle == 0 ? null : new JsonObject { ["window"] = (long)handle }, 2 * LogicalSize("large"),
+                        (_, image) => thumb.Icon = image));
+                thumb.IconSize = LogicalSize("large");
+                info.Thumbnail = thumbnail;
+                _thumbnails[thumb] = thumbnail;
+                if (props["size"] is null)
+                {
+                    thumbnail.SetSize("medium");
+                }
+
+                Bind(props["size"], scope, value => thumbnail.SetSize(value is null ? "medium" : AsString(value)));
+                Bind(props["window"], scope, value => thumbnail.SetWindow(value is null ? null : AsString(value)));
+                built = thumb;
+                break;
             default:
                 return Nothing();
+        }
+
+        if (_services.HoverPopup is { } openHover && props["hoverPopup"] is not null)
+        {
+            Bind(props["hoverPopup"], scope, value =>
+            {
+                var hover = ThumbnailPolicy.HoverPopupOf(value);
+                if (hover is null)
+                {
+                    if (_hovers.Remove(built, out var gone))
+                    {
+                        gone.Detach();
+                    }
+
+                    return;
+                }
+
+                if (!_hovers.TryGetValue(built, out var controller))
+                {
+                    controller = new HoverPopupController(built, openHover);
+                    _hovers[built] = controller;
+                }
+
+                controller.Configure(hover);
+            });
         }
 
         Bind(props["tooltip"], scope, value => ToolTipService.SetToolTip(built, value is null ? null : AsString(value)));
@@ -522,6 +582,15 @@ public sealed class ContributionView
             }
 
             _invokers.Remove(element);
+            if (_thumbnails.Remove(element, out var thumbnail))
+            {
+                thumbnail.Detach();
+            }
+
+            if (_hovers.Remove(element, out var hover))
+            {
+                hover.Detach();
+            }
         }
 
         foreach (var child in scope.Children)
@@ -593,6 +662,14 @@ public sealed class ContributionView
     private void SetIcon(FrameworkElement element, ElementInfo info, JsonNode? value, int sizePx, Action<string, ImageSource?> show)
     {
         var request = ++info.IconRequest;
+        if (ThumbnailPolicy.IconWindowKey(value) is { } windowKey)
+        {
+            // {"window": "<windowKey>"} names the window by key; the resolver takes its handle.
+            value = _services.Windows?.Resolve(windowKey) is { Ok: true, Value: { } target }
+                ? new JsonObject { ["window"] = (long)target.Handle }
+                : null;
+        }
+
         var reference = IconRef.FromJson(value);
         var name = (reference as IconRef.Named)?.Id ?? string.Empty;
         if (reference is IconRef.Named && _icons is null)
@@ -863,7 +940,12 @@ public sealed class ElementInfo(string? itemKey)
     /// <summary>Where its icon came from: <c>named</c>, <c>extracted</c>, <c>default</c> or <c>none</c>; null without an icon prop.</summary>
     public string? IconSource { get; internal set; }
 
+    /// <summary>For a Thumbnail: <c>live</c> while the window is drawn over it, <c>card</c> otherwise; null for other kinds.</summary>
+    public string? ThumbnailMode => Thumbnail?.Mode;
+
     internal int IconRequest { get; set; }
+
+    internal ThumbnailBinding? Thumbnail { get; set; }
 }
 
 /// <summary>A notice shown because an element's action failed.</summary>

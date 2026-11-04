@@ -216,6 +216,76 @@ public sealed partial class WmIcon : Control
 }
 
 /// <summary>
+/// A <c>Thumbnail</c> element. The host draws the live window over it with DWM when it can
+/// (<see cref="Live"/>, visual state <c>Live</c>); otherwise the template shows the window's icon
+/// and title (visual state <c>Card</c>). Its width and height come from the <c>Wm.Thumbnail.*</c> tokens.
+/// </summary>
+public sealed partial class WmThumbnail : Control
+{
+    public static readonly DependencyProperty TitleProperty =
+        DependencyProperty.Register(nameof(Title), typeof(string), typeof(WmThumbnail), new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty IconProperty =
+        DependencyProperty.Register(nameof(Icon), typeof(Microsoft.UI.Xaml.Media.ImageSource), typeof(WmThumbnail), new PropertyMetadata(null));
+
+    public static readonly DependencyProperty IconSizeProperty =
+        DependencyProperty.Register(nameof(IconSize), typeof(double), typeof(WmThumbnail), new PropertyMetadata(double.NaN));
+
+    public static readonly DependencyProperty LiveProperty =
+        DependencyProperty.Register(nameof(Live), typeof(bool), typeof(WmThumbnail),
+            new PropertyMetadata(false, (d, _) => ((WmThumbnail)d).UpdateState()));
+
+    public static readonly DependencyProperty SizeProperty =
+        DependencyProperty.Register(nameof(Size), typeof(string), typeof(WmThumbnail), new PropertyMetadata("medium"));
+
+    public WmThumbnail()
+    {
+        DefaultStyleKey = typeof(WmThumbnail);
+        IsTabStop = false;
+    }
+
+    public string Title
+    {
+        get => (string)GetValue(TitleProperty);
+        set => SetValue(TitleProperty, value);
+    }
+
+    public Microsoft.UI.Xaml.Media.ImageSource? Icon
+    {
+        get => (Microsoft.UI.Xaml.Media.ImageSource?)GetValue(IconProperty);
+        set => SetValue(IconProperty, value);
+    }
+
+    /// <summary>The card icon's edge in DIPs, from the <c>Wm.IconSize.*</c> tokens.</summary>
+    public double IconSize
+    {
+        get => (double)GetValue(IconSizeProperty);
+        set => SetValue(IconSizeProperty, value);
+    }
+
+    /// <summary>True while the live window is drawn over the element.</summary>
+    public bool Live
+    {
+        get => (bool)GetValue(LiveProperty);
+        set => SetValue(LiveProperty, value);
+    }
+
+    public string Size
+    {
+        get => (string)GetValue(SizeProperty);
+        set => SetValue(SizeProperty, value);
+    }
+
+    protected override void OnApplyTemplate()
+    {
+        base.OnApplyTemplate();
+        UpdateState();
+    }
+
+    private void UpdateState() => VisualStateManager.GoToState(this, Live ? "Live" : "Card", useTransitions: false);
+}
+
+/// <summary>
 /// A <c>Stack</c> element. Its template must hold a <see cref="StackPanel"/> named <c>PART_Items</c>;
 /// the children are placed there whenever the template is applied.
 /// </summary>

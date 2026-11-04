@@ -13,7 +13,7 @@ public sealed record ViewNode(
     ElementAction? Action = null,
     ElementAction? ContextAction = null);
 
-public enum ElementKind { Text, Icon, Image, Button, Toggle, Stack, List, Progress, TextInput, Slider, Separator, Spacer }
+public enum ElementKind { Text, Icon, Image, Button, Toggle, Stack, List, Progress, TextInput, Slider, Separator, Spacer, Thumbnail }
 
 /// <summary>Exactly one of <see cref="Invoke"/>, <see cref="Event"/> or <see cref="Popup"/> is set.</summary>
 public sealed record ElementAction(InvokeAction? Invoke = null, string? Event = null, string? Popup = null);
@@ -56,7 +56,7 @@ public static partial class ViewValidator
         "maxHeight", "margin", "padding", "opacity", "cornerRadius",
     };
 
-    private static readonly string[] Common = ["automationName", "tooltip", "visible"];
+    private static readonly string[] Common = ["automationName", "tooltip", "visible", "hoverPopup"];
 
     private static readonly Dictionary<string, string[]> PropsByKind = new(StringComparer.Ordinal)
     {
@@ -72,6 +72,7 @@ public static partial class ViewValidator
         ["slider"] = ["value", "step"],
         ["separator"] = [],
         ["spacer"] = ["flex"],
+        ["thumbnail"] = ["window", "size"],
     };
 
     private static readonly HashSet<string> NeedsAutomationName = new(StringComparer.Ordinal) { "button", "toggle", "textInput", "slider", "list" };

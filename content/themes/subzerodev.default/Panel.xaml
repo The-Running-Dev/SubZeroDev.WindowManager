@@ -3,6 +3,14 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:wm="using:SubZeroDev.WindowManager.Host.Surfaces.Controls">
 
+    <!-- Thumbnail sizes, in DIPs. -->
+    <x:Double x:Key="Wm.Thumbnail.Width.Small">160</x:Double>
+    <x:Double x:Key="Wm.Thumbnail.Height.Small">90</x:Double>
+    <x:Double x:Key="Wm.Thumbnail.Width.Medium">240</x:Double>
+    <x:Double x:Key="Wm.Thumbnail.Height.Medium">135</x:Double>
+    <x:Double x:Key="Wm.Thumbnail.Width.Large">320</x:Double>
+    <x:Double x:Key="Wm.Thumbnail.Height.Large">180</x:Double>
+
     <Style x:Key="Wm.Panel" TargetType="wm:WmPanel">
         <Setter Property="Template">
             <Setter.Value>
