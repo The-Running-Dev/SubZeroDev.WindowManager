@@ -253,7 +253,10 @@ internal sealed class TestHook
         }));
     }
 
-    /// <summary>Runs <c>{ "op": "add" | "retitle" | "destroy", "count": n }</c> on the model-only windows.</summary>
+    /// <summary>
+    /// Runs <c>{ "op": "add" | "retitle" | "destroy", "count": n }</c> on the model-only windows; an add may carry
+    /// <c>"strip": false</c> for windows no strip lists.
+    /// </summary>
     private void RunSyntheticWindows(string json)
     {
         if (Synthetic is not { } synthetic || JsonNode.Parse(json) is not JsonObject request
@@ -265,7 +268,7 @@ internal sealed class TestHook
         switch ((string?)request["op"])
         {
             case "add":
-                synthetic.Add(number);
+                synthetic.Add(number, request["strip"] is not JsonValue strip || !strip.TryGetValue<bool>(out var listed) || listed);
                 break;
             case "retitle":
                 synthetic.Retitle(number);
@@ -573,8 +576,7 @@ internal sealed class TestHook
                     ["fontSize"] = FirstTextBlock(item.Element)?.FontSize,
                 }).ToArray()),
                 ["bounds"] = ScreenBounds(view.Root),
-                ["interactiveTotal"] = view.InteractiveElements().Count(),
-                ["interactive"] = new JsonArray(view.InteractiveElements().Take(InteractiveLimit()).Select(element => (JsonNode?)new JsonObject
+                ["interactive"] = new JsonArray(view.InteractiveElements().Select(element => (JsonNode?)new JsonObject
                 {
                     ["id"] = element.Name,
                     ["kind"] = element switch { WmToggle => "toggle", WmSlider => "slider", _ => "button" },
@@ -665,14 +667,6 @@ internal sealed class TestHook
             }).ToArray()),
         };
     }
-
-    /// <summary>
-    /// How many of a view's interactive elements the status lists. All of them, except while hundreds of
-    /// model-only windows are present (S25.11): listing three hundred strip buttons with their bounds four
-    /// times a second would be most of what the idle budget then measures, and no test that adds them reads
-    /// those buttons.
-    /// </summary>
-    private int InteractiveLimit() => Synthetic is { Count: > 20 } ? 20 : int.MaxValue;
 
     /// <summary>The element's bounds in physical screen pixels, or null before it is laid out.</summary>
     private JsonObject? ScreenBounds(FrameworkElement element)

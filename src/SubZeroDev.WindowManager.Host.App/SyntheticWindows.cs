@@ -25,14 +25,20 @@ internal sealed class SyntheticWindows(IWindowFacts inner, string monitorId) : I
 
     public WindowFacts? Read(nint handle) => _windows.TryGetValue(handle, out var facts) ? facts : inner.Read(handle);
 
-    /// <summary>Creates <paramref name="count"/> shown, titled application windows and tells the model.</summary>
-    public IReadOnlyList<nint> Add(int count)
+    /// <summary>
+    /// Creates <paramref name="count"/> shown, titled application windows and tells the model. With
+    /// <paramref name="strip"/> false they are cloaked, as a window on another desktop is: the model tracks and
+    /// publishes them, but no strip lists them, so a test can measure tracking apart from drawing hundreds of buttons.
+    /// </summary>
+    /// <param name="count">How many windows to create.</param>
+    /// <param name="strip">Whether the windows are of the kind a strip lists.</param>
+    public IReadOnlyList<nint> Add(int count, bool strip = true)
     {
         var handles = new List<nint>(count);
         for (var i = 0; i < count; i++)
         {
             var handle = (nint)Interlocked.Increment(ref _next);
-            _windows[handle] = Facts(handle, $"szd-synthetic-{handle:X}");
+            _windows[handle] = Facts(handle, $"szd-synthetic-{handle:X}", strip ? CloakState.None : CloakState.Shell);
             handles.Add(handle);
             _model!.Observe(new WindowObservation(handle, ObservationKind.Created));
         }
@@ -61,8 +67,8 @@ internal sealed class SyntheticWindows(IWindowFacts inner, string monitorId) : I
         }
     }
 
-    private WindowFacts Facts(nint handle, string title) => new(
+    private WindowFacts Facts(nint handle, string title, CloakState cloak = CloakState.None) => new(
         new WindowFingerprint(Environment.ProcessId, 1, (int)(handle & 0xFFFF), "szd.Synthetic"),
-        title, ExePath: @"C:\szd\synthetic.exe", Aumid: null, Owner: 0, monitorId, Visible: true, CloakState.None,
+        title, ExePath: @"C:\szd\synthetic.exe", Aumid: null, Owner: 0, monitorId, Visible: true, cloak,
         ToolWindow: false, NoActivate: false, AppWindow: true, Minimised: false, OwnProcess: false, IsShellWindow: false);
 }

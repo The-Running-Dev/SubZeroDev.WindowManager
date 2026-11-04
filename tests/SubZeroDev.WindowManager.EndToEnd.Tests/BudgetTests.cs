@@ -188,10 +188,14 @@ public sealed partial class BudgetTests
         run.WriteDefaultLayout((Guid.NewGuid(), Clock, "clock"), (Guid.NewGuid(), RunningWindows, "windows"), (Guid.NewGuid(), Launcher, "launcher"));
         run.Start(HostRun.GuardianExe);
         var status = await run.WaitForAsync(AllLive, Startup);
-        Synthetic(run, "add", Windows);
+        using var host = Process.GetProcessById((int)status["hostPid"]!);
+        var privateBefore = Megabytes(host.PrivateMemorySize64);
+
+        // Cloaked, as windows on other desktops are: tracked and published, but not drawn as three hundred strip buttons.
+        Synthetic(run, "add", Windows, strip: false);
         status = await run.WaitForAsync(s => (int?)s["windowModel"]?["synthetic"] == Windows, Startup);
 
-        using var host = Process.GetProcessById((int)status["hostPid"]!);
+        host.Refresh();
         var settle = await SettleAsync(host);
         var revisionBefore = (long)(await run.WaitForStatusAsync())["windowModel"]!["revision"]!;
         var cpuBefore = host.TotalProcessorTime;
@@ -209,7 +213,7 @@ public sealed partial class BudgetTests
         host.Refresh();
         var revisionAfter = (long)(await run.WaitForStatusAsync())["windowModel"]!["revision"]!;
         TestContext.Current.TestOutputHelper?.WriteLine(
-            $"settled after {settle}; revisions during idle {revisionAfter - revisionBefore}; cpu % per 10 s: {string.Join(", ", slices)}");
+            $"private MB before the windows {privateBefore:0.#}; settled after {settle}; revisions during idle {revisionAfter - revisionBefore}; cpu % per 10 s: {string.Join(", ", slices)}");
         var measured = new Dictionary<string, double>(StringComparer.Ordinal)
         {
             ["hostIdleCpuPercent"] = (host.TotalProcessorTime - cpuBefore).TotalMilliseconds / wall.Elapsed.TotalMilliseconds * 100,
@@ -243,8 +247,10 @@ public sealed partial class BudgetTests
         return elapsed.Elapsed;
     }
 
-    private static void Synthetic(HostRun run, string op, int count) =>
-        File.WriteAllText(Path.Combine(run.HookDirectory, "synthetic-windows"), new JsonObject { ["op"] = op, ["count"] = count }.ToJsonString());
+    private static void Synthetic(HostRun run, string op, int count, bool strip = true) =>
+        File.WriteAllText(
+            Path.Combine(run.HookDirectory, "synthetic-windows"),
+            new JsonObject { ["op"] = op, ["count"] = count, ["strip"] = strip }.ToJsonString());
 
     /// <summary>One guardian start in replacement mode with no layout of its own, so the shell layout is shown.</summary>
     private static async Task<double> MeasureReplacementOnceAsync()
