@@ -21,6 +21,12 @@ public sealed class PopupSurface : Surface
 
     public string PopupId { get; }
 
+    /// <summary>
+    /// The key of the list item the popup was last opened for by a <c>hoverPopup</c> prop (the item's <c>key</c>), else
+    /// null. Set before <see cref="Plugin.OnPopupOpenedAsync"/> runs.
+    /// </summary>
+    public string? OpenedFor { get; internal set; }
+
     /// <summary>Asks the host to show the popup at the anchor; it answers once the window is shown.</summary>
     public Task<SdkResult> OpenAsync(PopupAnchor anchor, CancellationToken ct) =>
         HostRequests.SendAsync(Connection, Methods.PopupOpen, new PopupOpenParams(PopupId, anchor), PopupId, ct);

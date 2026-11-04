@@ -93,6 +93,9 @@ internal sealed class TestHook
     /// <summary>The notification area in replacement mode; null otherwise.</summary>
     public TrayHost? Tray { get; init; }
 
+    /// <summary>The taskbar badge channel in replacement mode; null otherwise (S29).</summary>
+    public TaskbarBackchannel? Taskbar { get; init; }
+
     /// <summary>The desktop and its wallpaper in replacement mode; null otherwise.</summary>
     public DesktopSurface? Desktop { get; init; }
 
@@ -216,6 +219,11 @@ internal sealed class TestHook
                 Post(() => RunInvoke(invoke));
             }
 
+            if (Take("taskbar") is { Length: > 0 } taskbar)
+            {
+                Post(() => RunTaskbar(taskbar));
+            }
+
             if (Take("monitors") is { } monitors)
             {
                 Post(() => SetMonitors(string.Join('\n', monitors)));
@@ -242,6 +250,33 @@ internal sealed class TestHook
         finally
         {
             Volatile.Write(ref _reading, 0);
+        }
+    }
+
+    /// <summary>
+    /// Stands in for applications calling <c>ITaskbarList3</c>: each line is <c>progress &lt;hwnd&gt; &lt;none|indeterminate|normal|error|paused&gt; [value]</c>
+    /// or <c>overlay &lt;hwnd&gt; &lt;description|-&gt;</c>; the real <c>Shell_TrayWnd</c> is never involved (S29.5).
+    /// </summary>
+    private void RunTaskbar(string[] lines)
+    {
+        foreach (var line in lines)
+        {
+            var parts = line.Split([' '], 4, StringSplitOptions.RemoveEmptyEntries);
+            if (Taskbar is null || parts.Length < 3 || !nint.TryParse(parts[1], out var window))
+            {
+                continue;
+            }
+
+            if (parts[0] == "progress" && Enum.TryParse<ProgressState>(parts[2], ignoreCase: true, out var state))
+            {
+                double? value = parts.Length > 3 && double.TryParse(parts[3], System.Globalization.CultureInfo.InvariantCulture, out var number) ? number : null;
+                Taskbar.Inject(new TaskbarUpdate.Progress(window, new WindowProgress(state, value)));
+            }
+            else if (parts[0] == "overlay")
+            {
+                WindowOverlay? overlay = parts[2] == "-" ? null : new WindowOverlay(new IconRef.Named("overlay"), string.Join(' ', parts.Skip(2)));
+                Taskbar.Inject(new TaskbarUpdate.Overlay(window, overlay));
+            }
         }
     }
 
@@ -614,6 +649,7 @@ internal sealed class TestHook
                     ["visible"] = element.Visibility == Microsoft.UI.Xaml.Visibility.Visible,
                     ["active"] = (element as WmButton)?.Active,
                     ["attention"] = (element as WmButton)?.Attention,
+                    ["badge"] = (element as WmButton)?.Badge,
                     ["activeState"] = element is WmButton ? CurrentState(element, "ActiveStates") : null,
                     ["itemKey"] = view.InfoOf(element)?.ItemKey,
                     ["iconSource"] = view.InfoOf(element)?.IconSource,
@@ -650,6 +686,12 @@ internal sealed class TestHook
                     ["editedAtUtcMs"] = input.EditedAtUtcMs,
                 }).ToArray()),
                 ["texts"] = new JsonArray(popup.View.Texts().Select(text => (JsonNode?)text).ToArray()),
+                ["thumbnails"] = new JsonArray(popup.View.Thumbnails().Select(thumb => (JsonNode?)new JsonObject
+                {
+                    ["id"] = thumb.Id,
+                    ["mode"] = thumb.Mode,
+                    ["window"] = thumb.Window,
+                }).ToArray()),
                 ["selectedKey"] = popup.View.SelectedKey("results"),
                 ["items"] = new JsonArray(popup.View.InteractiveElements().Select(element => (JsonNode?)new JsonObject
                 {

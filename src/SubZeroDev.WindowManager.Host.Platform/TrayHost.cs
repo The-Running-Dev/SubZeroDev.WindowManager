@@ -33,6 +33,7 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
     private const string RealCreatedMessage = "TaskbarCreated";
     private const uint WmCopyData = 0x004A;
     private const uint WmTimer = 0x0113;
+    private const uint RegisteredMessages = 0xC000;
     private const uint WmContextMenu = 0x007B;
     private const uint WmLButtonDown = 0x0201;
     private const uint WmLButtonUp = 0x0202;
@@ -96,6 +97,9 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
     }
 
     public event EventHandler? IconsChanged;
+
+    /// <summary>Offered every registered message and every <c>WM_COPYDATA</c> of an unknown kind that reaches the tray window; set by the taskbar backchannel.</summary>
+    internal Func<TaskbarMessage, bool>? Unhandled { get; set; }
 
     /// <summary>Creates the tray window and announces it.</summary>
     public static TrayHost Start(string? hookDirectory, Action<string> log, TrayAppBars? appBars)
@@ -315,10 +319,12 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
     /// <summary>Tells running apps a taskbar exists, so they add their icons again.</summary>
     private void Announce()
     {
-        var message = Native.RegisterWindowMessage(CreatedMessageName);
-        Native.SendNotifyMessage(Native.HwndBroadcast, message, 0, 0);
+        Broadcast(Native.RegisterWindowMessage(CreatedMessageName));
         Announced = true;
     }
+
+    /// <summary>Sends a registered message to every top-level window without waiting.</summary>
+    internal static void Broadcast(uint message) => Native.SendNotifyMessage(Native.HwndBroadcast, message, 0, 0);
 
     private nint CopyData(nint sender, CopyDataStruct* copy)
     {
@@ -327,7 +333,7 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
         {
             1 => Notify(data) ? 1 : 0,
             0 => AppBar(data),
-            _ => 0,
+            _ => Unhandled?.Invoke(new TaskbarMessage(WmCopyData, (nuint)sender, (nint)copy->Kind)) == true ? 1 : 0,
         };
     }
 
@@ -696,6 +702,19 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
             {
                 // An exception must never cross back into user32.
                 host._log($"The tray failed to handle message 0x{message:X}: {e.Message}");
+                return 0;
+            }
+        }
+
+        if (message >= RegisteredMessages && Hosts.TryGetValue(window, out var receiver) && receiver.Unhandled is { } sink)
+        {
+            try
+            {
+                return sink(new TaskbarMessage(message, wParam, lParam)) ? 1 : 0;
+            }
+            catch (Exception e)
+            {
+                receiver._log($"The tray failed to handle message 0x{message:X}: {e.Message}");
                 return 0;
             }
         }

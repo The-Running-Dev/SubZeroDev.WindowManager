@@ -101,7 +101,7 @@ public enum MonitorAnchor { Active, Pointer, Primary }
 
 public sealed record PopupCloseParams(string PopupId);
 
-public sealed record PopupOpenedParams(string PopupId, PopupTrigger Trigger);
+public sealed record PopupOpenedParams(string PopupId, PopupTrigger Trigger, string? ItemKey = null);
 
 public sealed record PopupClosedParams(string PopupId, PopupCloseReason Reason);
 

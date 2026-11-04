@@ -16,4 +16,7 @@
   <ItemGroup>
     <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SubZeroDev.WindowManager.Host.Core.Tests" />
+  </ItemGroup>
 </Project>

@@ -62,7 +62,7 @@ public sealed class IconPackTests
         }));
         WritePreset(run, "subzerodev.default", []);
         WriteSettings(run);
-        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows"));
+        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows", RunningWindowsTests.PerWindow()));
         run.Start(HostRun.HostExe);
         await run.WaitForAsync(s => s["contributions"]!.AsArray().Any(c => (string?)c!["plugin"] == RunningWindows && c["reason"] is null),
             Startup);

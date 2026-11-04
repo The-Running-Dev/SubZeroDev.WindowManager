@@ -426,7 +426,7 @@ Acceptance:
 Out of scope: Start menu; Snap layouts.
 
 ## S29 — Taskbar depth
-Status: todo
+Status: done
 Delivers: The running-windows strip groups windows by application, shows a hover preview with a live thumbnail, opens jump lists, and shows progress and overlays on buttons.
 Touches: plugin `subzerodev.running-windows` (`grouping`, `labels`, `windows.openJumpList`, `preview` and `jumplist` popups); Host.Platform (`ITaskbarBackchannel`); Protocol and Sdk (`hoverPopup`)
 Depends on: S26

@@ -14,6 +14,9 @@ public sealed partial class RunningWindowsTests
 {
     private const string RunningWindows = "subzerodev.running-windows";
     private const string Subscriber = "samples.subscriber";
+
+    /// <summary>Settings for one button per window: the fixture windows share an executable, which the default grouping would fold into one button.</summary>
+    internal static JsonObject PerWindow() => new() { ["grouping"] = "never" };
     private static readonly TimeSpan Startup = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan Second = TimeSpan.FromSeconds(1);
 
@@ -82,8 +85,8 @@ public sealed partial class RunningWindowsTests
         var mine = Guid.NewGuid();
         using var run = HostRun.Create();
         run.WriteDefaultLayout(
-            (all, RunningWindows, "windows", new JsonObject { ["scope"] = "allMonitors" }),
-            (mine, RunningWindows, "windows", new JsonObject { ["scope"] = "thisMonitor" }));
+            (all, RunningWindows, "windows", new JsonObject { ["scope"] = "allMonitors", ["grouping"] = "never" }),
+            (mine, RunningWindows, "windows", new JsonObject { ["scope"] = "thisMonitor", ["grouping"] = "never" }));
         run.Start(HostRun.HostExe);
         using var fixture = FixtureWindows.Open();
         var primary = Interactive.PrimaryDevice();
@@ -127,7 +130,7 @@ public sealed partial class RunningWindowsTests
             manifest["commands"] = new JsonArray();
             manifest["subscribes"] = new JsonArray("windows.running");
         });
-        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows"), (Guid.NewGuid(), Subscriber, "probe"));
+        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows", PerWindow()), (Guid.NewGuid(), Subscriber, "probe", null));
         data = Path.Combine(run.DataRoot, "plugin-data", Subscriber);
         Directory.CreateDirectory(data);
         run.Start(HostRun.HostExe);

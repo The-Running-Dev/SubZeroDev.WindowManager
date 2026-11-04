@@ -30,7 +30,7 @@ public sealed partial class ShellRoleTests
     {
         HostRun.RequireDesktop();
         using var run = HostRun.Create();
-        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows"));
+        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows", RunningWindowsTests.PerWindow()));
         run.Start(HostRun.HostExe, "--mode", "replacement");
         await run.WaitForAsync(s => (string?)s["shellRoles"]?["state"] == "Held" && Live(s), Startup);
 
@@ -63,7 +63,7 @@ public sealed partial class ShellRoleTests
         HostRun.RequireDesktop();
         using var run = HostRun.Create();
         Hook(run, "shell-owner", "4242");
-        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows"));
+        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows", RunningWindowsTests.PerWindow()));
         run.Start(HostRun.HostExe, "--mode", "replacement");
 
         var status = await run.WaitForAsync(s => (string?)s["shellRoles"]?["state"] == "Taken" && Live(s), Startup);
@@ -80,7 +80,7 @@ public sealed partial class ShellRoleTests
     {
         HostRun.RequireDesktop();
         using var run = HostRun.Create();
-        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows"));
+        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows", RunningWindowsTests.PerWindow()));
         run.Start(HostRun.HostExe, "--mode", "replacement");
         await run.WaitForAsync(s => (bool?)s["ready"] == true && (string?)s["shellRoles"]?["state"] == "Held", Startup);
         await WaitUntilAsync(() => DesktopActions(run).Contains("minimized-hide"), "minimized-hide");
@@ -134,7 +134,7 @@ public sealed partial class ShellRoleTests
     {
         HostRun.RequireDesktop();
         using var run = HostRun.Create();
-        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows"));
+        run.WriteDefaultLayout((Guid.NewGuid(), RunningWindows, "windows", RunningWindowsTests.PerWindow()));
         run.Start(HostRun.GuardianExe, "--mode", "replacement");
         var status = await run.WaitForStatusAsync();
         await WaitUntilAsync(() => DesktopActions(run).Any(line => line.StartsWith("work-area ", StringComparison.Ordinal)), "the work area");

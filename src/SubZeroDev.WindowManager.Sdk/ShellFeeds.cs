@@ -36,10 +36,12 @@ public static class ShellFeedIds
 /// <param name="Active">Whether the window is the foreground one, or the last one while a panel has the foreground.</param>
 /// <param name="Minimized">Whether the window is minimised.</param>
 /// <param name="Attention">Whether the window asks for attention.</param>
+/// <param name="Progress">The taskbar progress the program reports for it; null when it reports none.</param>
+/// <param name="Overlay">The description of the overlay badge the program sets; null when it sets none.</param>
 public sealed record WindowFeedItem(string WindowKey, long Hwnd, int ProcessId, string Title, string? Exe, string? Aumid,
     string GroupKey, string? OwnerKey, string MonitorId, string DesktopId, bool PinnedToAll, bool Visible, string Cloak,
     bool ShellHidden, bool ToolWindow, bool NoActivate, bool AppWindow, bool Titled, long FirstSeen, long ActivatedAt,
-    bool Active, bool Minimized, bool Attention)
+    bool Active, bool Minimized, bool Attention, FeedProgress? Progress = null, string? Overlay = null)
 {
     /// <summary>
     /// The rule of a taskbar strip: visible, not cloaked, titled, and either marked as an app window or unowned and
@@ -47,6 +49,11 @@ public sealed record WindowFeedItem(string WindowKey, long Hwnd, int ProcessId, 
     /// </summary>
     public bool IsStripStyle => Visible && Cloak == "none" && Titled && (AppWindow || (OwnerKey is null && !ToolWindow && !NoActivate));
 }
+
+/// <summary>The progress a program reports on its taskbar button.</summary>
+/// <param name="State">One of <c>indeterminate</c>, <c>normal</c>, <c>error</c> and <c>paused</c>.</param>
+/// <param name="Value">0..1 while the state is not indeterminate; null when unknown.</param>
+public sealed record FeedProgress(string State, double? Value);
 
 /// <param name="Id">The desktop's id.</param>
 /// <param name="WindowCount">The windows that belong to it, pinned ones aside.</param>
@@ -95,8 +102,14 @@ public sealed record WindowsFeedState(long Revision, IReadOnlyList<WindowFeedIte
             Text(o, "groupKey") ?? string.Empty, Text(o, "ownerKey"), Text(o, "monitorId") ?? string.Empty,
             Text(o, "desktopId") ?? string.Empty, Flag(o, "pinnedToAll"), Flag(o, "visible"), Text(o, "cloak") ?? "none",
             Flag(o, "shellHidden"), Flag(o, "toolWindow"), Flag(o, "noActivate"), Flag(o, "appWindow"), Flag(o, "titled"),
-            Long(o, "firstSeen") ?? 0, Long(o, "activatedAt") ?? 0, Flag(o, "active"), Flag(o, "minimized"), Flag(o, "attention"));
+            Long(o, "firstSeen") ?? 0, Long(o, "activatedAt") ?? 0, Flag(o, "active"), Flag(o, "minimized"), Flag(o, "attention"),
+            ProgressOf(o["progress"] as JsonObject), o["overlay"] is JsonObject overlay ? Text(overlay, "description") ?? string.Empty : null);
     }
+
+    private static FeedProgress? ProgressOf(JsonObject? o) =>
+        o is not null && Text(o, "state") is { } state && state != "none"
+            ? new FeedProgress(state, o["value"] is JsonValue value && value.TryGetValue<double>(out var number) ? number : null)
+            : null;
 
     internal static long? Long(JsonObject o, string name) =>
         o[name] is JsonValue value && value.TryGetValue<long>(out var number) ? number : null;
