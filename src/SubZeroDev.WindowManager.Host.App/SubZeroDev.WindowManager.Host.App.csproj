@@ -34,6 +34,7 @@
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Desktops\SubZeroDev.WindowManager.Plugins.Desktops.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.QuickSettings\SubZeroDev.WindowManager.Plugins.QuickSettings.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.PowerMenu\SubZeroDev.WindowManager.Plugins.PowerMenu.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\SubZeroDev.WindowManager.Plugins.Switcher\SubZeroDev.WindowManager.Plugins.Switcher.csproj" ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
   <ItemGroup>
     <!-- Built-in themes, layouts and presets ship beside the host. They are None, not Content, so the
@@ -54,6 +55,7 @@
       <DesktopsFiles Include="..\SubZeroDev.WindowManager.Plugins.Desktops\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
       <QuickSettingsFiles Include="..\SubZeroDev.WindowManager.Plugins.QuickSettings\bin\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\**\*" />
       <PowerMenuFiles Include="..\SubZeroDev.WindowManager.Plugins.PowerMenu\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
+      <SwitcherFiles Include="..\SubZeroDev.WindowManager.Plugins.Switcher\bin\$(Configuration)\net10.0\$(RuntimeIdentifier)\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(ClockFiles)" DestinationFiles="@(ClockFiles->'$(OutDir)content\plugins\subzerodev.clock\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(RunningWindowsFiles)" DestinationFiles="@(RunningWindowsFiles->'$(OutDir)content\plugins\subzerodev.running-windows\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
@@ -66,5 +68,6 @@
     <Copy SourceFiles="@(DesktopsFiles)" DestinationFiles="@(DesktopsFiles->'$(OutDir)content\plugins\subzerodev.desktops\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(QuickSettingsFiles)" DestinationFiles="@(QuickSettingsFiles->'$(OutDir)content\plugins\subzerodev.quick-settings\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(PowerMenuFiles)" DestinationFiles="@(PowerMenuFiles->'$(OutDir)content\plugins\subzerodev.power-menu\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(SwitcherFiles)" DestinationFiles="@(SwitcherFiles->'$(OutDir)content\plugins\subzerodev.switcher\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

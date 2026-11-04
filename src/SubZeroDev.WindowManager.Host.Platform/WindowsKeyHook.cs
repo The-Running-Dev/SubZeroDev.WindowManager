@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading.Channels;
 using SubZeroDev.WindowManager.Host.Core;
 
 namespace SubZeroDev.WindowManager.Host.Platform;
@@ -28,6 +29,7 @@ public sealed unsafe class WindowsKeyHook : IWindowsKeyHook
     private readonly WindowsKeyTracker _tracker;
     private readonly Thread _thread;
     private readonly ManualResetEventSlim _ready = new();
+    private readonly Channel<KeyChord> _chords = Channel.CreateUnbounded<KeyChord>(new UnboundedChannelOptions { SingleReader = true });
     private uint _threadId;
     private nint _hook;
     private int _error;
@@ -40,6 +42,7 @@ public sealed unsafe class WindowsKeyHook : IWindowsKeyHook
         _testOnly = testOnly;
         _tracker = new WindowsKeyTracker(bound);
         _thread = new Thread(Loop) { IsBackground = true, Name = "WindowsKeyHook", Priority = ThreadPriority.AboveNormal };
+        _ = Task.Run(() => ChordPump.RunAsync(_chords.Reader, chord => Pressed?.Invoke(this, chord)));
     }
 
     public event EventHandler<KeyChord>? Pressed;
@@ -79,6 +82,7 @@ public sealed unsafe class WindowsKeyHook : IWindowsKeyHook
         }
 
         _disposed = true;
+        _chords.Writer.TryComplete();
         Native.PostThreadMessage(_threadId, Native.WmQuit, 0, 0);
         _thread.Join(TimeSpan.FromSeconds(2));
         Interlocked.CompareExchange(ref s_current, null, this);
@@ -128,15 +132,15 @@ public sealed unsafe class WindowsKeyHook : IWindowsKeyHook
         var verdict = _tracker.OnKey(key->VirtualKey, down);
         if (verdict.Chord is { } chord)
         {
-            ThreadPool.UnsafeQueueUserWorkItem(_ => Pressed?.Invoke(this, chord), null);
+            _chords.Writer.TryWrite(chord);
         }
 
         var swallow = marked || verdict.Swallow;
         if (verdict.Mask && !_testOnly)
         {
-            // This Windows key up is held back and sent again after a key of no meaning, so Windows sees the
-            // Windows key used in a chord and opens no Start menu.
-            SendMaskedUp((ushort)key->VirtualKey);
+            // This Windows or Alt key up is held back and sent again after a key of no meaning, so Windows sees the
+            // key used in a chord and opens no Start menu (or, for Alt, no menu bar).
+            SendMaskedUp((ushort)key->VirtualKey, (key->Flags & Native.KeyEventFExtendedKey) != 0);
             swallow = true;
         }
 
@@ -153,13 +157,32 @@ public sealed unsafe class WindowsKeyHook : IWindowsKeyHook
         return swallow ? 1 : Native.CallNextHookEx(0, code, wParam, (nint)key);
     }
 
-    private static void SendMaskedUp(ushort windowsKey)
+    private static void SendMaskedUp(ushort key, bool extended)
     {
         var inputs = stackalloc KeyboardInput[3];
         inputs[0] = new KeyboardInput { Type = Native.InputKeyboard, VirtualKey = MaskKey, ExtraInfo = MaskMarker };
         inputs[1] = new KeyboardInput { Type = Native.InputKeyboard, VirtualKey = MaskKey, Flags = Native.KeyEventFKeyUp, ExtraInfo = MaskMarker };
-        inputs[2] = new KeyboardInput { Type = Native.InputKeyboard, VirtualKey = windowsKey, Flags = Native.KeyEventFKeyUp | Native.KeyEventFExtendedKey, ExtraInfo = MaskMarker };
+        inputs[2] = new KeyboardInput { Type = Native.InputKeyboard, VirtualKey = key, Flags = Native.KeyEventFKeyUp | (extended ? Native.KeyEventFExtendedKey : 0), ExtraInfo = MaskMarker };
         Native.SendInput(3, inputs, sizeof(KeyboardInput));
+    }
+}
+
+/// <summary>Raises each chord in the order the hook completed them: a step, then a commit, must not swap.</summary>
+internal static class ChordPump
+{
+    public static async Task RunAsync(ChannelReader<KeyChord> reader, Action<KeyChord> raise)
+    {
+        await foreach (var chord in reader.ReadAllAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                raise(chord);
+            }
+            catch (Exception)
+            {
+                // A handler that throws must not stop the keys that follow.
+            }
+        }
     }
 }
 

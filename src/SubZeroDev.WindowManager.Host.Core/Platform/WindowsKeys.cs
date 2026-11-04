@@ -22,12 +22,15 @@ public sealed class WindowsKeyTracker
     public const uint LeftWin = 0x5B;
     public const uint RightWin = 0x5C;
     public const uint Escape = 0x1B;
+    public const uint Tab = 0x09;
 
     private readonly Func<KeyModifiers, uint, bool> _bound;
     private readonly HashSet<uint> _held = [];
     private readonly HashSet<uint> _swallowed = [];
     private bool _winOther;
     private bool _winPassedOther;
+    private bool _altStepped;
+    private bool _altCancelled;
 
     /// <summary>A tracker that swallows Win+key for the keys <paramref name="boundWithWin"/> names.</summary>
     public WindowsKeyTracker(Func<uint, bool> boundWithWin) : this((modifiers, vk) => modifiers == KeyModifiers.Win && boundWithWin(vk))
@@ -58,6 +61,11 @@ public sealed class WindowsKeyTracker
             return down ? WinDown(vk) : WinUp(vk);
         }
 
+        if (IsAlt(vk))
+        {
+            return down ? AltDown(vk) : AltUp(vk);
+        }
+
         if (!down)
         {
             _held.Remove(vk);
@@ -65,6 +73,11 @@ public sealed class WindowsKeyTracker
         }
 
         var repeat = !_held.Add(vk);
+        if ((_altStepped || _altCancelled) && AltKey(vk) is { } during)
+        {
+            return during;
+        }
+
         if (_swallowed.Contains(vk))
         {
             return new KeyVerdict(true, null, false);
@@ -82,6 +95,14 @@ public sealed class WindowsKeyTracker
 
             _winPassedOther = true;
             return default;
+        }
+
+        if (vk == Tab && modifiers is KeyModifiers.Alt or (KeyModifiers.Alt | KeyModifiers.Shift) && _bound(modifiers, vk))
+        {
+            // Alt+Tab is a sequence (flow 14): this opens it, and each Tab while Alt is held, auto-repeat included, steps it.
+            _altStepped = true;
+            _swallowed.Add(vk);
+            return new KeyVerdict(true, new KeyChord(modifiers, vk), false);
         }
 
         if (vk == Escape && modifiers == KeyModifiers.Ctrl)
@@ -127,6 +148,56 @@ public sealed class WindowsKeyTracker
         _winOther = false;
         _winPassedOther = false;
         return new KeyVerdict(false, lone ? new KeyChord(KeyModifiers.Win, 0) : null, mask);
+    }
+
+    private static bool IsAlt(uint vk) => vk is 0x12 or 0xA4 or 0xA5;
+
+    private KeyVerdict AltDown(uint vk)
+    {
+        _held.Add(vk);
+        return default;
+    }
+
+    /// <summary>
+    /// Releasing the last Alt key ends an Alt+Tab sequence: it commits unless Esc cancelled it. The release itself
+    /// goes on, but the hook sends a key of no meaning first, so the program in front opens no menu bar.
+    /// </summary>
+    private KeyVerdict AltUp(uint vk)
+    {
+        if (!_held.Remove(vk) || Modifiers().HasFlag(KeyModifiers.Alt) || !(_altStepped || _altCancelled))
+        {
+            return default;
+        }
+
+        var commit = _altStepped;
+        _altStepped = false;
+        _altCancelled = false;
+        return new KeyVerdict(false, commit ? new KeyChord(KeyModifiers.Alt, 0) : null, true);
+    }
+
+    /// <summary>
+    /// The keys that matter once an Alt+Tab sequence has begun: Esc cancels it, and a Tab after the cancel is still
+    /// swallowed so the classic switcher does not open under it. Null for any other key.
+    /// </summary>
+    private KeyVerdict? AltKey(uint vk)
+    {
+        if (vk == Escape && _altStepped)
+        {
+            _altStepped = false;
+            _altCancelled = true;
+            _swallowed.Add(vk);
+            return new KeyVerdict(true, new KeyChord(KeyModifiers.Alt, Escape), false);
+        }
+
+        if (vk == Tab)
+        {
+            _swallowed.Add(vk);
+            var modifiers = Modifiers();
+            var step = _altStepped && modifiers is KeyModifiers.Alt or (KeyModifiers.Alt | KeyModifiers.Shift);
+            return new KeyVerdict(true, step ? new KeyChord(modifiers, vk) : null, false);
+        }
+
+        return null;
     }
 
     private KeyModifiers Modifiers()

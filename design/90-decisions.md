@@ -18,6 +18,22 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-05 — S31: the Alt+Tab sequence lives in the key tracker, chords reach the host in order, and the switcher owns only the list
+- **Context:** S31 takes Alt+Tab from Windows when the `subzerodev.switcher` plugin is running. The sequence spans several key events (Alt held, Tab pressed repeatedly, Alt released or Esc), so it needed a home that sees every key, and the plugin needed a reason to be started.
+- **Chosen:**
+  - **The sequence is a small state machine in `WindowsKeyTracker`** (`WindowsKeys.cs`). Alt+Tab opens it only when the chord is bound (`SwitcherBindings` is non-default, so it binds only when the command exists and its provider is available: the I35 pass-through for S31.2). While it is open every Tab (and Alt+Shift+Tab) is swallowed and yields `switcher.step { backwards }`; releasing Alt yields the pseudo-chord `Alt+0`, bound to `switcher.commit`; Esc yields `Alt+Escape`, bound to `switcher.cancel`, and the release that follows commits nothing. Alt alone and Alt with any other key are left to Windows.
+  - **Chords are queued in order.** The low-level hook thread used to raise each chord itself, which let a commit overtake a step. Chords now go through an unbounded channel drained by one pump (`ChordPump`), and `App` runs Alt chords through an ordered chain, so step, step, commit reach the plugin in the order they were typed.
+  - **The Alt release is masked.** When the sequence ends, the hook sends a harmless key (0xE8) before the Alt-up passes on, so the program in front does not take a lone Alt press for a menu-bar toggle. The mask is skipped under the test hook, where only marked keys exist.
+  - **The plugin owns the list and nothing else (I39).** `switcher.step` opens the `switcher` overlay popup (first step selects the second entry; later steps cycle), `switcher.commit` activates the selection through `host.window.activate` and closes the popup, `switcher.cancel` closes it and re-activates the window that was in front if it was active. The list is the window feed's current-desktop-plus-pinned strip windows, minimised included, an owned window folded into its owner, ordered by `activatedAt` descending.
+  - **A `panelItem` contribution was added** (`switcher`, a small "Windows" button). The host starts a plugin only when a layout places one of its contributions, so a plugin that contributes only commands and a popup would never run. The shell layout places it in the start zone; without it Alt+Tab stays with Windows.
+  - **`switcher.pick { windowKey }` is additive:** the contract names step, commit and cancel; a click on an entry needs an explicit pick, which activates it and closes the popup.
+  - **Test hook:** synthetic windows can now be activated (`SyntheticForeground` marks them foreground in the model and touches no real window), and the status reports `active` for popup items and synthetic windows.
+- **Rejected:**
+  - **Registering Alt+Tab with `RegisterHotKey`:** Windows reserves it; only the low-level hook can take it.
+  - **Raising chords from the hook thread:** ordering across a step and a commit is not guaranteed.
+  - **A dedicated host-side switcher:** the slice is droppable (S31.3); a plugin keeps it so, with the classic switcher as the fallback.
+- **Consequences:** a real Alt+Tab under the shell is a manual check for Ben (recorded in the pull request): the Alt-release mask suppressing the foreground program's menu bar, the overlay taking and returning focus, and real thumbnails. The automated tests use marked keys and synthetic windows, and the DWM thumbnails of synthetic windows fall back to cards.
+
 ## 2026-11-05 — S30: the desktop menu is a keyboard-first popup, copy and paste stay inside the Desktop, and the config store reads presets at v2
 - **Context:** S30 adds a file menu to the desktop icons and a wallpaper per monitor. Three parts of the contract needed a decision: where the menu opens, what "copy" means, and how a v2 preset gets past the store's schema gate.
 - **Chosen:**

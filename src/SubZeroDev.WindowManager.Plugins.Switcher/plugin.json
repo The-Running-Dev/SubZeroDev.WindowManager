@@ -1,0 +1,30 @@
+{
+  "manifestVersion": 1,
+  "id": "subzerodev.switcher",
+  "version": "0.1.0",
+  "displayName": "Window switcher",
+  "publisher": "SubZeroDev",
+  "description": "The themed Alt+Tab: live pictures of the windows on the current desktop. Alt+Tab is left to Windows while this plugin is not running.",
+  "hostApi": "^1.1",
+  "entry": { "path": "SubZeroDev.WindowManager.Plugins.Switcher.exe", "args": [] },
+  "capabilities": [ "windows.read", "windows.activate" ],
+  "modes": [ "replacement" ],
+  "requiresExplorer": false,
+  "contributions": [
+    {
+      "id": "switcher",
+      "kind": "panelItem",
+      "displayName": "Window switcher",
+      "multiInstance": false
+    }
+  ],
+  "commands": [
+    { "id": "switcher.step", "title": "Select the next window", "argsSchema": { "type": "object", "properties": { "backwards": { "type": "boolean" } } } },
+    { "id": "switcher.commit", "title": "Go to the selected window" },
+    { "id": "switcher.cancel", "title": "Close the switcher" },
+    { "id": "switcher.pick", "title": "Go to a window", "argsSchema": { "type": "object", "properties": { "windowKey": { "type": "string" } } } }
+  ],
+  "popups": [ { "id": "switcher", "placement": "overlay" } ],
+  "subscribes": [ "host.windows", "host.desktops" ],
+  "settingsVersion": 1
+}

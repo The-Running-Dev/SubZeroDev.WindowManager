@@ -221,7 +221,30 @@ internal static partial class Interactive
     /// </summary>
     public static void PressMarked(params ushort[] keys) => Send(keys, TestMarker);
 
+    /// <summary>Marked key-downs in order, with no release: Alt held across several Tabs (S31). Pair each with <see cref="ReleaseMarked"/>.</summary>
+    public static void HoldMarked(params ushort[] keys) => SendEach(keys, up: false);
+
+    /// <summary>Marked key-ups in order, for keys <see cref="HoldMarked"/> left down.</summary>
+    public static void ReleaseMarked(params ushort[] keys) => SendEach(keys, up: true);
+
     private const nint TestMarker = 0x535A574B;
+
+    private static unsafe void SendEach(ushort[] keys, bool up)
+    {
+        const uint Keyboard = 1;
+        const uint KeyUp = 0x0002;
+        var inputs = stackalloc KeyInput[keys.Length];
+        for (var i = 0; i < keys.Length; i++)
+        {
+            inputs[i] = new KeyInput { Type = Keyboard, VirtualKey = keys[i], Flags = up ? KeyUp : 0, ExtraInfo = TestMarker };
+        }
+
+        var sent = SendInput((uint)keys.Length, inputs, sizeof(KeyInput));
+        if (sent != keys.Length)
+        {
+            throw new InvalidOperationException($"SendInput sent {sent} of {keys.Length} inputs.");
+        }
+    }
 
     private static unsafe void Send(ushort[] keys, nint extraInfo)
     {
