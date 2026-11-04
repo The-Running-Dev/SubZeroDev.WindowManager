@@ -409,18 +409,33 @@ public sealed class WindowModel : IWindowModel
             }
 
             _dirty = false;
-            snapshot = _current = new WindowSnapshot(++_revision, [.. _entries.Select(e => Project(e, _foreground))]);
+            var keys = new Dictionary<nint, WindowKey>(_entries.Count);
+            foreach (var entry in _entries)
+            {
+                keys.TryAdd(entry.Key.Handle, entry.Key);
+            }
+
+            snapshot = _current = new WindowSnapshot(++_revision, [.. _entries.Select(e => Project(e, _foreground, keys))]);
         }
 
         Changed?.Invoke(this, snapshot);
     }
 
-    private ManagedWindow Project(Entry entry, nint foreground)
+    /// <param name="entry">The window to project.</param>
+    /// <param name="foreground">The foreground handle.</param>
+    /// <param name="keys">The keys of every tracked handle, built once per publish so a snapshot is linear; null looks the owner up directly.</param>
+    private ManagedWindow Project(Entry entry, nint foreground, Dictionary<nint, WindowKey>? keys = null)
     {
         var f = entry.Facts;
-        var owner = f.Owner == 0
-            ? (WindowKey?)null
-            : _entries.Find(e => e.Key.Handle == f.Owner)?.Key ?? new WindowKey(f.Owner, 0);
+        WindowKey? tracked = null;
+        if (f.Owner != 0)
+        {
+            tracked = keys is null
+                ? _entries.Find(e => e.Key.Handle == f.Owner)?.Key
+                : keys.TryGetValue(f.Owner, out var key) ? key : null;
+        }
+
+        var owner = f.Owner == 0 ? (WindowKey?)null : tracked ?? new WindowKey(f.Owner, 0);
         return new ManagedWindow(
             entry.Key,
             f.Fingerprint,

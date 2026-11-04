@@ -192,10 +192,24 @@ public sealed partial class BudgetTests
         status = await run.WaitForAsync(s => (int?)s["windowModel"]?["synthetic"] == Windows, Startup);
 
         using var host = Process.GetProcessById((int)status["hostPid"]!);
+        var settle = await SettleAsync(host);
+        var revisionBefore = (long)(await run.WaitForStatusAsync())["windowModel"]!["revision"]!;
         var cpuBefore = host.TotalProcessorTime;
         var wall = Stopwatch.StartNew();
-        await Task.Delay(Idle, TestContext.Current.CancellationToken);
+        var slices = new List<string>();
+        for (var slice = 0; slice < Idle.TotalSeconds / 10; slice++)
+        {
+            var sliceCpu = host.TotalProcessorTime;
+            var sliceWall = Stopwatch.StartNew();
+            await Task.Delay(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            host.Refresh();
+            slices.Add($"{(host.TotalProcessorTime - sliceCpu).TotalMilliseconds / sliceWall.Elapsed.TotalMilliseconds * 100:0.#}");
+        }
+
         host.Refresh();
+        var revisionAfter = (long)(await run.WaitForStatusAsync())["windowModel"]!["revision"]!;
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            $"settled after {settle}; revisions during idle {revisionAfter - revisionBefore}; cpu % per 10 s: {string.Join(", ", slices)}");
         var measured = new Dictionary<string, double>(StringComparer.Ordinal)
         {
             ["hostIdleCpuPercent"] = (host.TotalProcessorTime - cpuBefore).TotalMilliseconds / wall.Elapsed.TotalMilliseconds * 100,
@@ -203,6 +217,30 @@ public sealed partial class BudgetTests
         };
         Assert.Equal(0, await run.StopAsync());
         return measured;
+    }
+
+    /// <summary>
+    /// Waits for the burst of adding the windows to be over (two consecutive two-second slices at or under the quiet
+    /// threshold, at most forty seconds) so the idle measurement is of the steady state, not of the work the burst queued.
+    /// </summary>
+    /// <param name="host">The host process.</param>
+    private static async Task<TimeSpan> SettleAsync(Process host)
+    {
+        const double QuietPercent = 4;
+        var elapsed = Stopwatch.StartNew();
+        var quiet = 0;
+        while (quiet < 2 && elapsed.Elapsed < TimeSpan.FromSeconds(40))
+        {
+            host.Refresh();
+            var cpu = host.TotalProcessorTime;
+            var slice = Stopwatch.StartNew();
+            await Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            host.Refresh();
+            var percent = (host.TotalProcessorTime - cpu).TotalMilliseconds / slice.Elapsed.TotalMilliseconds * 100;
+            quiet = percent <= QuietPercent ? quiet + 1 : 0;
+        }
+
+        return elapsed.Elapsed;
     }
 
     private static void Synthetic(HostRun run, string op, int count) =>
