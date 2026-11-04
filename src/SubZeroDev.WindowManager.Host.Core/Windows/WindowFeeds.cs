@@ -17,25 +17,39 @@ public static class WindowFeeds
         ["windows"] = new JsonArray([.. snapshot.Windows.Select(w => (JsonNode?)Item(w, epoch))]),
     };
 
+    /// <summary>The desktops feed from the snapshot's own desktop view, so it carries the windows feed's revision (I42).</summary>
     /// <param name="snapshot">The snapshot the windows feed was built from.</param>
-    /// <param name="current">The desktop the user is on.</param>
-    /// <param name="busy">Whether a desktop switch is planned or running.</param>
-    public static JsonObject Desktops(WindowSnapshot snapshot, Guid current, bool busy)
+    public static JsonObject Desktops(WindowSnapshot snapshot)
     {
-        var ids = new List<Guid> { current };
-        ids.AddRange(snapshot.Windows.Select(w => w.DesktopId).Where(id => id != current).Distinct());
-        return new JsonObject
+        var view = snapshot.DesktopsOrDefault;
+        var feed = new JsonObject
         {
             ["revision"] = snapshot.Revision,
-            ["current"] = current.ToString("D"),
-            ["busy"] = busy,
-            ["desktops"] = new JsonArray([.. ids.Select(id => (JsonNode?)new JsonObject
-            {
-                ["id"] = id.ToString("D"),
-                ["windowCount"] = snapshot.Windows.Count(w => w.DesktopId == id && !w.PinnedToAll),
-                ["hasAttention"] = snapshot.Windows.Any(w => w.DesktopId == id && w.Attention),
-            })]),
+            ["current"] = view.Current.ToString("D"),
+            ["busy"] = view.Busy,
         };
+        if (view.Switching is { } switching)
+        {
+            feed["switching"] = new JsonObject
+            {
+                ["from"] = switching.From.ToString("D"),
+                ["to"] = switching.To.ToString("D"),
+            };
+        }
+
+        feed["desktops"] = new JsonArray([.. view.Desktops.Select(d =>
+        {
+            var item = new JsonObject { ["id"] = d.Id.ToString("D") };
+            if (d.Name is not null)
+            {
+                item["name"] = d.Name;
+            }
+
+            item["windowCount"] = snapshot.Windows.Count(w => w.DesktopId == d.Id && !w.PinnedToAll);
+            item["hasAttention"] = snapshot.Windows.Any(w => w.DesktopId == d.Id && w.Attention);
+            return (JsonNode?)item;
+        })]);
+        return feed;
     }
 
     public static string Reference(WindowKey key, long epoch) => new WindowReference(epoch, key.Generation).ToString();

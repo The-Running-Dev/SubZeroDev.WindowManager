@@ -55,6 +55,12 @@ public interface IRecoveryJournal
 
     Task<Outcome> EndAsync(Guid changeId, CancellationToken ct);                  // after revert
 
+    /// <summary>
+    /// Replaces every entry of <paramref name="kind"/> with <paramref name="change"/> (or removes them when it is null) in one
+    /// durable write. The journal keeps one hidden-windows entry, not a growing list.
+    /// </summary>
+    Task<Outcome> ReplaceAsync(Recovery.DesktopChangeKind kind, Recovery.DesktopChange? change, CancellationToken ct);
+
     Task<Outcome> MarkCleanExitAsync(CancellationToken ct);
 }
 

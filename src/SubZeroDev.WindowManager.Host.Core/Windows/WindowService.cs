@@ -50,7 +50,7 @@ public sealed class WindowService : IDisposable
     {
         // Both feeds from the one snapshot, back to back, so a subscriber sees the same revision on each (I42).
         _publish(WindowFeeds.WindowsFeedId, WindowFeeds.Windows(snapshot, _model.Epoch));
-        _publish(WindowFeeds.DesktopsFeedId, WindowFeeds.Desktops(snapshot, WindowModel.DefaultDesktop, busy: false));
+        _publish(WindowFeeds.DesktopsFeedId, WindowFeeds.Desktops(snapshot));
     }
 }
 

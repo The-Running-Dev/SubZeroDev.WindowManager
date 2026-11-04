@@ -34,6 +34,18 @@ public enum CoreErrorCode
 
     /// <summary>A window reference from another run of the shell; no window was touched.</summary>
     StaleWindowReference,
+
+    /// <summary>No desktop has that id; nothing changed.</summary>
+    DesktopNotFound,
+
+    /// <summary>The only desktop cannot be removed.</summary>
+    LastDesktop,
+
+    /// <summary>The window refuses to be hidden (hung, elevated or self-showing); it stays visible.</summary>
+    WindowNotMovable,
+
+    /// <summary>A later switch replaced this one before it started.</summary>
+    SwitchSuperseded,
 }
 
 public sealed record CoreError(CoreErrorCode Code, string Detail, bool Retryable);
