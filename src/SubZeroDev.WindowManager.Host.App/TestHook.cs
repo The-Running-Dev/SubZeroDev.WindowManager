@@ -531,6 +531,7 @@ internal sealed class TestHook
                     ["bounds"] = Rect(w.Bounds),
                     ["image"] = w.ImagePath,
                     ["fit"] = w.Fit.ToString(),
+                    ["source"] = Desktop.ChoiceOf(w.Monitor.StableId)?.Source,
                 }).ToArray()),
             },
             ["keyHook"] = WindowsKeys is null ? null : new JsonObject

@@ -29,8 +29,33 @@ public sealed record LayoutDocument(string Id, string DisplayName, IReadOnlyList
 public sealed record PresetDocument(string Id, string DisplayName, string Layout, string Theme,
     string? Palette, string? PaletteLight, string? PaletteDark, IReadOnlyList<string> AssetPacks)
 {
-    /// <summary>The desktop's image in replacement mode, or null for the system wallpaper.</summary>
+    /// <summary>The wallpaper every monitor without its own shows in replacement mode (the `default` of schema v2, or the whole v1 wallpaper), or null for the system wallpaper.</summary>
     public PresetWallpaper? Wallpaper { get; init; }
+
+    /// <summary>The wallpapers of individual monitors, by monitor stable id (schema v2).</summary>
+    public IReadOnlyDictionary<string, PresetWallpaper> MonitorWallpapers { get; init; } =
+        new Dictionary<string, PresetWallpaper>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The wallpapers to try for the monitor with the given stable id, best first: its own, then the default.
+    /// Whatever cannot be found is skipped by the caller, and when none remains the system wallpaper shows.
+    /// </summary>
+    /// <param name="monitorId">The monitor's stable id.</param>
+    public IReadOnlyList<PresetWallpaper> WallpapersFor(string monitorId)
+    {
+        var candidates = new List<PresetWallpaper>(2);
+        if (MonitorWallpapers.TryGetValue(monitorId, out var own))
+        {
+            candidates.Add(own);
+        }
+
+        if (Wallpaper is { } fallback)
+        {
+            candidates.Add(fallback);
+        }
+
+        return candidates;
+    }
 }
 
 public enum WallpaperFit { Fill, Fit, Stretch, Center }
@@ -332,23 +357,40 @@ public static partial class Documents
             problems.Add("assetPacks: must be an array.");
         }
 
+        // Schema v1 is one wallpaper for every monitor; v2 is { default?, monitors? }. A v1 file is migrated to v2 before reading.
+        var version = json["schemaVersion"] is JsonValue sv && sv.TryGetValue<int>(out var number) ? number : 1;
+        var v1 = version < PresetSchemaVersion;
+        var wallpaperNode = json["wallpaper"];
+        if (v1 && wallpaperNode is JsonObject old)
+        {
+            wallpaperNode = MigrateWallpaperV1(old);
+        }
+
         PresetWallpaper? wallpaper = null;
-        switch (json["wallpaper"])
+        var monitorWallpapers = new Dictionary<string, PresetWallpaper>(StringComparer.OrdinalIgnoreCase);
+        switch (wallpaperNode)
         {
             case JsonObject w:
-                var image = w["image"] is JsonValue iv && iv.TryGetValue<string>(out var i) && !string.IsNullOrWhiteSpace(i) ? i : null;
-                if (image is null)
+                wallpaper = ParseWallpaperEntry(w["default"], v1 ? "wallpaper" : "wallpaper.default", problems);
+                if (w["monitors"] is JsonObject monitors)
                 {
-                    problems.Add("wallpaper.image: must be an asset-pack image id.");
+                    foreach (var (monitorId, entry) in monitors)
+                    {
+                        if (string.IsNullOrWhiteSpace(monitorId))
+                        {
+                            problems.Add("wallpaper.monitors: a monitor id must not be empty.");
+                        }
+                        else if (ParseWallpaperEntry(entry, $"wallpaper.monitors.{monitorId}", problems) is { } own)
+                        {
+                            monitorWallpapers[monitorId] = own;
+                        }
+                    }
+                }
+                else if (w["monitors"] is not null)
+                {
+                    problems.Add("wallpaper.monitors: must be an object of monitor id to { image, fit }.");
                 }
 
-                var fit = WallpaperFit.Fill;
-                if (w["fit"] is not null && !(w["fit"] is JsonValue fv && fv.TryGetValue<string>(out var f) && TryParseFit(f, out fit)))
-                {
-                    problems.Add("wallpaper.fit: must be fill, fit, stretch or center.");
-                }
-
-                wallpaper = image is null ? null : new PresetWallpaper(image, fit);
                 break;
             case null:
                 break;
@@ -359,7 +401,40 @@ public static partial class Documents
 
         return problems.Count > start
             ? null
-            : new PresetDocument(id!, DisplayName(json, id!), layout!, theme!, single, light, dark, packs) { Wallpaper = wallpaper };
+            : new PresetDocument(id!, DisplayName(json, id!), layout!, theme!, single, light, dark, packs) { Wallpaper = wallpaper, MonitorWallpapers = monitorWallpapers };
+    }
+
+    /// <summary>The schema version presets are written at; older ones are migrated on load.</summary>
+    public const int PresetSchemaVersion = 2;
+
+    /// <summary>Migrates a schema v1 wallpaper (`{ image, fit }`) to v2 by making it the default for every monitor. Pure.</summary>
+    /// <param name="v1">The v1 wallpaper object; it is not changed.</param>
+    public static JsonObject MigrateWallpaperV1(JsonObject v1) => new() { ["default"] = v1.DeepClone() };
+
+    private static PresetWallpaper? ParseWallpaperEntry(JsonNode? node, string path, List<string> problems)
+    {
+        switch (node)
+        {
+            case null:
+                return null;
+            case JsonObject w:
+                var image = w["image"] is JsonValue iv && iv.TryGetValue<string>(out var i) && !string.IsNullOrWhiteSpace(i) ? i : null;
+                if (image is null)
+                {
+                    problems.Add($"{path}.image: must be an asset-pack image id.");
+                }
+
+                var fit = WallpaperFit.Fill;
+                if (w["fit"] is not null && !(w["fit"] is JsonValue fv && fv.TryGetValue<string>(out var f) && TryParseFit(f, out fit)))
+                {
+                    problems.Add($"{path}.fit: must be fill, fit, stretch or center.");
+                }
+
+                return image is null ? null : new PresetWallpaper(image, fit);
+            default:
+                problems.Add($"{path}: must be {{ image, fit }}.");
+                return null;
+        }
     }
 
     public static bool TryParseFit(string value, out WallpaperFit fit)

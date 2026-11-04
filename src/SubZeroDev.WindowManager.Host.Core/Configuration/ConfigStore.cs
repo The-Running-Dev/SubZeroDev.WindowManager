@@ -399,6 +399,9 @@ public sealed class ConfigStore : IConfigStore, IDisposable
         return state;
     }
 
+    /// <summary>The newest schema version a document of this kind is read at; presets moved to 2 for a wallpaper per monitor.</summary>
+    private static int SupportedVersion(DocumentKind kind) => kind == DocumentKind.Preset ? Documents.PresetSchemaVersion : SupportedSchemaVersion;
+
     private static DocumentState Parse(DocumentId id, string path, byte[] bytes)
     {
         var hash = Hash(bytes);
@@ -417,10 +420,10 @@ public sealed class ConfigStore : IConfigStore, IDisposable
             return Invalid(id, hash, $"{path}: the document is not a JSON object.");
         }
 
-        if (content["schemaVersion"] is JsonValue v && v.TryGetValue<int>(out var version) && version > SupportedSchemaVersion)
+        if (content["schemaVersion"] is JsonValue v && v.TryGetValue<int>(out var version) && version > SupportedVersion(id.Kind))
         {
             return new DocumentState(id, content, hash, DocumentHealth.TooNew,
-                new CoreError(CoreErrorCode.DocumentReadOnly, $"{path}: schemaVersion {version} is newer than {SupportedSchemaVersion}.", false));
+                new CoreError(CoreErrorCode.DocumentReadOnly, $"{path}: schemaVersion {version} is newer than {SupportedVersion(id.Kind)}.", false));
         }
 
         var problems = DocumentValidator.Validate(id, content);

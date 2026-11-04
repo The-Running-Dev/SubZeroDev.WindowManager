@@ -615,12 +615,14 @@ public sealed partial class App : Application
     }
 
     /// <summary>
-    /// The preset's wallpaper, found by id in the asset pack chain or as a path; without one, or when it cannot be
-    /// found, what Windows is set to.
+    /// The wallpaper for one monitor: its own preset wallpaper, else the preset's default, each found by id in the
+    /// asset pack chain or as a path; one that cannot be found is skipped, and without any, what Windows is set to.
+    /// The preset itself is never changed (S30.2).
     /// </summary>
-    private WallpaperChoice ResolveWallpaper()
+    /// <param name="monitorId">The monitor's stable id.</param>
+    private WallpaperChoice ResolveWallpaper(string monitorId)
     {
-        if (_preset?.Wallpaper is { } wallpaper)
+        foreach (var wallpaper in _preset?.WallpapersFor(monitorId) ?? [])
         {
             if (_theme?.IconChain.FindWallpaper(wallpaper.Image) is { } image)
             {
@@ -632,7 +634,7 @@ public sealed partial class App : Application
                 return new WallpaperChoice(wallpaper.Image, wallpaper.Fit, "preset");
             }
 
-            _log?.Write(LogLevel.Warning, "desktop", $"Wallpaper '{wallpaper.Image}' was not found; using the system wallpaper.");
+            _log?.Write(LogLevel.Warning, "desktop", $"Wallpaper '{wallpaper.Image}' for monitor {monitorId} was not found; trying the next one.");
         }
 
         var (system, fit) = SystemWallpaper.Read(_hooked);

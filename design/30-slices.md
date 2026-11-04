@@ -439,7 +439,7 @@ Acceptance:
 Out of scope: pinning and unpinning; thumbnails of other desktops' windows beyond what S26.9 recorded.
 
 ## S30 — Desktop file context menu and per-monitor wallpaper
-Status: todo
+Status: done
 Delivers: Ben can right-click a desktop icon or the desktop for the usual file operations, and each monitor can show its own wallpaper.
 Touches: plugin `subzerodev.desktop-icons` (`desktop.contextMenu`, `rename` popup); Host.Surfaces and Host.Theming (per-monitor wallpaper, presets v2)
 Depends on: S23

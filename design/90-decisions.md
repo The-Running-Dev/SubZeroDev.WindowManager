@@ -18,6 +18,24 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-05 — S30: the desktop menu is a keyboard-first popup, copy and paste stay inside the Desktop, and the config store reads presets at v2
+- **Context:** S30 adds a file menu to the desktop icons and a wallpaper per monitor. Three parts of the contract needed a decision: where the menu opens, what "copy" means, and how a v2 preset gets past the store's schema gate.
+- **Chosen:**
+  - **`desktop.contextMenu { path?, x, y }`** is a command of the desktop-icons plugin. `path` must be directly inside a Desktop folder and exist, otherwise the invoke fails (`ok: false`). `x` and `y` are accepted for the contract, but the menu opens at the pointer's monitor (`MonitorAnchor.Pointer`), as the S29 jump list does: the click that asks for it is where the pointer is.
+  - **Two popups, `menu` and `rename`.** The contract names only `rename`; the additive `menu` popup lists the entries. A file offers open, rename, copy, paste (once something is copied) and delete; the desktop offers new folder and paste. Rename is a text input with an inline problem line; a name that is empty, ends in a dot, contains a forbidden character or is already used is refused and nothing moves. A shortcut's hidden extension is kept.
+  - **Delete never removes permanently.** `SHFileOperation` with `FOF_ALLOWUNDO | FOF_WANTNUKEWARNING`: an item the bin cannot take is not deleted silently, the shell asks and a refusal leaves it where it is. Under the test hook the item moves to `recycle-bin` in the hook folder and is logged.
+  - **Copy and paste use a clipboard inside the plugin** (a list of Desktop paths), not the system clipboard. Paste goes into the first existing Desktop folder; a copy beside its source is named `name - Copy.ext`, then `name - Copy (2).ext`. A folder cannot be pasted into itself.
+  - **The host's lists now honour `contextAction`** (right click, Shift+F10, the menu key), as buttons already did, so the empty desktop can raise the desktop menu. Icons keep their button's own `contextAction`.
+  - **Presets are at schema v2; every other document kind stays at v1.** `ConfigStore` had one supported version for all documents and marked a v2 preset `TooNew` (read-only, wallpaper dropped). The supported version is now per kind (`Documents.PresetSchemaVersion` = 2 for presets). v2 holds `wallpaper: { default?, monitors? }`; a v1 preset is migrated by wrapping its wallpaper object as the default (`Documents.MigrateWallpaperV1`), so it applies to every monitor. A monitor id matches regardless of case. The wallpaper for a monitor is its own entry, else the default, else the system wallpaper. The three built-in presets ship at v2. A preset newer than v2 is still `TooNew`.
+  - **Test isolation (I38, S30.3):** the plugin honours `SUBZERODEV_WM_DESKTOP_FOLDERS` only under the test hook; tests create their Desktop folders under the run root and never touch the user's files. The hook adds `source` to each window entry in its status so tests can tell which monitor shows which image.
+  - **Popup choice is by keyboard in the tests** (Tab until the entry is focused, then Enter); the helper waits for the focus to move after each Tab because the status file trails the window by up to a write interval.
+- **Rejected:**
+  - **Placing the menu at x, y:** the popup contract has no free placement (the jump list is the precedent); adding one is a separate change.
+  - **The system clipboard for copy and paste:** it would let a copy leave the Desktop or arrive from elsewhere, which needs shell data objects; out of scope.
+  - **A silent permanent delete when the bin is unavailable:** violates S30.1.
+  - **A "wallpaper per monitor" page in Host.Settings:** not in the slice's Touches; presets are edited as files.
+- **Consequences:** a real right click on an icon and on empty desktop space, the real Recycle Bin and the rename box taking focus are manual checks for Ben (recorded in the pull request); the empty-space hit-test of the list is unverified. A newer preset schema must be added to `Documents.PresetSchemaVersion` and the migration chain.
+
 ## 2026-11-04 — S29: grouping, previews and jump lists ship; badges are decoded by nothing until a manual check reads the real messages
 - **Context:** S29 deepens the running-windows strip. Design questions 9 (does the host's Shell_TrayWnd receive progress and overlay) and 10 (can jump lists be read without Explorer) had to be answered, and neither could be settled fully on this machine.
 - **Chosen:**
