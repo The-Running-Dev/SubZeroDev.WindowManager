@@ -312,6 +312,17 @@ public sealed class ContributionView
                     _lists[listId] = items;
                 }
 
+                if (element["contextAction"] is JsonObject listContext)
+                {
+                    // A right click on the list itself, not on one of its items (an item's own context action takes that), as the desktop's.
+                    list.ContextRequested += (sender, args) =>
+                    {
+                        args.Handled = true;
+                        var from = args.TryGetPosition(list, out _) ? InvocationSource.Pointer : InvocationSource.Keyboard;
+                        Act(list, scope, listContext, ElementEventKind.Invoked, null, from);
+                    };
+                }
+
                 built = list;
                 break;
             case "textInput":

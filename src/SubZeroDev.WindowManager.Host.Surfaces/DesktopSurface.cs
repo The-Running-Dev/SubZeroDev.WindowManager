@@ -9,19 +9,23 @@ public sealed record WallpaperChoice(string? Path, WallpaperFit Fit, string Sour
 
 /// <summary>
 /// The desktop floor in replacement mode: one <see cref="WallpaperWindow"/> per monitor, under everything,
-/// with desktop panels kept just above it. It is rebuilt when the monitors change and redrawn when the
-/// wallpaper choice changes. Everything here runs on the UI thread it was created on.
+/// with desktop panels kept just above it. Each monitor asks for its own wallpaper choice (S30.2). It is rebuilt
+/// when the monitors change and redrawn when a monitor's choice changes. Everything here runs on the UI thread it was created on.
 /// </summary>
 public sealed class DesktopSurface
 {
     private readonly IMonitorService _monitors;
-    private readonly Func<WallpaperChoice> _resolve;
+    private readonly Func<string, WallpaperChoice> _resolve;
+    private readonly Dictionary<string, WallpaperChoice> _choices = new(StringComparer.OrdinalIgnoreCase);
     private readonly IHostLog _log;
     private readonly DispatcherQueue _dispatcher;
     private List<WallpaperWindow> _windows = [];
     private bool _closed;
 
-    public DesktopSurface(IMonitorService monitors, Func<WallpaperChoice> resolve, IHostLog log)
+    /// <param name="monitors">The monitors to cover.</param>
+    /// <param name="resolve">Works out the wallpaper for the monitor with the given stable id.</param>
+    /// <param name="log">The host log.</param>
+    public DesktopSurface(IMonitorService monitors, Func<string, WallpaperChoice> resolve, IHostLog log)
     {
         _monitors = monitors;
         _resolve = resolve;
@@ -38,20 +42,27 @@ public sealed class DesktopSurface
 
     public IReadOnlyList<WallpaperWindow> Windows => _windows;
 
-    public WallpaperChoice? Choice { get; private set; }
+    /// <summary>The first monitor's choice, or null before the floor is built.</summary>
+    public WallpaperChoice? Choice => _windows.Count > 0 ? ChoiceOf(_windows[0].Monitor.StableId) : null;
+
+    /// <summary>The choice the monitor with the given stable id is showing, or null for an unknown monitor.</summary>
+    /// <param name="monitorId">The monitor's stable id.</param>
+    public WallpaperChoice? ChoiceOf(string monitorId) => _choices.GetValueOrDefault(monitorId);
 
     /// <summary>Builds the floor afresh for the current monitors.</summary>
     public void Apply()
     {
         var old = _windows;
-        Choice = _resolve();
+        _choices.Clear();
         var windows = new List<WallpaperWindow>();
         foreach (var monitor in _monitors.Monitors)
         {
             try
             {
+                var choice = _resolve(monitor.StableId);
+                _choices[monitor.StableId] = choice;
                 var window = new WallpaperWindow(monitor);
-                window.SetWallpaper(Choice.Path, Choice.Fit);
+                window.SetWallpaper(choice.Path, choice.Fit);
                 window.Show();
                 windows.Add(window);
             }
@@ -68,10 +79,16 @@ public sealed class DesktopSurface
             window.Close();
         }
 
-        _log.Write(LogLevel.Info, "desktop", $"Desktop shown on {windows.Count} monitor(s), wallpaper {Choice.Source}: {Choice.Path ?? "none"} ({Choice.Fit}).");
+        foreach (var window in windows)
+        {
+            var choice = _choices[window.Monitor.StableId];
+            _log.Write(LogLevel.Info, "desktop", $"Desktop shown on monitor {window.Monitor.StableId}, wallpaper {choice.Source}: {choice.Path ?? "none"} ({choice.Fit}).");
+        }
+
+        _log.Write(LogLevel.Info, "desktop", $"Desktop shown on {windows.Count} monitor(s).");
     }
 
-    /// <summary>Works out the wallpaper again and redraws the floor if it changed.</summary>
+    /// <summary>Works out each monitor's wallpaper again and redraws the ones that changed.</summary>
     public void Refresh()
     {
         if (_closed)
@@ -79,19 +96,19 @@ public sealed class DesktopSurface
             return;
         }
 
-        var choice = _resolve();
-        if (choice == Choice)
-        {
-            return;
-        }
-
-        Choice = choice;
         foreach (var window in _windows)
         {
-            window.SetWallpaper(choice.Path, choice.Fit);
-        }
+            var id = window.Monitor.StableId;
+            var choice = _resolve(id);
+            if (choice == ChoiceOf(id))
+            {
+                continue;
+            }
 
-        _log.Write(LogLevel.Info, "desktop", $"Wallpaper is now {choice.Source}: {choice.Path ?? "none"} ({choice.Fit}).");
+            _choices[id] = choice;
+            window.SetWallpaper(choice.Path, choice.Fit);
+            _log.Write(LogLevel.Info, "desktop", $"Wallpaper on monitor {id} is now {choice.Source}: {choice.Path ?? "none"} ({choice.Fit}).");
+        }
     }
 
     public void Close()

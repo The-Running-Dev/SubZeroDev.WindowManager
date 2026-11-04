@@ -18,11 +18,20 @@
       "multiInstance": true
     }
   ],
+  "popups": [
+    { "id": "menu", "placement": "anchored" },
+    { "id": "rename", "placement": "anchored" }
+  ],
   "commands": [
     {
       "id": "desktop.open",
       "title": "Open a Desktop item",
       "argsSchema": { "type": "object", "properties": { "path": { "type": "string" } } }
+    },
+    {
+      "id": "desktop.contextMenu",
+      "title": "Open the Desktop menu",
+      "argsSchema": { "type": "object", "properties": { "path": { "type": "string" }, "x": { "type": "number" }, "y": { "type": "number" } } }
     }
   ],
   "settingsVersion": 1

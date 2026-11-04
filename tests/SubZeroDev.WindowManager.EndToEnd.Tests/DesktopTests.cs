@@ -79,6 +79,84 @@ public sealed class DesktopTests
     }
 
     [Fact]
+    public async Task S30_2_a_v2_preset_gives_a_monitor_its_own_wallpaper_and_falls_back_to_the_default_then_the_system_one()
+    {
+        HostRun.RequireDesktop();
+        using var run = HostRun.Create();
+        run.WriteDefaultLayout((Guid.NewGuid(), "subzerodev.clock", "clock"));
+        var image = Path.Combine(HostRun.ContentDirectory, "assetpacks", "subzerodev.default", "icons", "launcher.png");
+        var packRoot = Path.Combine(run.DataRoot, "assetpacks", "test.walls");
+        Directory.CreateDirectory(Path.Combine(packRoot, "walls"));
+        File.Copy(image, Path.Combine(packRoot, "walls", "dunes.png"));
+        File.Copy(image, Path.Combine(packRoot, "walls", "night.png"));
+        File.WriteAllText(Path.Combine(packRoot, "assetpack.json"), new JsonObject
+        {
+            ["id"] = "test.walls",
+            ["version"] = "0.1.0",
+            ["icons"] = new JsonObject(),
+            ["appIcons"] = new JsonArray(),
+            ["wallpapers"] = new JsonArray("walls/dunes.png", "walls/night.png"),
+        }.ToJsonString());
+        WritePreset(run, "test.split", new JsonObject
+        {
+            ["default"] = new JsonObject { ["image"] = "dunes", ["fit"] = "fit" },
+            ["monitors"] = new JsonObject { ["SIM-1"] = new JsonObject { ["image"] = "night", ["fit"] = "center" } },
+        }, version: 2);
+        WritePreset(run, "test.missing", new JsonObject
+        {
+            ["default"] = new JsonObject { ["image"] = "dunes", ["fit"] = "fit" },
+            ["monitors"] = new JsonObject { ["SIM-1"] = new JsonObject { ["image"] = "gone" } },
+        }, version: 2);
+        WritePreset(run, "test.nodefault", new JsonObject
+        {
+            ["monitors"] = new JsonObject { ["SIM-1"] = new JsonObject { ["image"] = "gone" } },
+        }, version: 2);
+        WriteSettings(run, "test.split");
+        var system = Path.Combine(run.Root, "system.png");
+        File.Copy(image, system);
+        Hook(run, "system-wallpaper", system + "\nstretch\n");
+        Hook(run, "monitors", new JsonObject
+        {
+            ["monitors"] = new JsonArray(new JsonObject
+            {
+                ["id"] = "SIM-1", ["left"] = 4000, ["top"] = 0, ["right"] = 5280, ["bottom"] = 720, ["dpi"] = 96,
+            }),
+        }.ToJsonString());
+        run.Start(HostRun.HostExe, "--mode", "replacement");
+
+        var status = await run.WaitForAsync(s => (bool?)s["ready"] == true
+            && Windows(s).Count == s["monitors"]!.AsArray().Count
+            && s["monitors"]!.AsArray().Any(m => (string?)m!["id"] == "SIM-1"), Startup);
+        Assert.True(Windows(status).Count >= 2, "The test needs the simulated monitor next to a real one.");
+        var night = Path.Combine(packRoot, "walls", "night.png");
+        var dunes = Path.Combine(packRoot, "walls", "dunes.png");
+
+        // The simulated monitor shows its own image; every other monitor shows the default.
+        Assert.All(Windows(status), w =>
+        {
+            var own = (string?)w["monitor"] == "SIM-1";
+            Assert.Equal(own ? night : dunes, (string?)w["image"]);
+            Assert.Equal(own ? "Center" : "Fit", (string?)w["fit"]);
+            Assert.Equal("preset", (string?)w["source"]);
+        });
+
+        // A per-monitor image that is not there falls back to the default; the preset file is left as it was.
+        var presetFile = Path.Combine(run.DataRoot, "presets", "test.missing.json");
+        var before = File.ReadAllText(presetFile);
+        WriteSettings(run, "test.missing");
+        status = await run.WaitForAsync(s => Windows(s).Count > 0
+            && Windows(s).All(w => (string?)w["image"] == dunes && (string?)w["fit"] == "Fit"), TimeSpan.FromSeconds(10));
+        Assert.All(Windows(status), w => Assert.Equal("preset", (string?)w["source"]));
+        Assert.Equal(before, File.ReadAllText(presetFile));
+
+        // With no default either, that monitor shows the system wallpaper.
+        WriteSettings(run, "test.nodefault");
+        status = await run.WaitForAsync(s => Windows(s).Count > 0 && Windows(s).All(w => (string?)w["image"] == system), TimeSpan.FromSeconds(10));
+        Assert.All(Windows(status), w => Assert.Equal("system", (string?)w["source"]));
+        Assert.Equal(0, await run.StopAsync());
+    }
+
+    [Fact]
     public async Task S20_2_the_icons_merge_both_folders_sorted_and_follow_additions_and_deletions()
     {
         HostRun.RequireDesktop();
@@ -207,6 +285,170 @@ public sealed class DesktopTests
         Assert.Equal(0, await run.StopAsync());
     }
 
+    // ---- S30.1: the Desktop's file menu. Every test acts only on files it made in a temporary Desktop folder. ----
+
+    [Fact]
+    public async Task S30_1_the_menu_of_a_file_opens_it_and_sends_it_to_the_recycle_bin_never_deleting_it()
+    {
+        HostRun.RequireDesktop();
+        using var run = HostRun.Create();
+        var (user, _) = Folders(run);
+        var file = Path.Combine(user, "notes.txt");
+        File.WriteAllText(file, "n");
+        WriteDesktopLayout(run);
+        run.Start(HostRun.HostExe);
+        await run.WaitForAsync(s => Items(s).Count == 1, Startup);
+
+        var status = await OpenMenuAsync(run, new JsonObject { ["path"] = file });
+        Assert.Equal(["open", "rename", "copy", "delete"], MenuItems(status, "menu").Select(i => (string?)i["id"]));
+        Assert.Equal((int)status["hostPid"]!, Interactive.ForegroundProcessId());
+        await ChooseAsync(run, "menu", "open");
+        await WaitUntilAsync(() => DesktopActions(run).Contains($"desktop-open {file}"), "the menu to open the file");
+        await run.WaitForAsync(s => !PopupOpen(s, "menu"), TimeSpan.FromSeconds(5));
+
+        await OpenMenuAsync(run, new JsonObject { ["path"] = file });
+        await ChooseAsync(run, "menu", "delete");
+        await WaitUntilAsync(() => DesktopActions(run).Contains($"desktop-recycle {file}"), "the file to go to the Recycle Bin");
+        Assert.False(File.Exists(file));
+        Assert.Equal("n", File.ReadAllText(Path.Combine(run.HookDirectory, "recycle-bin", "notes.txt")));
+        await run.WaitForAsync(s => Items(s).Count == 0, TimeSpan.FromSeconds(10));
+        Assert.Equal(0, await run.StopAsync());
+    }
+
+    [Fact]
+    public async Task S30_1_rename_asks_for_a_name_renames_the_file_and_refuses_a_name_in_use()
+    {
+        HostRun.RequireDesktop();
+        using var run = HostRun.Create();
+        var (user, _) = Folders(run);
+        var file = Path.Combine(user, "notes.txt");
+        File.WriteAllText(file, "n");
+        File.WriteAllText(Path.Combine(user, "taken.txt"), "t");
+        WriteDesktopLayout(run);
+        run.Start(HostRun.HostExe);
+        await run.WaitForAsync(s => Items(s).Count == 2, Startup);
+
+        await OpenMenuAsync(run, new JsonObject { ["path"] = file });
+        await ChooseAsync(run, "menu", "rename");
+        var status = await run.WaitForAsync(s => PopupOpen(s, "rename") && (string?)PopupOf(s, "rename")["focusedInput"] == "name", TimeSpan.FromSeconds(5));
+        Assert.Equal("notes.txt", (string?)PopupOf(status, "rename")["inputs"]!.AsArray()[0]!["text"]);
+
+        // A name that is in use is refused, and the box stays open to say so.
+        Interactive.Press(Interactive.Control, 'A');
+        Interactive.Type("taken.txt");
+        Interactive.Press(Interactive.Enter);
+        status = await run.WaitForAsync(s => PopupOf(s, "rename")["texts"]!.AsArray().Any(t => ((string?)t)?.Contains("already used", StringComparison.Ordinal) == true),
+            TimeSpan.FromSeconds(5));
+        Assert.True(PopupOpen(status, "rename"));
+        Assert.True(File.Exists(file));
+
+        Interactive.Press(Interactive.Control, 'A');
+        Interactive.Type("renamed.txt");
+        Interactive.Press(Interactive.Enter);
+        await run.WaitForAsync(s => !PopupOpen(s, "rename"), TimeSpan.FromSeconds(5));
+        Assert.False(File.Exists(file));
+        Assert.Equal("n", File.ReadAllText(Path.Combine(user, "renamed.txt")));
+        Assert.Equal(0, await run.StopAsync());
+    }
+
+    [Fact]
+    public async Task S30_1_the_desktops_own_menu_makes_a_folder_and_pastes_a_copied_file_beside_its_source()
+    {
+        HostRun.RequireDesktop();
+        using var run = HostRun.Create();
+        var (user, _) = Folders(run);
+        var file = Path.Combine(user, "notes.txt");
+        File.WriteAllText(file, "n");
+        WriteDesktopLayout(run);
+        run.Start(HostRun.HostExe);
+        await run.WaitForAsync(s => Items(s).Count == 1, Startup);
+
+        // Nothing was copied yet, so the Desktop's menu offers no paste.
+        var status = await OpenMenuAsync(run, new JsonObject());
+        Assert.Equal(["newFolder"], MenuItems(status, "menu").Select(i => (string?)i["id"]));
+        await ChooseAsync(run, "menu", "newFolder");
+        await WaitUntilAsync(() => Directory.Exists(Path.Combine(user, "New folder")), "the new folder");
+
+        await OpenMenuAsync(run, new JsonObject { ["path"] = file });
+        await ChooseAsync(run, "menu", "copy");
+        await run.WaitForAsync(s => !PopupOpen(s, "menu"), TimeSpan.FromSeconds(5));
+        status = await OpenMenuAsync(run, new JsonObject());
+        Assert.Equal(["newFolder", "paste"], MenuItems(status, "menu").Select(i => (string?)i["id"]));
+        await ChooseAsync(run, "menu", "paste");
+        await WaitUntilAsync(() => File.Exists(Path.Combine(user, "notes - Copy.txt")), "the pasted copy");
+        Assert.Equal("n", File.ReadAllText(file));
+        Assert.Equal("n", File.ReadAllText(Path.Combine(user, "notes - Copy.txt")));
+        Assert.Equal(0, await run.StopAsync());
+    }
+
+    [Fact]
+    public async Task S30_1_a_path_that_is_not_on_the_desktop_gets_no_menu()
+    {
+        HostRun.RequireDesktop();
+        using var run = HostRun.Create();
+        var (user, _) = Folders(run);
+        File.WriteAllText(Path.Combine(user, "notes.txt"), "n");
+        var elsewhere = Path.Combine(run.Root, "elsewhere.txt");
+        File.WriteAllText(elsewhere, "e");
+        WriteDesktopLayout(run);
+        run.Start(HostRun.HostExe);
+        await run.WaitForAsync(s => Items(s).Count == 1, Startup);
+
+        var refused = await InvokeAsync(run, "desktop.contextMenu", new JsonObject { ["path"] = elsewhere });
+
+        Assert.False((bool)refused["ok"]!, refused.ToJsonString());
+        Assert.True(File.Exists(elsewhere));
+        Assert.Equal(0, await run.StopAsync());
+    }
+
+    private static async Task<JsonObject> InvokeAsync(HostRun run, string command, JsonObject args)
+    {
+        await WaitUntilAsync(() => !File.Exists(Path.Combine(run.HookDirectory, "invoke")), "the previous invoke to be taken");
+        var before = (await run.WaitForStatusAsync())["lastInvoke"]?.ToJsonString();
+        Hook(run, "invoke", $"{command}\nkeyboard\n{args.ToJsonString()}\n");
+        var status = await run.WaitForAsync(s => s["lastInvoke"] is JsonObject last && (string?)last["command"] == command
+            && last.ToJsonString() != before, TimeSpan.FromSeconds(10));
+        return status["lastInvoke"]!.AsObject();
+    }
+
+    /// <summary>Asks for the menu the way a right click does and waits until it is open with its first entry focused.</summary>
+    private static async Task<JsonObject> OpenMenuAsync(HostRun run, JsonObject args)
+    {
+        var invoked = await InvokeAsync(run, "desktop.contextMenu", args);
+        Assert.True((bool)invoked["ok"]!, invoked.ToJsonString());
+        return await run.WaitForAsync(s => PopupOpen(s, "menu") && MenuItems(s, "menu").Count > 0
+            && (string?)PopupOf(s, "menu")["focused"] == (string?)MenuItems(s, "menu")[0]["id"], TimeSpan.FromSeconds(10));
+    }
+
+    /// <summary>Moves focus to the entry with Tab and chooses it with Enter, as a keyboard user does.</summary>
+    private static async Task ChooseAsync(HostRun run, string popup, string entry)
+    {
+        for (var step = 0; step < 8; step++)
+        {
+            var status = await run.WaitForStatusAsync();
+            var focused = (string?)PopupOf(status, popup)["focused"];
+            if (focused == entry)
+            {
+                Interactive.Press(Interactive.Enter);
+                return;
+            }
+
+            // The status file trails the UI by up to a write interval, so wait for the focus to move before reading it again.
+            Interactive.Press(Interactive.Tab);
+            await run.WaitForAsync(s => (string?)PopupOf(s, popup)["focused"] != focused, TimeSpan.FromSeconds(5));
+        }
+
+        Assert.Fail($"Focus never reached '{entry}' in the {popup} popup.");
+    }
+
+    private static JsonObject PopupOf(JsonObject status, string popup) =>
+        status["popups"]!.AsArray().FirstOrDefault(p => (string?)p!["plugin"] == Icons && (string?)p["popup"] == popup)?.AsObject() ?? [];
+
+    private static bool PopupOpen(JsonObject status, string popup) => PopupOf(status, popup)["open"]?.GetValue<bool>() == true;
+
+    private static List<JsonObject> MenuItems(JsonObject status, string popup) =>
+        PopupOf(status, popup)["items"]?.AsArray().Select(i => i!.AsObject()).ToList() ?? [];
+
     private static (string User, string Common) Folders(HostRun run)
     {
         var user = Path.Combine(run.Root, "desktop-user");
@@ -246,11 +488,11 @@ public sealed class DesktopTests
             }),
         }.ToJsonString());
 
-    private static void WritePreset(HostRun run, string id, JsonObject? wallpaper)
+    private static void WritePreset(HostRun run, string id, JsonObject? wallpaper, int version = 1)
     {
         var preset = new JsonObject
         {
-            ["schemaVersion"] = 1,
+            ["schemaVersion"] = version,
             ["id"] = id,
             ["displayName"] = id,
             ["layout"] = "subzerodev.default",
