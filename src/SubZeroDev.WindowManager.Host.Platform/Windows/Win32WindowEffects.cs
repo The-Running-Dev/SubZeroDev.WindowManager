@@ -154,6 +154,7 @@ public sealed class Win32WindowEffects : IWindowEffects, IDisposable
         var stuck = new List<WindowKey>();
         var gone = new List<WindowKey>();
         var landing = new List<PlannedWindow>();
+        var notShown = new List<WindowKey>();
         var cancelled = false;
 
         foreach (var window in plan.Hide)
@@ -216,6 +217,10 @@ public sealed class Win32WindowEffects : IWindowEffects, IDisposable
                     gone.Add(window.Key);
                     Forget(window);
                     break;
+                default:
+                    // Still hidden, so it stays remembered here and in the caller's hidden set.
+                    notShown.Add(window.Key);
+                    break;
             }
         }
 
@@ -229,7 +234,7 @@ public sealed class Win32WindowEffects : IWindowEffects, IDisposable
 
         return cancelled
             ? Outcome<EffectsResult>.Fail(CoreErrorCode.Cancelled, "The switch was cancelled part way.")
-            : Outcome<EffectsResult>.Success(new EffectsResult(stuck, gone));
+            : Outcome<EffectsResult>.Success(new EffectsResult(stuck, gone) { NotShown = notShown });
     }
 
     /// <summary>The windows still visible once the budget is spent.</summary>

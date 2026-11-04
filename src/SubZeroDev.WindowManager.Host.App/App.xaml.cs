@@ -189,7 +189,7 @@ public sealed partial class App : Application
         // The effects thread hides and shows other applications' windows (I27); the test hook's twin changes only what the
         // synthetic windows report, so no test hides, shows or moves a window it did not create (S26.10).
         var effects = _windowEffects = synthetic is null ? new Win32WindowEffects(windowFacts) : new SyntheticWindowEffects(synthetic);
-        _thumbnails = new Win32ThumbnailService(synthetic ?? (IWindowFacts)windowFacts, key => (synthetic ?? (IWindowFacts)windowFacts).Read(key.Handle)?.Fingerprint);
+        _thumbnails = new Win32ThumbnailService(synthetic ?? (IWindowFacts)windowFacts, key => windowModel.Lookup(key)?.Planned.Fingerprint);
 
         // The desktops exist only when the app is the shell; the set must exist before the model seeds, so a window it hid
         // in an earlier run is never mistaken for one the user hid.
@@ -412,7 +412,8 @@ public sealed partial class App : Application
         AddSessionCommand(router, "host.session.restart", "Restart", session.Restart);
         AddSessionCommand(router, "host.session.shutdown", "Shut down", session.Shutdown);
         AddSessionCommand(router, "host.session.sleep", "Sleep", session.Sleep);
-        router.AddBuiltIn("host.window.activate", "Activate window", (args, ct) => WindowCommands.ActivateAsync(_windows!.Model, foreground, args, ct));
+        router.AddBuiltIn("host.window.activate", "Activate window", (args, ct) => WindowCommands.ActivateAsync(_windows!.Model, foreground, args, ct,
+            _desktopSet is null ? null : (key, token) => _desktopSet.RevealAsync(key, token)));
         router.AddBuiltIn("host.window.minimize", "Minimise window", (args, ct) => WindowCommands.MinimizeAsync(_windows!.Model, foreground, args, ct));
         AddDesktopCommand(router, DesktopCommands.Switch, "Switch desktop", (set, args, ct) => DesktopCommands.SwitchAsync(set, args, ct));
         AddDesktopCommand(router, DesktopCommands.Create, "New desktop", (set, args, ct) => DesktopCommands.CreateAsync(set, args, ct));

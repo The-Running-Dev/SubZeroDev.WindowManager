@@ -739,6 +739,112 @@ public sealed class VirtualDesktopTests
         }
     }
 
+    [Fact]
+    public async Task S26_4_a_window_that_will_not_show_stays_hidden_and_in_the_journal()
+    {
+        using var world = new World();
+        world.Put(1, "A");
+        world.Put(2, "B");
+        await world.StartAsync();
+        var second = world.Set.Create(null).Value;
+        await world.Pump(world.Set.MoveAsync(world.KeyOf(2), second, Ct));
+        world.Effects.NotShow.Add(2);
+
+        var switched = await world.Pump(world.Set.SwitchAsync(second, Ct));
+
+        Assert.True(switched.Ok);
+        var window = world.Model.Current.Windows.Single(w => w.Key.Handle == 2);
+        Assert.True(window.ShellHidden);
+        Assert.False(window.Visible);
+        Assert.Contains(2, world.Journal.Handles());
+    }
+
+    [Fact]
+    public async Task S26_5_a_failed_show_on_exit_keeps_the_journal_naming_the_hidden_windows()
+    {
+        using var world = new World();
+        world.Put(1, "A");
+        world.Put(2, "B");
+        await world.StartAsync();
+        var second = world.Set.Create(null).Value;
+        await world.Pump(world.Set.MoveAsync(world.KeyOf(2), second, Ct));
+        world.Effects.ShowAllFails = true;
+
+        await world.Pump(world.Set.RestoreAllAsync());
+
+        Assert.Equal([2], world.Journal.Handles());
+        Assert.True(world.Model.Current.Windows.Single(w => w.Key.Handle == 2).ShellHidden);
+        Assert.Single(world.Diagnostics);
+    }
+
+    [Fact]
+    public async Task S26_4_a_gone_window_is_skipped_for_the_next_most_recent_one()
+    {
+        using var world = new World();
+        world.Put(1, "A");
+        world.Put(2, "B");
+        world.Put(3, "C");
+        world.Put(4, "D");
+        await world.StartAsync();
+        var second = world.Set.Create(null).Value;
+        await world.Pump(world.Set.MoveAsync(world.KeyOf(3), second, Ct));
+        await world.Pump(world.Set.MoveAsync(world.KeyOf(4), second, Ct));
+        world.Foreground.GoneHandles.Add(3);
+        world.Foreground.GoneHandles.Add(4);
+
+        var switched = await world.Pump(world.Set.SwitchAsync(second, Ct));
+
+        // Whichever is tried first reports gone; the other is tried next rather than the search stopping.
+        Assert.True(switched.Ok);
+        Assert.Equal([3, 4], world.Foreground.Activated.Select(h => (int)h).Order());
+    }
+
+    [Fact]
+    public async Task S26_6_activating_a_window_on_another_desktop_switches_to_it_first()
+    {
+        using var world = new World();
+        world.Put(1, "A");
+        world.Put(2, "B");
+        await world.StartAsync();
+        var first = world.Set.CurrentId;
+        var second = world.Set.Create(null).Value;
+        await world.Pump(world.Set.MoveAsync(world.KeyOf(2), second, Ct));
+        world.Foreground.Activated.Clear();
+
+        var onThisDesktop = await world.Pump(WindowCommands.ActivateAsync(world.Model, world.Foreground,
+            new JsonObject { ["windowKey"] = Ref(world.KeyOf(1)) }, Ct, world.Set.RevealAsync));
+        Assert.True(onThisDesktop.Ok);
+        Assert.Equal(first, world.Set.CurrentId);
+
+        var onAnother = await world.Pump(WindowCommands.ActivateAsync(world.Model, world.Foreground,
+            new JsonObject { ["windowKey"] = Ref(world.KeyOf(2)) }, Ct, world.Set.RevealAsync));
+
+        Assert.True(onAnother.Ok);
+        Assert.Equal(second, world.Set.CurrentId);
+        Assert.True(world.Model.Current.Windows.Single(w => w.Key.Handle == 2).Visible);
+        Assert.Equal((nint)2, world.Foreground.Activated.Last());
+    }
+
+    [Fact]
+    public async Task S26_3_a_hide_that_lands_before_the_effects_fail_is_undone()
+    {
+        using var world = new World();
+        world.Put(1, "A");
+        world.Put(2, "B");
+        await world.StartAsync();
+        var second = world.Set.Create(null).Value;
+        world.Effects.HideThenFail = true;
+
+        var moved = await world.Pump(world.Set.MoveAsync(world.KeyOf(2), second, Ct));
+
+        Assert.False(moved.Ok);
+        var window = world.Model.Current.Windows.Single(w => w.Key.Handle == 2);
+        Assert.True(window.Visible);
+        Assert.False(window.ShellHidden);
+        Assert.Equal(world.Set.CurrentId, window.DesktopId);
+        Assert.Empty(world.Journal.Handles());
+    }
+
     private static string Ref(WindowKey key) => new WindowReference(Epoch, key.Generation).ToString();
 
     private sealed class World : IDisposable
@@ -858,6 +964,14 @@ public sealed class VirtualDesktopTests
 
         public int ShowAllCalls { get; private set; }
 
+        /// <summary>Windows a show is asked for and fails on: they stay hidden.</summary>
+        public HashSet<int> NotShow { get; } = [];
+
+        /// <summary>The next plan hides what it names and then reports a failure, as a hide that landed before the thread faulted.</summary>
+        public bool HideThenFail { get; set; }
+
+        public bool ShowAllFails { get; set; }
+
         public async Task<Outcome<EffectsResult>> ApplyAsync(SwitchPlan plan, CancellationToken ct)
         {
             Plans.Add(plan);
@@ -869,6 +983,18 @@ public sealed class VirtualDesktopTests
 
             var stuck = new List<WindowKey>();
             var gone = new List<WindowKey>();
+            var notShown = new List<WindowKey>();
+            if (HideThenFail)
+            {
+                HideThenFail = false;
+                foreach (var planned in plan.Hide)
+                {
+                    facts.Items[(int)planned.Key.Handle] = facts.Items[(int)planned.Key.Handle] with { Visible = false };
+                }
+
+                return Outcome<EffectsResult>.Fail(CoreErrorCode.CommandFailed, "The effects thread faulted.");
+            }
+
             foreach (var planned in plan.Hide)
             {
                 if (!Matches(planned))
@@ -892,6 +1018,10 @@ public sealed class VirtualDesktopTests
                 {
                     gone.Add(planned.Key);
                 }
+                else if (NotShow.Contains((int)planned.Key.Handle))
+                {
+                    notShown.Add(planned.Key);
+                }
                 else
                 {
                     order.Add("show:" + planned.Key.Handle);
@@ -899,12 +1029,17 @@ public sealed class VirtualDesktopTests
                 }
             }
 
-            return Outcome<EffectsResult>.Success(new EffectsResult(stuck, gone));
+            return Outcome<EffectsResult>.Success(new EffectsResult(stuck, gone) { NotShown = notShown });
         }
 
         public Task<Outcome> ShowAllAsync(CancellationToken ct)
         {
             ShowAllCalls++;
+            if (ShowAllFails)
+            {
+                return Task.FromResult(Outcome.Fail(CoreErrorCode.CommandFailed, "One window would not show."));
+            }
+
             foreach (var handle in facts.Items.Keys.ToList())
             {
                 facts.Items[handle] = facts.Items[handle] with { Visible = true };
@@ -1026,6 +1161,9 @@ public sealed class VirtualDesktopTests
 
         public CoreErrorCode? Fail { get; set; }
 
+        /// <summary>Handles that report WindowGone when activated, while the model still lists them.</summary>
+        public HashSet<int> GoneHandles { get; } = [];
+
         public void AllowForeground(int processId)
         {
         }
@@ -1033,6 +1171,11 @@ public sealed class VirtualDesktopTests
         public Task<Outcome> ActivateWindowAsync(nint hwnd, CancellationToken ct)
         {
             Activated.Add(hwnd);
+            if (GoneHandles.Contains((int)hwnd))
+            {
+                return Task.FromResult(Outcome.Fail(CoreErrorCode.WindowGone, "gone"));
+            }
+
             return Task.FromResult(Fail is { } code ? Outcome.Fail(code, "failed") : Outcome.Success);
         }
 

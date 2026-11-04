@@ -193,7 +193,7 @@ public sealed class DesktopSet : IDesktopSet, IDisposable
             _model.CommitDesktops(
                 current,
                 [],
-                [.. show.Select(p => p.Key).Except(result.Gone)],
+                [.. show.Select(p => p.Key).Except(result.Gone).Except(result.NotShown)],
                 result.Stuck,
                 result.Gone,
                 v => v with { Desktops = [.. v.Desktops.Where(d => d.Id != id)] },
@@ -253,15 +253,31 @@ public sealed class DesktopSet : IDesktopSet, IDisposable
             }
 
             var result = applied.Value!;
-            _model.CommitDesktops(_model.Desktops.Current, [], result.Gone.Contains(key) ? [] : [key], result.Stuck, result.Gone);
+            var notShown = result.NotShown.Contains(key);
+            _model.CommitDesktops(_model.Desktops.Current, [], result.Gone.Contains(key) || notShown ? [] : [key], result.Stuck, result.Gone);
             await WriteExactJournalAsync().ConfigureAwait(false);
             RaiseChanged();
+            if (notShown)
+            {
+                return Outcome.Fail(CoreErrorCode.CommandFailed, "The window would not be shown.", retryable: true);
+            }
+
             return result.Gone.Contains(key) ? Outcome.Fail(CoreErrorCode.WindowGone, "The window is gone.") : Outcome.Success;
         }
         finally
         {
             _exclusive.Release();
         }
+    }
+
+    public async Task<Outcome> RevealAsync(WindowKey key, CancellationToken ct)
+    {
+        if (_model.Lookup(key) is not { } window)
+        {
+            return Outcome.Fail(CoreErrorCode.WindowGone, "The window is gone.");
+        }
+
+        return window.Pinned || window.Desktop == _model.Desktops.Current ? Outcome.Success : await SwitchAsync(window.Desktop, ct).ConfigureAwait(false);
     }
 
     /// <summary>Shows every window the shell hid and empties the journal entry. The shell is closing.</summary>
@@ -279,7 +295,14 @@ public sealed class DesktopSet : IDesktopSet, IDisposable
             _model.BeginEffects();
             try
             {
-                await _effects.ShowAllAsync(CancellationToken.None).ConfigureAwait(false);
+                var shown = await _effects.ShowAllAsync(CancellationToken.None).ConfigureAwait(false);
+                if (!shown.Ok)
+                {
+                    // Some stayed hidden: the journal keeps naming them, so the guardian can still show them.
+                    _diagnostic?.Invoke(new CoreError(CoreErrorCode.CommandFailed, "Some hidden windows could not be shown on exit: " + shown.Error!.Detail, true));
+                    return;
+                }
+
                 _model.CommitDesktops(_model.Desktops.Current, [], [.. hidden.Select(p => p.Key)], [], []);
             }
             finally
@@ -342,7 +365,7 @@ public sealed class DesktopSet : IDesktopSet, IDisposable
                 _model.CommitDesktops(
                     target,
                     [.. plan.Hide.Select(p => p.Key).Except(result.Stuck).Except(result.Gone)],
-                    [.. plan.Show.Select(p => p.Key).Except(result.Gone)],
+                    [.. plan.Show.Select(p => p.Key).Except(result.Gone).Except(result.NotShown)],
                     result.Stuck,
                     result.Gone);
             }
@@ -417,12 +440,26 @@ public sealed class DesktopSet : IDesktopSet, IDisposable
                 var applied = await _effects.ApplyAsync(plan, CancellationToken.None).ConfigureAwait(false);
                 if (!applied.Ok)
                 {
+                    if (hide)
+                    {
+                        // The hide may have landed before the effects failed: the window must not stay hidden and refiled back.
+                        await _effects.ApplyAsync(new SwitchPlan(desktop, current, [], [window.Planned]), CancellationToken.None).ConfigureAwait(false);
+                    }
+
                     _model.FileOn(key, window.Desktop, window.Pinned);
                     await WriteExactJournalAsync().ConfigureAwait(false);
                     return (Outcome.Fail(applied.Error!.Code, applied.Error.Detail, applied.Error.Retryable), false);
                 }
 
                 var result = applied.Value!;
+                if (result.NotShown.Contains(key))
+                {
+                    _model.FileOn(key, window.Desktop, window.Pinned);
+                    await WriteExactJournalAsync().ConfigureAwait(false);
+                    RaiseChanged();
+                    return (Outcome.Fail(CoreErrorCode.CommandFailed, "The window would not be shown.", retryable: true), false);
+                }
+
                 if (result.Gone.Contains(key))
                 {
                     _model.CommitDesktops(current, [], [], [], result.Gone);
@@ -559,14 +596,17 @@ public sealed class DesktopSet : IDesktopSet, IDisposable
 
     private async Task ActivateLastAsync(Guid desktop)
     {
-        if (_model.LastActive(desktop) is not { } key)
+        // A window that closed meanwhile is skipped for the next most recently used one (S26.4).
+        var gone = new HashSet<WindowKey>();
+        while (gone.Count < 8 && _model.LastActive(desktop, gone) is { } key)
         {
-            return;
-        }
+            var activated = await _foreground.ActivateWindowAsync(key.Handle, CancellationToken.None).ConfigureAwait(false);
+            if (activated.Ok || activated.Error!.Code != CoreErrorCode.WindowGone)
+            {
+                return;
+            }
 
-        var activated = await _foreground.ActivateWindowAsync(key.Handle, CancellationToken.None).ConfigureAwait(false);
-        if (!activated.Ok && activated.Error!.Code == CoreErrorCode.WindowGone)
-        {
+            gone.Add(key);
             _model.Observe(new WindowObservation(key.Handle, ObservationKind.RescanMissing));
         }
     }

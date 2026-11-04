@@ -23,7 +23,11 @@ public sealed record DesktopsView(Guid Current, bool Busy, DesktopSwitching? Swi
 public sealed record DesktopWindow(PlannedWindow Planned, Guid Desktop, bool Pinned, bool ShellHidden, bool Stuck, bool Visible, bool Minimised);
 
 /// <summary>What the effects thread reports of a plan: windows it left visible because they refuse, and windows that were gone.</summary>
-public sealed record EffectsResult(IReadOnlyList<WindowKey> Stuck, IReadOnlyList<WindowKey> Gone);
+public sealed record EffectsResult(IReadOnlyList<WindowKey> Stuck, IReadOnlyList<WindowKey> Gone)
+{
+    /// <summary>Windows a show was asked for and failed on: they are still hidden, and stay in the hidden set and the journal.</summary>
+    public IReadOnlyList<WindowKey> NotShown { get; init; } = [];
+}
 
 /// <summary>
 /// Hides, shows and closes other applications' windows on a thread of its own (I27). Calls are non-blocking
@@ -94,4 +98,7 @@ public interface IDesktopSet
     Task<Outcome<Guid>> MoveToNewAsync(WindowKey key, CancellationToken ct);
 
     Task<Outcome> PinToAllAsync(WindowKey key, bool pinned, CancellationToken ct);
+
+    /// <summary>Switches to the window's desktop when it is on another one and not pinned, so that it can be activated (flow 10 before 19).</summary>
+    Task<Outcome> RevealAsync(WindowKey key, CancellationToken ct);
 }

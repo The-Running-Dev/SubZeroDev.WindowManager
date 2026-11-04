@@ -393,7 +393,10 @@ public sealed class WindowModel : IWindowModel
             {
                 if (_entries.Find(e => e.Key == key) is { } entry)
                 {
+                    // A window that refuses to be hidden is on screen, whatever was believed of it before (I40).
                     entry.Stuck = true;
+                    entry.ShellHidden = false;
+                    entry.Facts = entry.Facts with { Visible = true };
                 }
             }
 
@@ -411,12 +414,13 @@ public sealed class WindowModel : IWindowModel
     }
 
     /// <summary>The window to activate after arriving on a desktop: the one used most recently among those that are shown.</summary>
-    public WindowKey? LastActive(Guid desktop)
+    public WindowKey? LastActive(Guid desktop, ISet<WindowKey>? except = null)
     {
         lock (_gate)
         {
             return _entries
-                .Where(e => (e.DesktopId == desktop || e.Pinned) && !e.ShellHidden && e.Facts.Visible && !e.Facts.Minimised)
+                .Where(e => (e.DesktopId == desktop || e.Pinned) && !e.ShellHidden && e.Facts.Visible && !e.Facts.Minimised
+                    && (except is null || !except.Contains(e.Key)))
                 .OrderByDescending(e => e.ActivatedAt).ThenByDescending(e => e.FirstSeen)
                 .Select(e => (WindowKey?)e.Key).FirstOrDefault();
         }
