@@ -51,6 +51,9 @@ public sealed partial class App : Application
     private WindowsKeyTable? _keyTable;
     private WindowService? _windows;
     private SyntheticWindows? _syntheticWindows;
+    private IWindowEffects? _windowEffects;
+    private DesktopSet? _desktopSet;
+    private IThumbnailService? _thumbnails;
     private string? _hooked;
     private int _exiting;
 
@@ -182,6 +185,25 @@ public sealed partial class App : Application
         var windowModel = new WindowModel(synthetic ?? (IWindowFacts)windowFacts,new DispatcherPoster(dispatcher), scope: scope);
         synthetic?.Bind(windowModel);
         _syntheticWindows = synthetic;
+
+        // The effects thread hides and shows other applications' windows (I27); the test hook's twin changes only what the
+        // synthetic windows report, so no test hides, shows or moves a window it did not create (S26.10).
+        var effects = _windowEffects = synthetic is null ? new Win32WindowEffects(windowFacts) : new SyntheticWindowEffects(synthetic);
+        _thumbnails = new Win32ThumbnailService(synthetic ?? (IWindowFacts)windowFacts, key => windowModel.Lookup(key)?.Planned.Fingerprint);
+
+        // The desktops exist only when the app is the shell; the set must exist before the model seeds, so a window it hid
+        // in an earlier run is never mistaken for one the user hid.
+        if (_options.Mode == HostMode.Replacement)
+        {
+            _desktopSet = new DesktopSet(windowModel, effects, _journal!, foreground,
+                new DesktopStore(Path.Combine(_locations.DataRoot, "desktops.json")),
+                error => log.Write(LogLevel.Warning, "desktops", error.Detail));
+            if (_desktopSet.Problem is { } problem)
+            {
+                log.Write(LogLevel.Warning, "desktops", problem);
+            }
+        }
+
         var windows = _windows = new WindowService(windowModel, new Win32WindowTracker(windowFacts), _feeds.PublishHost);
         await windows.StartAsync(CancellationToken.None);
         AddBuiltIns(_router, foreground, dispatcher);
@@ -215,7 +237,7 @@ public sealed partial class App : Application
             var keyTable = _keyTable = new WindowsKeyTable(settings.WindowsKeys, line => log.Write(LogLevel.Warning, "keys", line));
             _router.CommandsChanged += (_, _) => RefreshKeyTable(report: true);
             RefreshKeyTable(report: false);
-            _windowsKeys = WindowsKeyHook.Start(hooked is not null, keyTable.SwallowsWithWin,
+            _windowsKeys = WindowsKeyHook.Start(hooked is not null, keyTable.Swallows,
                 line => log.Write(LogLevel.Warning, "keys", line));
             _windowsKeys.Pressed += (_, chord) => _ = OnWindowsKeyAsync(chord);
         }
@@ -227,7 +249,7 @@ public sealed partial class App : Application
         _surfaces = new SurfaceManager(config, monitors, _appBarService, _theme, _contributions, _log, Retry,
             new ElementActions(_router, _contributions), foreground,
             new IconResolver(new IconService(), () => _theme!.IconChain, (key, size) => _trayHost?.Image(key, size)),
-            () => _settings.ToastCorner ?? ToastCorner.BottomRight);
+            () => _settings.ToastCorner ?? ToastCorner.BottomRight, _thumbnails, windows.Model);
         _surfaces.PanelCreated += (_, panel) => panel.Panel.ContextFlyout = PanelMenu();
         if (replacement)
         {
@@ -280,10 +302,17 @@ public sealed partial class App : Application
         if (!string.IsNullOrWhiteSpace(hookDirectory))
         {
             _testHook = new TestHook(hookDirectory, this, _options, _locations, _theme, _surfaces, _supervisor, _launcher, _catalog, dispatcher,
-                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost, Desktop = _desktop, WindowsKeys = _windowsKeys, Windows = _windows, Synthetic = _syntheticWindows };
+                _watchdog!, _guardian, _router, _hotkeys, _feeds, simulated!, _shellEvents) { ShellRoles = _shellRoles, Tray = _trayHost, Desktop = _desktop, WindowsKeys = _windowsKeys, Windows = _windows, Synthetic = _syntheticWindows, Desktops = _desktopSet };
             _testHook.Start();
         }
     }
+
+    /// <summary>A desktop command: it works while the app is the shell, because hiding other applications' windows is the shell's job.</summary>
+    private void AddDesktopCommand(CommandRouter router, string id, string title,
+        Func<DesktopSet, JsonObject?, CancellationToken, Task<CommandOutcome>> run) =>
+        router.AddBuiltIn(id, title, (args, ct) => _desktopSet is { } set
+            ? run(set, args, ct)
+            : Task.FromResult(CommandOutcome.Fail(CoreErrorCode.NotInReplacementMode, $"{id} only works when the app is the shell.")));
 
     /// <summary>The host's own commands that S6 serves; the others arrive with the slices that need them.</summary>
     private void AddBuiltIns(CommandRouter router, ForegroundService foreground, DispatcherQueue dispatcher)
@@ -383,8 +412,20 @@ public sealed partial class App : Application
         AddSessionCommand(router, "host.session.restart", "Restart", session.Restart);
         AddSessionCommand(router, "host.session.shutdown", "Shut down", session.Shutdown);
         AddSessionCommand(router, "host.session.sleep", "Sleep", session.Sleep);
-        router.AddBuiltIn("host.window.activate", "Activate window", (args, ct) => WindowCommands.ActivateAsync(_windows!.Model, foreground, args, ct));
+        router.AddBuiltIn("host.window.activate", "Activate window", (args, ct) => WindowCommands.ActivateAsync(_windows!.Model, foreground, args, ct,
+            _desktopSet is null ? null : (key, token) => _desktopSet.RevealAsync(key, token)));
         router.AddBuiltIn("host.window.minimize", "Minimise window", (args, ct) => WindowCommands.MinimizeAsync(_windows!.Model, foreground, args, ct));
+        AddDesktopCommand(router, DesktopCommands.Switch, "Switch desktop", (set, args, ct) => DesktopCommands.SwitchAsync(set, args, ct));
+        AddDesktopCommand(router, DesktopCommands.Create, "New desktop", (set, args, ct) => DesktopCommands.CreateAsync(set, args, ct));
+        AddDesktopCommand(router, DesktopCommands.Remove, "Remove desktop", (set, args, ct) => DesktopCommands.RemoveAsync(set, args, ct));
+        AddDesktopCommand(router, DesktopCommands.Rename, "Rename desktop", (set, args, _) => DesktopCommands.RenameAsync(set, args));
+        AddDesktopCommand(router, DesktopCommands.MoveToDesktop, "Move window to desktop",
+            (set, args, ct) => DesktopCommands.MoveAsync(set, _windows!.Model, args, ct));
+        AddDesktopCommand(router, DesktopCommands.PinToAll, "Pin window to all desktops",
+            (set, args, ct) => DesktopCommands.PinAsync(set, _windows!.Model, args, ct));
+        router.AddBuiltIn(DesktopCommands.Close, "Close window", (args, ct) => _options.Mode == HostMode.Replacement
+            ? DesktopCommands.CloseAsync(_windowEffects!, _windows!.Model, args, ct)
+            : Task.FromResult(CommandOutcome.Fail(CoreErrorCode.NotInReplacementMode, $"{DesktopCommands.Close} only works when the app is the shell.")));
         router.AddBuiltIn("host.preset.apply", "Apply preset", async (args, ct) =>
         {
             if (args?["id"] is not JsonValue value || !value.TryGetValue<string>(out var id))
@@ -679,6 +720,14 @@ public sealed partial class App : Application
         _hotkeyService?.Dispose();
         _config?.Dispose();
         _catalog?.Dispose();
+        if (_desktopSet is { } desktopSet)
+        {
+            // Every window the shell hid comes back before it goes; the journal's entry is cleared with them.
+            await desktopSet.RestoreAllAsync();
+            desktopSet.Dispose();
+        }
+
+        (_windowEffects as IDisposable)?.Dispose();
         _windows?.Dispose();
         if (_contributions is not null)
         {

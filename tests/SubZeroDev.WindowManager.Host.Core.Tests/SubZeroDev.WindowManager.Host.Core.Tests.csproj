@@ -20,6 +20,10 @@
     <ProjectReference Include="..\..\src\SubZeroDev.WindowManager.Sdk\SubZeroDev.WindowManager.Sdk.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The Thumbnail and hoverPopup decisions carry no WinUI, so they are tested without the Surfaces project. -->
+    <Compile Include="..\..\src\SubZeroDev.WindowManager.Host.Surfaces\ThumbnailLogic.cs" Link="Surfaces\ThumbnailLogic.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <Content Include="..\..\content\**\*" LinkBase="content" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

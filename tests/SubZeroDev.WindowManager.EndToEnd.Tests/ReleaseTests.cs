@@ -77,6 +77,65 @@ public sealed class ReleaseTests
         Assert.Equal(0, await run.StopAsync());
     }
 
+    [Fact]
+    public async Task S26_7_a_fixture_built_from_the_packages_switches_desktops_moves_a_window_and_shows_thumbnails()
+    {
+        var release = Environment.GetEnvironmentVariable(ReleaseVariable);
+        var fixture = Environment.GetEnvironmentVariable(FixtureVariable);
+        if (string.IsNullOrEmpty(release) || string.IsNullOrEmpty(fixture))
+        {
+            Assert.Skip($"Set {ReleaseVariable} and {FixtureVariable} after build\\release.ps1 to run this.");
+        }
+
+        HostRun.RequireDesktop();
+        var host = Path.Combine(release, "host", "SubZeroDev.WindowManager.Host.exe");
+        Assert.True(File.Exists(host), $"No released host at {host}.");
+        using var run = HostRun.Create();
+        run.WriteDefaultLayout((Guid.NewGuid(), Clock, "clock"));
+        run.Start(host, "--mode", "replacement");
+        await run.WaitForAsync(s => HostRun.Texts(s, Clock).Count == 1, Startup);
+
+        await InstallAndPlaceAsync(run, fixture, Fixture, "status");
+        await run.WaitForAsync(s => State(s, Fixture) == "Running", Startup);
+
+        // Only windows the test hook made are touched (S26.10): two of them, and a second desktop to file one on.
+        await File.WriteAllTextAsync(Path.Combine(run.HookDirectory, "synthetic-windows"),
+            new JsonObject { ["op"] = "add", ["count"] = 2 }.ToJsonString(), TestContext.Current.CancellationToken);
+        var status = await run.WaitForAsync(s => (int?)s["windowModel"]?["synthetic"] == 2
+            && s["windowModel"]!["firstSynthetic"]!.AsArray().Count == 2, Startup);
+        var epoch = (long)status["windowModel"]!["epoch"]!;
+        var key = (string)status["windowModel"]!["firstSynthetic"]![0]!["key"]!;
+        var first = (string)status["desktops"]!["current"]!;
+
+        var created = await InvokeAsync(run, "host.desktops.create", new JsonObject { ["switchTo"] = false });
+        Assert.True((bool)created["ok"]!, created.ToJsonString());
+        status = await run.WaitForAsync(s => (int)s["desktops"]!["count"]! == 2, Startup);
+        var second = status["desktops"]!["ids"]!.AsArray().Select(i => (string)i!).Single(id => id != first);
+
+        // The published SDK alone moves a window, and the host names what it refused.
+        var moved = await InvokeAsync(run, "example.windows.moveWindow", new JsonObject { ["windowKey"] = key, ["id"] = second });
+        Assert.True((bool)moved["ok"]!, moved.ToJsonString());
+        await run.WaitForAsync(s => (int)s["windowModel"]!["syntheticHidden"]! == 1, Startup);
+
+        var switched = await InvokeAsync(run, "example.windows.switchDesktop", new JsonObject { ["id"] = second });
+        Assert.True((bool)switched["ok"]!, switched.ToJsonString());
+        await run.WaitForAsync(s => (string?)s["desktops"]!["current"] == second && (int)s["windowModel"]!["syntheticHidden"]! == 1, Startup);
+
+        // A thumbnail of a key from another run, one that names no window, and one that is hidden: a card each, and nobody
+        // is told (S26.7); the plugin is neither faulted nor stopped.
+        foreach (var shown in new[] { $"wk1:{epoch + 1}:1", $"wk1:{epoch}:999999", key })
+        {
+            var result = await InvokeAsync(run, "example.windows.showThumbnail", new JsonObject { ["windowKey"] = shown });
+            Assert.True((bool)result["ok"]!, result.ToJsonString());
+        }
+
+        status = await run.WaitForStatusAsync();
+        var plugin = status["plugins"]!.AsArray().Single(p => (string?)p!["id"] == Fixture)!;
+        Assert.Equal("Running", (string?)plugin["state"]);
+        Assert.Equal(0, (int)plugin["recentFaults"]!);
+        Assert.Equal(0, await run.StopAsync());
+    }
+
     /// <summary>Installs a plugin package through the settings pages, enables it and places one instance, as a user would.</summary>
     private static async Task InstallAndPlaceAsync(HostRun run, string package, string plugin, string contribution)
     {

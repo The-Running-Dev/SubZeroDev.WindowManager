@@ -10,13 +10,30 @@ public enum StackOrientation { Horizontal, Vertical, Panel }
 
 public enum ListSelection { None, Single }
 
+/// <summary>A thumbnail's size; the theme's <c>Wm.Thumbnail.Width.*</c> and <c>Wm.Thumbnail.Height.*</c> tokens give the DIPs.</summary>
+public enum ThumbnailSize { Small, Medium, Large }
+
 public abstract record IconRef
 {
     public sealed record Named(string Id) : IconRef;
 
     public sealed record App(string? Exe, string? Aumid) : IconRef;
 
-    public sealed record Window(long Hwnd) : IconRef;
+    /// <summary>A window's icon, by handle or, from host API 1.1, by its <c>windowKey</c> (preferred: a key never names a reused handle).</summary>
+    public sealed record Window(long Hwnd) : IconRef
+    {
+        /// <summary>A window's icon by its <c>windowKey</c> from <c>host.windows</c>.</summary>
+        /// <param name="key">The window's <c>wk1:</c> reference.</param>
+        public Window(string key)
+            : this(0L)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(key);
+            Key = key;
+        }
+
+        /// <summary>The window's <c>windowKey</c>; null when the icon names a handle.</summary>
+        public string? Key { get; init; }
+    }
 
     public sealed record File(string PackagePath) : IconRef;
 
@@ -28,6 +45,7 @@ public abstract record IconRef
         Tray tray => new JsonObject { ["tray"] = tray.Key },
         Named named => new JsonObject { ["named"] = named.Id },
         App app => new JsonObject { ["app"] = new JsonObject { ["exe"] = app.Exe, ["aumid"] = app.Aumid } },
+        Window { Key: { } key } => new JsonObject { ["window"] = key },
         Window window => new JsonObject { ["window"] = window.Hwnd },
         File file => new JsonObject { ["file"] = file.PackagePath },
         _ => throw new InvalidOperationException("Unknown icon reference."),
@@ -156,6 +174,34 @@ public static class View
         Node(id, ElementKind.Progress, [], ("value", value.ToJson()));
 
     public static ViewNode Separator(string id) => Node(id, ElementKind.Separator, []);
+
+    /// <summary>
+    /// A live picture of another window, drawn by the host. When the window is minimised, hidden or gone the host
+    /// draws its icon and title instead; the plugin is never told.
+    /// </summary>
+    /// <param name="id">The element id.</param>
+    /// <param name="window">The window's <c>windowKey</c> from <c>host.windows</c>, or a binding to one.</param>
+    /// <param name="size">The size; the theme sets the DIPs.</param>
+    public static ViewNode Thumbnail(string id, Prop<string> window, ThumbnailSize size = ThumbnailSize.Medium) =>
+        Node(id, ElementKind.Thumbnail, [], ("window", window.ToJson()), ("size", Lower(size)));
+
+    /// <summary>
+    /// The element with a <c>hoverPopup</c> prop: the plugin's popup opens at the element, without taking the focus,
+    /// once the pointer has rested on it for <paramref name="delayMs"/>, and closes when the pointer leaves both.
+    /// </summary>
+    /// <param name="element">The element.</param>
+    /// <param name="popupId">A popup the plugin's manifest declares.</param>
+    /// <param name="delayMs">How long the pointer rests before the popup opens.</param>
+    public static ViewNode WithHoverPopup(this ViewNode element, string popupId, int delayMs = 400)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(popupId);
+        ArgumentOutOfRangeException.ThrowIfNegative(delayMs);
+        var props = new Dictionary<string, JsonNode?>(element.Props ?? new Dictionary<string, JsonNode?>(), StringComparer.Ordinal)
+        {
+            ["hoverPopup"] = new JsonObject { ["popup"] = popupId, ["delayMs"] = delayMs },
+        };
+        return element with { Props = props };
+    }
 
     public static ViewNode Spacer(string id, bool flex = false) => Node(id, ElementKind.Spacer, [], ("flex", flex));
 

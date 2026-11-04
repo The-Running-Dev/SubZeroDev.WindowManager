@@ -40,6 +40,7 @@ $builtIn = @(
     @{ Id = 'subzerodev.session'; Project = 'SubZeroDev.WindowManager.Plugins.Session' }
     @{ Id = 'subzerodev.indicators'; Project = 'SubZeroDev.WindowManager.Plugins.Indicators' }
     @{ Id = 'subzerodev.notifications'; Project = 'SubZeroDev.WindowManager.Plugins.Notifications'; Framework = 'net10.0-windows10.0.26100.0' }
+    @{ Id = 'subzerodev.desktops'; Project = 'SubZeroDev.WindowManager.Plugins.Desktops' }
 )
 
 function Invoke-Checked {

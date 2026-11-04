@@ -143,23 +143,30 @@ public sealed class PopupWindow
     /// given pixel width and height, and activates it. The placement is asked again whenever the view's
     /// height changes, so a popup anchored above an element grows upwards.
     /// </summary>
-    public void Open(MonitorInfo monitor, Func<int, int, RectInt> place)
+    /// <param name="monitor">The monitor the popup opens on.</param>
+    /// <param name="place">Where a window of the given pixel width and height goes.</param>
+    /// <param name="activate">False to show it without taking focus, as a hover popup does; a toast never activates.</param>
+    public void Open(MonitorInfo monitor, Func<int, int, RectInt> place, bool activate = true)
     {
         _monitor = monitor;
         _place = place;
         Fit();
+        var activates = activate && Placement != PopupPlacement.Toast;
         if (!IsOpen)
         {
             IsOpen = true;
             _active = false;
-            _window.AppWindow.Show(activateWindow: Placement != PopupPlacement.Toast);
+            _window.AppWindow.Show(activateWindow: activates);
         }
 
-        if (Placement != PopupPlacement.Toast)
+        if (activates)
         {
             _window.Activate();
         }
     }
+
+    /// <summary>Raised after the popup hides, for any reason.</summary>
+    public event EventHandler? Hidden;
 
     /// <summary>
     /// Puts keyboard focus on the first TextInput, or on the first focusable element. Content that is not
@@ -260,13 +267,19 @@ public sealed class PopupWindow
         _active = false;
         _focusPending = false;
         _window.AppWindow.Hide();
+        Hidden?.Invoke(this, EventArgs.Empty);
     }
 
     public void Close()
     {
+        var wasOpen = IsOpen;
         IsOpen = false;
         _closeRequested = true;
         _window.Close();
+        if (wasOpen)
+        {
+            Hidden?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private void Fit()

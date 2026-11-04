@@ -230,6 +230,12 @@ public sealed class ThemeEngine : IThemeEngine
             dictionary["Wm.Brush." + token] = new SolidColorBrush(colour);
         }
 
+        // Below every theme dictionary, so a theme that sets a size wins and one that does not still has it.
+        foreach (var (key, dips) in ThemePackageReader.HostSizeTokens)
+        {
+            dictionary[key] = dips;
+        }
+
         return dictionary;
     }
 

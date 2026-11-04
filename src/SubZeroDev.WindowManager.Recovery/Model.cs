@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace SubZeroDev.WindowManager.Recovery;
 
-public enum DesktopChangeKind { AppBar, WorkArea }
+public enum DesktopChangeKind { AppBar, WorkArea, HiddenWindows }
 
 /// <summary>
 /// One reversible desktop change. An <c>appBar</c> payload holds <c>hwnd</c>, <c>edge</c> and
@@ -21,6 +21,26 @@ public sealed record DesktopChange(Guid Id, DesktopChangeKind Kind, [property: J
             ["thicknessPx"] = thicknessPx,
         });
 
+    /// <summary>The monitor field of a change that belongs to no monitor.</summary>
+    public const string AllMonitors = "all";
+
+    /// <summary>
+    /// The windows the shell has hidden for other desktops. The payload is <c>{ windows: [ { hwnd, processId,
+    /// processStartTicks, threadId, className } ] }</c>, the five fields the guardian must see again before it shows one.
+    /// </summary>
+    public static DesktopChange HiddenWindows(IEnumerable<HiddenWindow> windows, DateTimeOffset appliedAt) =>
+        new(Guid.NewGuid(), DesktopChangeKind.HiddenWindows, AllMonitors, appliedAt, new JsonObject
+        {
+            ["windows"] = new JsonArray([.. windows.Select(w => (JsonNode?)new JsonObject
+            {
+                ["hwnd"] = (long)w.Handle,
+                ["processId"] = w.ProcessId,
+                ["processStartTicks"] = w.ProcessStartTicks,
+                ["threadId"] = w.ThreadId,
+                ["className"] = w.ClassName,
+            })]),
+        });
+
     /// <summary>A work area set by the host; the payload is the rectangle to put back.</summary>
     public static DesktopChange WorkArea(string monitorId, int left, int top, int right, int bottom, DateTimeOffset appliedAt) =>
         new(Guid.NewGuid(), DesktopChangeKind.WorkArea, monitorId, appliedAt, new JsonObject
@@ -31,6 +51,9 @@ public sealed record DesktopChange(Guid Id, DesktopChangeKind Kind, [property: J
             ["bottom"] = bottom,
         });
 }
+
+/// <summary>A window's identity as the journal records it: the handle and the four fingerprint fields.</summary>
+public readonly record struct HiddenWindow(nint Handle, int ProcessId, long ProcessStartTicks, int ThreadId, string ClassName);
 
 /// <summary>The session's journal: which host wrote it, whether it exited cleanly, and the changes still applied, oldest first.</summary>
 public sealed record JournalDocument(int SchemaVersion, int HostPid, DateTimeOffset HostStartTime, bool CleanExit,

@@ -18,6 +18,33 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-04 — S26: the replacement-startup CI budget is re-baselined for the tenth shell item
+- **Context:** The built-in `subzerodev.shell` layout gained the Desktops panel item, a worker process of its own, so replacement startup now waits for ten live views instead of nine. The `budgets` job on this slice's pull request measured `replacementStartupMs` at 6172, 6451 and 5114 ms (median 6172) against the 5419 ms budget set in S23 from runs of 4131 to 4516 ms.
+- **Chosen:** Take the budget from the `budgets` artifact of this pull request, as S16 and S23 did: the 90th percentile of the three CI runs is 6451 ms, plus 20% gives 7741 ms. The reference-machine budget is unchanged until it is measured there.
+- **Rejected:**
+  - Leaving the budget and retrying until a run passes, because the median sits over the limit and the extra worker is a real cost.
+  - Starting the Desktops worker after the other items are live, because the budget measures every item showing a live view and a lazy start would hide the cost instead of bounding it.
+
+## 2026-11-04 — S26: how virtual desktops, hiding and thumbnails were built, and what the native checks found
+- **Context:** building S26 left open where the desktop code lives, how a switch publishes, what a test may touch, and three native questions (8, 12, 15).
+- **Chosen:**
+  - **Ports in `Host.Core`, Win32 in `Host.Platform`.** `IDesktopSet`, `IWindowEffects`, `IThumbnailService`, `IDesktopStore` are interfaces in Core; `Win32WindowEffects` and `Win32ThumbnailService` are in Platform. `IDesktopSet` is async wherever it touches the journal or the effects, and `IWindowEffects` gained `CloseAsync`.
+  - **The window model owns desktop state.** A `WindowSnapshot` carries the desktop view and `CommitDesktops` applies a switch's outcome in one publish, so both feeds come from one snapshot with equal `revision` (I42). `DesktopSet` is built before the model seeds, so a window hidden in an earlier run is never taken for one the user hid.
+  - **Desktops exist only in replacement mode.** Elsewhere the desktop commands answer `NotInReplacementMode`. The first desktop is current at start-up; the stored `lastCurrent` is written and checked but not used.
+  - **`desktops.json` is saved off the UI thread,** serialised and atomic. An invalid file is copied to `desktops.json.invalid` before the first overwrite.
+  - **A window that will not hide follows the user** and is not marked stuck or gone. A window that is still visible 150 ms after its hide is shown again, forgotten, and reported stuck. A hung or refused window is never touched.
+  - **A window that shows itself while hidden is hidden again** by `DesktopSet`, reacting to `WindowModel.SelfShown`, except while a switch is busy or inside begin/end effects. After a switch the next window is the most recently activated one that is shown.
+  - **The Windows-key tracker is modifier-aware** (`Func<KeyModifiers, uint, bool>`). The desktop chords are non-default table entries that need an available provider; host built-ins count as always available. `host.desktops.remove` accepts `id: "current"` for Win+Ctrl+F4.
+  - **Under the test hook the effects are `SyntheticWindowEffects`,** which change only what model-only synthetic windows report and call any other handle stuck. The thumbnail service is always the real `Win32ThumbnailService`, since it draws nothing for a handle that is not a window.
+  - **Thumbnail errors are logged once per element, as text in the host log.** `ThumbnailUnavailable` is not an error code; a refused registration surfaces as the card. `hoverPopup` opens only anchored popups, and closes 250 ms after the pointer leaves both the element and the popup.
+  - **Drag to move a window in the overview is not expressible in the view vocabulary.** The overview offers a right-click context action, "move to next desktop", and `desktops.moveWindow` for a chosen one.
+  - **Native results.** Q15: a show with show/no-activate/no-move/no-size/no-z-order leaves a minimised window minimised and raises no activate, focus or size message, so the guardian uses it; `SW_SHOWNOACTIVATE` would restore, so it is not used. Q8: a process can cloak its own window from another thread, and cloaking a child process's window fails with `E_ACCESSDENIED`; the shell-role process was not tested, so the answer for it is unproven and **live thumbnails of other desktops do not ship** (S26.9). Hiding stays the mechanism. Q12: registration works and the source size is in physical pixels, equal to `GetClientRect`; destination rectangles inside or running past the client area both succeed; unregistering twice fails on the second call, so each registration is released exactly once. On-screen placement, clipping and scaling, and a WinUI popup as the destination, were not verified on a display.
+- **Rejected:**
+  - **Cloaking as the hiding mechanism:** unproven for other applications' windows (Q8).
+  - **Windows' own virtual desktops:** the shell is the only owner of what is hidden, and the guardian can restore it.
+  - **Showing a recovered window with `SW_SHOWNOACTIVATE` or `SW_RESTORE`:** both un-minimise, and `SW_RESTORE` activates.
+  - **Real windows in the switch tests:** they would hide the user's applications and break I38.
+
 ## 2026-11-04 — S25: how the window model was built, scoped and tested
 - **Context:** building S25 showed places where the design left the shape of the host's window code, the plugin's failure surface and the test scope open.
 - **Chosen:**

@@ -28,6 +28,16 @@ public sealed class WindowModel : IWindowModel
         public WindowProgress Progress { get; set; } = WindowProgress.None;
 
         public WindowOverlay? Overlay { get; set; }
+
+        public Guid DesktopId { get; set; }
+
+        public bool Pinned { get; set; }
+
+        /// <summary>The shell hid this window because its desktop is not the current one.</summary>
+        public bool ShellHidden { get; set; }
+
+        /// <summary>The window refused to be hidden; it stays visible and follows the user from desktop to desktop.</summary>
+        public bool Stuck { get; set; }
     }
 
     private readonly IWindowFacts _reader;
@@ -41,6 +51,9 @@ public sealed class WindowModel : IWindowModel
     private nint _foreground;
     private bool _dirty;
     private bool _publishQueued;
+    private DesktopsView _desktops = DesktopsView.Single;
+    private int _quiet;
+    private List<WindowKey> _selfShown = [];
     private WindowSnapshot _current = new(0, []);
 
     /// <param name="reader">Reads the facts of a handle.</param>
@@ -69,6 +82,12 @@ public sealed class WindowModel : IWindowModel
     }
 
     public event EventHandler<WindowSnapshot>? Changed;
+
+    /// <summary>
+    /// Raised on the UI thread when a window the shell hid for another desktop shows itself again. It also gains
+    /// attention. Not raised while a switch runs, when windows are legitimately coming and going.
+    /// </summary>
+    public event Action<WindowKey>? SelfShown;
 
     /// <summary>Admits the windows found by the first enumeration and publishes revision 1, even when there are none.</summary>
     /// <param name="handles">Topmost first, as <c>EnumWindows</c> returns them; the bottom-most is admitted first, so the order matches the first release.</param>
@@ -102,12 +121,19 @@ public sealed class WindowModel : IWindowModel
 
     public void Observe(WindowObservation observation) => _poster.Post(() =>
     {
+        List<WindowKey> shown;
         lock (_gate)
         {
             Apply(observation);
+            shown = _selfShown;
+            _selfShown = [];
         }
 
         QueuePublish();
+        foreach (var key in shown)
+        {
+            SelfShown?.Invoke(key);
+        }
     });
 
     public Outcome<WindowTarget> Resolve(string windowKey)
@@ -188,6 +214,222 @@ public sealed class WindowModel : IWindowModel
     public void SetProgress(WindowKey key, WindowProgress progress) => Edit(key, entry => entry.Progress = progress);
 
     public void SetOverlay(WindowKey key, WindowOverlay? overlay) => Edit(key, entry => entry.Overlay = overlay);
+
+    // ---- Virtual desktops. The model owns which desktop a window is filed on; DesktopSet decides, the model records. ----
+
+    /// <summary>The desktops as the next snapshot will carry them.</summary>
+    public DesktopsView Desktops
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _desktops;
+            }
+        }
+    }
+
+    /// <summary>Sets the desktops before the first enumeration, without publishing (revision 1 comes from the seed).</summary>
+    public void ConfigureDesktops(DesktopsView view)
+    {
+        lock (_gate)
+        {
+            _desktops = view;
+        }
+    }
+
+    /// <summary>Changes the desktops and publishes.</summary>
+    public void SetDesktops(Func<DesktopsView, DesktopsView> change)
+    {
+        lock (_gate)
+        {
+            _desktops = change(_desktops);
+            _dirty = true;
+        }
+
+        QueuePublish();
+    }
+
+    /// <summary>What <paramref name="key"/> is now as far as desktops go; null when it is not tracked.</summary>
+    public DesktopWindow? Lookup(WindowKey key)
+    {
+        lock (_gate)
+        {
+            return _entries.Find(e => e.Key == key) is { } entry ? Describe(entry) : null;
+        }
+    }
+
+    /// <summary>The windows a switch from the current desktop to <paramref name="to"/> would hide and show.</summary>
+    public SwitchPlan PlanSwitch(Guid to)
+    {
+        lock (_gate)
+        {
+            var from = _desktops.Current;
+            if (from == to)
+            {
+                return new SwitchPlan(from, to, [], []);
+            }
+
+            var hide = _entries.Where(e => e.DesktopId == from && !e.Pinned && !e.ShellHidden && !e.Stuck && e.Facts.Visible).Select(Planned);
+            var show = _entries.Where(e => e.DesktopId == to && !e.Pinned && e.ShellHidden).Select(Planned);
+            return new SwitchPlan(from, to, [.. hide], [.. show]);
+        }
+    }
+
+    /// <summary>Every window the shell has hidden.</summary>
+    public IReadOnlyList<PlannedWindow> HiddenWindows()
+    {
+        lock (_gate)
+        {
+            return [.. _entries.Where(e => e.ShellHidden).Select(Planned)];
+        }
+    }
+
+    /// <summary>Files a window on a desktop (and optionally pins or unpins it). False when the window is no longer tracked.</summary>
+    public bool FileOn(WindowKey key, Guid desktop, bool? pinned = null)
+    {
+        lock (_gate)
+        {
+            if (_entries.Find(e => e.Key == key) is not { } entry)
+            {
+                return false;
+            }
+
+            entry.DesktopId = desktop;
+            if (pinned is { } pin)
+            {
+                entry.Pinned = pin;
+            }
+
+            _dirty = true;
+        }
+
+        QueuePublish();
+        return true;
+    }
+
+    /// <summary>The windows filed on any of <paramref name="desktops"/> that the shell has hidden and that are not pinned.</summary>
+    public IReadOnlyList<PlannedWindow> HiddenOn(IReadOnlyCollection<Guid> desktops)
+    {
+        lock (_gate)
+        {
+            return [.. _entries.Where(e => e.ShellHidden && !e.Pinned && desktops.Contains(e.DesktopId)).Select(Planned)];
+        }
+    }
+
+    /// <summary>
+    /// Runs the shell's own hides and shows: while it is on, a window that appears or disappears is the shell's doing and
+    /// is not read as the window showing itself.
+    /// </summary>
+    public void BeginEffects()
+    {
+        lock (_gate)
+        {
+            _quiet++;
+        }
+    }
+
+    /// <summary>Ends <see cref="BeginEffects"/>.</summary>
+    public void EndEffects()
+    {
+        lock (_gate)
+        {
+            _quiet--;
+        }
+    }
+
+    /// <summary>
+    /// Applies the outcome of hides and shows and moves to <paramref name="current"/> in one snapshot: every window's
+    /// <c>visible</c> and <c>shellHidden</c>, the dropped windows, <c>current</c> and the end of <c>busy</c> change together (I42).
+    /// </summary>
+    /// <param name="current">The desktop the user is on afterwards.</param>
+    /// <param name="hidden">Windows the shell hid.</param>
+    /// <param name="shown">Windows the shell showed.</param>
+    /// <param name="stuck">Windows that refused to be hidden.</param>
+    /// <param name="gone">Windows that no longer exist.</param>
+    /// <param name="edit">A change to the desktop list that must publish with the rest (a removed desktop); null for none.</param>
+    /// <param name="refile">Files every window of one desktop on another, in the same snapshot (a removed desktop); null for none.</param>
+    public void CommitDesktops(Guid current, IReadOnlyCollection<WindowKey> hidden, IReadOnlyCollection<WindowKey> shown,
+        IReadOnlyCollection<WindowKey> stuck, IReadOnlyCollection<WindowKey> gone, Func<DesktopsView, DesktopsView>? edit = null,
+        (Guid From, Guid To)? refile = null)
+    {
+        lock (_gate)
+        {
+            if (refile is { } move)
+            {
+                foreach (var entry in _entries.Where(e => e.DesktopId == move.From))
+                {
+                    entry.DesktopId = move.To;
+                }
+            }
+
+            foreach (var key in gone)
+            {
+                if (_entries.Find(e => e.Key == key) is { } entry)
+                {
+                    Remove(entry);
+                }
+            }
+
+            foreach (var key in hidden)
+            {
+                if (_entries.Find(e => e.Key == key) is { } entry)
+                {
+                    entry.ShellHidden = true;
+                    entry.Facts = entry.Facts with { Visible = false };
+                }
+            }
+
+            foreach (var key in shown)
+            {
+                if (_entries.Find(e => e.Key == key) is { } entry)
+                {
+                    entry.ShellHidden = false;
+                    entry.Facts = entry.Facts with { Visible = true };
+                }
+            }
+
+            foreach (var key in stuck)
+            {
+                if (_entries.Find(e => e.Key == key) is { } entry)
+                {
+                    // A window that refuses to be hidden is on screen, whatever was believed of it before (I40).
+                    entry.Stuck = true;
+                    entry.ShellHidden = false;
+                    entry.Facts = entry.Facts with { Visible = true };
+                }
+            }
+
+            // A window that cannot be hidden is on whatever desktop the user is on.
+            foreach (var entry in _entries.Where(e => e.Stuck))
+            {
+                entry.DesktopId = current;
+            }
+
+            _desktops = (edit?.Invoke(_desktops) ?? _desktops) with { Current = current, Busy = false, Switching = null };
+            _dirty = true;
+        }
+
+        QueuePublish();
+    }
+
+    /// <summary>The window to activate after arriving on a desktop: the one used most recently among those that are shown.</summary>
+    public WindowKey? LastActive(Guid desktop, ISet<WindowKey>? except = null)
+    {
+        lock (_gate)
+        {
+            return _entries
+                .Where(e => (e.DesktopId == desktop || e.Pinned) && !e.ShellHidden && e.Facts.Visible && !e.Facts.Minimised
+                    && (except is null || !except.Contains(e.Key)))
+                .OrderByDescending(e => e.ActivatedAt).ThenByDescending(e => e.FirstSeen)
+                .Select(e => (WindowKey?)e.Key).FirstOrDefault();
+        }
+    }
+
+    private static PlannedWindow Planned(Entry entry) => new(entry.Key, entry.Facts.Fingerprint);
+
+    private static DesktopWindow Describe(Entry entry) =>
+        new(Planned(entry), entry.DesktopId, entry.Pinned, entry.ShellHidden, entry.Stuck, entry.Facts.Visible, entry.Facts.Minimised);
 
     private void Edit(WindowKey key, Action<Entry> change)
     {
@@ -321,7 +563,7 @@ public sealed class WindowModel : IWindowModel
             return null;
         }
 
-        var entry = new Entry(new WindowKey(handle, ++_generation), facts, ++_sequence);
+        var entry = new Entry(new WindowKey(handle, ++_generation), facts, ++_sequence) { DesktopId = _desktops.Current };
         _entries.Add(entry);
         _dirty = true;
         return entry;
@@ -362,6 +604,13 @@ public sealed class WindowModel : IWindowModel
 
         if (facts != entry.Facts)
         {
+            if (entry.ShellHidden && facts.Visible && !_desktops.Busy && _quiet == 0)
+            {
+                // It showed itself while its desktop is not the current one: the host hides it again and it asks for attention.
+                entry.Attention = true;
+                _selfShown.Add(entry.Key);
+            }
+
             entry.Facts = facts;
             _dirty = true;
         }
@@ -415,7 +664,7 @@ public sealed class WindowModel : IWindowModel
                 keys.TryAdd(entry.Key.Handle, entry.Key);
             }
 
-            snapshot = _current = new WindowSnapshot(++_revision, [.. _entries.Select(e => Project(e, _foreground, keys))]);
+            snapshot = _current = new WindowSnapshot(++_revision, [.. _entries.Select(e => Project(e, _foreground, keys))], _desktops);
         }
 
         Changed?.Invoke(this, snapshot);
@@ -445,11 +694,11 @@ public sealed class WindowModel : IWindowModel
             GroupKeyOf(f),
             owner,
             f.MonitorId,
-            DefaultDesktop,
-            PinnedToAll: false,
-            f.Visible,
+            entry.DesktopId,
+            entry.Pinned,
+            f.Visible && !entry.ShellHidden,
             f.Cloak,
-            ShellHidden: false,
+            entry.ShellHidden,
             f.ToolWindow,
             f.NoActivate,
             f.AppWindow,

@@ -104,8 +104,11 @@ public sealed record ManagedWindow(
     WindowProgress Progress,
     WindowOverlay? Overlay);
 
-/// <summary>Every tracked window at one revision.</summary>
-public sealed record WindowSnapshot(long Revision, IReadOnlyList<ManagedWindow> Windows);
+/// <summary>Every tracked window and the desktops at one revision; null desktops means the single default one.</summary>
+public sealed record WindowSnapshot(long Revision, IReadOnlyList<ManagedWindow> Windows, DesktopsView? Desktops = null)
+{
+    public DesktopsView DesktopsOrDefault => Desktops ?? DesktopsView.Single;
+}
 
 /// <summary>What a command resolved a window reference to: the handle to act on, and the model's entry when it has one.</summary>
 public sealed record WindowTarget(nint Handle, ManagedWindow? Managed);

@@ -50,7 +50,7 @@ public sealed class WindowService : IDisposable
     {
         // Both feeds from the one snapshot, back to back, so a subscriber sees the same revision on each (I42).
         _publish(WindowFeeds.WindowsFeedId, WindowFeeds.Windows(snapshot, _model.Epoch));
-        _publish(WindowFeeds.DesktopsFeedId, WindowFeeds.Desktops(snapshot, WindowModel.DefaultDesktop, busy: false));
+        _publish(WindowFeeds.DesktopsFeedId, WindowFeeds.Desktops(snapshot));
     }
 }
 
@@ -75,8 +75,13 @@ public static class WindowCommands
         return (key, hwnd);
     }
 
+    /// <param name="model">The window model.</param>
+    /// <param name="foreground">Activates windows.</param>
+    /// <param name="args">The command arguments.</param>
+    /// <param name="ct">Cancels the activation.</param>
+    /// <param name="reveal">Switches to the window's desktop first when it is on another one; null when there are no desktops.</param>
     public static async Task<Outcome<CommandResult>> ActivateAsync(IWindowModel model, IForegroundService foreground, JsonObject? args,
-        CancellationToken ct)
+        CancellationToken ct, Func<WindowKey, CancellationToken, Task<Outcome>>? reveal = null)
     {
         if (ParseTarget(args, "host.window.activate", out var error) is not { } target)
         {
@@ -92,6 +97,15 @@ public static class WindowCommands
             }
 
             var handle = resolved.Value!.Handle;
+            if (reveal is not null && resolved.Value.Managed is { } managed)
+            {
+                var revealed = await reveal(managed.Key, ct).ConfigureAwait(false);
+                if (!revealed.Ok)
+                {
+                    return Outcome<CommandResult>.Fail(revealed.Error!);
+                }
+            }
+
             var activation = await foreground.ActivateConfirmedAsync(handle, ct).ConfigureAwait(false);
             if (!activation.Ok)
             {
@@ -109,6 +123,15 @@ public static class WindowCommands
         if (!legacy.Ok)
         {
             return Outcome<CommandResult>.Fail(legacy.Error!);
+        }
+
+        if (reveal is not null && legacy.Value!.Managed is { } legacyManaged)
+        {
+            var revealed = await reveal(legacyManaged.Key, ct).ConfigureAwait(false);
+            if (!revealed.Ok)
+            {
+                return Outcome<CommandResult>.Fail(revealed.Error!);
+            }
         }
 
         var outcome = await foreground.ActivateWindowAsync(legacy.Value!.Handle, ct).ConfigureAwait(false);

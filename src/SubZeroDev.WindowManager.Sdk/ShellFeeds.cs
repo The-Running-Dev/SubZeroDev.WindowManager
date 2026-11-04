@@ -51,7 +51,13 @@ public sealed record WindowFeedItem(string WindowKey, long Hwnd, int ProcessId, 
 /// <param name="Id">The desktop's id.</param>
 /// <param name="WindowCount">The windows that belong to it, pinned ones aside.</param>
 /// <param name="HasAttention">Whether a window on it asks for attention.</param>
-public sealed record DesktopFeedItem(string Id, int WindowCount, bool HasAttention);
+/// <param name="Name">The desktop's name; null when it is unnamed.</param>
+public sealed record DesktopFeedItem(string Id, int WindowCount, bool HasAttention, string? Name = null);
+
+/// <summary>The desktop switch in flight, from the <c>switching</c> field of <c>host.desktops</c>.</summary>
+/// <param name="From">The desktop being left.</param>
+/// <param name="To">The desktop being switched to.</param>
+public sealed record DesktopSwitch(string From, string To);
 
 /// <param name="Revision">The snapshot the feed was built from; <c>host.desktops</c> carries the same one.</param>
 /// <param name="Windows">Every tracked window, in the order they were first seen.</param>
@@ -106,7 +112,9 @@ public sealed record WindowsFeedState(long Revision, IReadOnlyList<WindowFeedIte
 /// <param name="Current">The desktop the user is on.</param>
 /// <param name="Busy">Whether a desktop switch is planned or running.</param>
 /// <param name="Desktops">The desktops, the current one first.</param>
-public sealed record DesktopsFeedState(long Revision, string Current, bool Busy, IReadOnlyList<DesktopFeedItem> Desktops)
+/// <param name="Switching">The switch in flight; null when none runs.</param>
+public sealed record DesktopsFeedState(long Revision, string Current, bool Busy, IReadOnlyList<DesktopFeedItem> Desktops,
+    DesktopSwitch? Switching = null)
 {
     /// <summary>Reads a <c>host.desktops</c> snapshot; null when it does not have the contract's shape.</summary>
     public static DesktopsFeedState? Parse(JsonNode? snapshot)
@@ -122,11 +130,16 @@ public sealed record DesktopsFeedState(long Revision, string Current, bool Busy,
         {
             if (node is JsonObject item && WindowsFeedState.Text(item, "id") is { } id)
             {
-                desktops.Add(new DesktopFeedItem(id, (int)(WindowsFeedState.Long(item, "windowCount") ?? 0), WindowsFeedState.Flag(item, "hasAttention")));
+                desktops.Add(new DesktopFeedItem(id, (int)(WindowsFeedState.Long(item, "windowCount") ?? 0),
+                    WindowsFeedState.Flag(item, "hasAttention"), WindowsFeedState.Text(item, "name")));
             }
         }
 
-        return new DesktopsFeedState(revision, current, WindowsFeedState.Flag(root, "busy"), desktops);
+        var switching = root["switching"] is JsonObject s && WindowsFeedState.Text(s, "from") is { } from
+            && WindowsFeedState.Text(s, "to") is { } to
+            ? new DesktopSwitch(from, to)
+            : null;
+        return new DesktopsFeedState(revision, current, WindowsFeedState.Flag(root, "busy"), desktops, switching);
     }
 }
 

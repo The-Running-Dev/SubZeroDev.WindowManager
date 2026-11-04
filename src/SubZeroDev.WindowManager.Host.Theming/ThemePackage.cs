@@ -56,6 +56,20 @@ public static class ThemePackageReader
         ["danger"] = 0xFFE81123,
     };
 
+    /// <summary>
+    /// The size tokens the host always defines, as <c>x:Double</c> DIPs under these keys (contract: size resources).
+    /// Every built-in theme sets them too; a theme that leaves one out gets the host's value.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, double> HostSizeTokens = new Dictionary<string, double>(StringComparer.Ordinal)
+    {
+        ["Wm.Thumbnail.Width.Small"] = 160,
+        ["Wm.Thumbnail.Height.Small"] = 90,
+        ["Wm.Thumbnail.Width.Medium"] = 240,
+        ["Wm.Thumbnail.Height.Medium"] = 135,
+        ["Wm.Thumbnail.Width.Large"] = 320,
+        ["Wm.Thumbnail.Height.Large"] = 180,
+    };
+
     /// <summary>The user copy under the data root wins over the built-in copy unless <paramref name="builtInOnly"/>.</summary>
     public static string? Locate(Locations locations, string themeId, bool builtInOnly, out ThemeSource source)
     {

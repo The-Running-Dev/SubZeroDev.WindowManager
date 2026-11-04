@@ -33,24 +33,47 @@ public static partial class Reverter
     /// </summary>
     public static Func<DesktopChange, Outcome> ForHook(string? hookDirectory) => hookDirectory is null ? Revert : change =>
     {
-        if (change.Kind != DesktopChangeKind.WorkArea)
-        {
-            return Revert(change);
-        }
-
         var p = change.Payload;
-        Directory.CreateDirectory(hookDirectory);
-        File.AppendAllText(Path.Combine(hookDirectory, DesktopActionsLog),
-            $"revert-work-area {change.MonitorId} {p["left"]},{p["top"]},{p["right"]},{p["bottom"]}\n");
-        return Outcome.Success;
+        switch (change.Kind)
+        {
+            case DesktopChangeKind.WorkArea:
+                Directory.CreateDirectory(hookDirectory);
+                File.AppendAllText(Path.Combine(hookDirectory, DesktopActionsLog),
+                    $"revert-work-area {change.MonitorId} {p["left"]},{p["top"]},{p["right"]},{p["bottom"]}\n");
+                return Outcome.Success;
+            case DesktopChangeKind.HiddenWindows:
+                // Recorded, never shown: a test's windows are not real windows (I38).
+                Directory.CreateDirectory(hookDirectory);
+                foreach (var window in HiddenWindowRestorer.Windows(p))
+                {
+                    File.AppendAllText(Path.Combine(hookDirectory, DesktopActionsLog), $"revert-hidden-window {(long)window.Handle}\n");
+                }
+
+                return Outcome.Success;
+            default:
+                return Revert(change);
+        }
     };
 
     public static Outcome Revert(DesktopChange change) => change.Kind switch
     {
         DesktopChangeKind.AppBar => RevertAppBar(change.Payload),
         DesktopChangeKind.WorkArea => RevertWorkArea(change.Payload),
+        DesktopChangeKind.HiddenWindows => RevertHiddenWindows(change.Payload, HiddenWindowRestorer.Win32),
         _ => Outcome.Fail(RecoveryErrorCode.RevertFailed, $"Unknown change kind {change.Kind}."),
     };
+
+    /// <summary>Shows the windows an entry names that are still the windows the host hid; a gone or reused window is skipped, not an error.</summary>
+    internal static Outcome RevertHiddenWindows(JsonObject payload, IWindowShowPort port)
+    {
+        if (payload["windows"] is not JsonArray)
+        {
+            return Outcome.Fail(RecoveryErrorCode.RevertFailed, "The hidden-windows entry has no window list.");
+        }
+
+        HiddenWindowRestorer.Restore(payload, port);
+        return Outcome.Success;
+    }
 
     /// <summary>Removes the registration for the window and lets the shell recompute the work area. Removing a dead window's registration is harmless.</summary>
     private static unsafe Outcome RevertAppBar(JsonObject payload)

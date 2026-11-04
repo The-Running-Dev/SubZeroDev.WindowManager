@@ -35,10 +35,10 @@ public sealed unsafe class WindowsKeyHook : IWindowsKeyHook
     private long _slowestTicks;
     private bool _disposed;
 
-    private WindowsKeyHook(bool testOnly, Func<uint, bool> boundWithWin)
+    private WindowsKeyHook(bool testOnly, Func<KeyModifiers, uint, bool> bound)
     {
         _testOnly = testOnly;
-        _tracker = new WindowsKeyTracker(boundWithWin);
+        _tracker = new WindowsKeyTracker(bound);
         _thread = new Thread(Loop) { IsBackground = true, Name = "WindowsKeyHook", Priority = ThreadPriority.AboveNormal };
     }
 
@@ -53,9 +53,13 @@ public sealed unsafe class WindowsKeyHook : IWindowsKeyHook
     public TimeSpan SlowestAnswer => TimeSpan.FromTicks(Interlocked.Read(ref _slowestTicks));
 
     /// <summary>Installs the hook on its own thread; <paramref name="testOnly"/> under the test hook.</summary>
-    public static WindowsKeyHook Start(bool testOnly, Func<uint, bool> boundWithWin, Action<string> warn)
+    public static WindowsKeyHook Start(bool testOnly, Func<uint, bool> boundWithWin, Action<string> warn) =>
+        Start(testOnly, (modifiers, vk) => modifiers == KeyModifiers.Win && boundWithWin(vk), warn);
+
+    /// <summary>Installs the hook; <paramref name="bound"/> says which chords that hold Windows are swallowed.</summary>
+    public static WindowsKeyHook Start(bool testOnly, Func<KeyModifiers, uint, bool> bound, Action<string> warn)
     {
-        var hook = new WindowsKeyHook(testOnly, boundWithWin);
+        var hook = new WindowsKeyHook(testOnly, bound);
         s_current = hook;
         hook._thread.Start();
         hook._ready.Wait(TimeSpan.FromSeconds(5));

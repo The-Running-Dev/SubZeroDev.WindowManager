@@ -35,6 +35,12 @@ public sealed class RecoveryJournal : IRecoveryJournal
         ? doc with { Entries = [.. doc.Entries.Where(entry => entry.Id != changeId)] }
         : null, ct, $"No journal entry {changeId}.");
 
+    public Task<Outcome> ReplaceAsync(DesktopChangeKind kind, DesktopChange? change, CancellationToken ct) => UpdateAsync(doc =>
+    {
+        var kept = doc.Entries.Where(entry => entry.Kind != kind);
+        return doc with { Entries = [.. kept, .. change is null ? [] : new[] { change }] };
+    }, ct);
+
     public Task<Outcome> MarkCleanExitAsync(CancellationToken ct) => UpdateAsync(doc => doc with { CleanExit = true }, ct);
 
     /// <summary>Applies <paramref name="change"/> to the current document under the gate; null means there was nothing to change.</summary>
