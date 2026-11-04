@@ -577,8 +577,10 @@ internal sealed class TestHook
                 ["id"] = feed.FeedId,
                 ["provider"] = feed.Provider,
                 ["available"] = feed.Available,
-                // Only the notification feeds, and only under the test hook, where their content is a test's own.
-                ["snapshot"] = feed.FeedId.StartsWith("notifications.", StringComparison.Ordinal) ? _feeds.Latest(feed.FeedId)?.Snapshot?.DeepClone() : null,
+                // Only the notification and quick-settings feeds, and only under the test hook, where their content is a test's own.
+                ["snapshot"] = feed.FeedId.StartsWith("notifications.", StringComparison.Ordinal) || feed.FeedId == "quicksettings.state"
+                    ? _feeds.Latest(feed.FeedId)?.Snapshot?.DeepClone()
+                    : null,
             }).ToArray()),
             ["workerMessages"] = WorkerChannel.MessagesSent,
             ["settingsWindow"] = _app.Settings?.Snapshot(),

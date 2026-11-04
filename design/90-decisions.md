@@ -18,6 +18,23 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-04 — S27: how quick settings were built, and what is left to Ben's hands
+- **Context:** building S27 left open where the device code lives, what airplane mode and do-not-disturb mean, how a refusal shows, and what the unpackaged-process checks (design question 11) can claim without Ben's machine.
+- **Chosen:**
+  - **A worker plugin, `subzerodev.quick-settings`, with two ports of its own.** `IRadioControl` (Windows.Devices.Radios, polled once a second) and `IBrightnessControl` (the panel's IOCTL on `\\.\LCD`, DDC/CI through dxva2 for external monitors) live in the plugin, with real and fake implementations. Under `SUBZERODEV_WM_TEST_HOOK` the plugin uses only the fakes, driven by `quicksettings.json` in the hook directory, so a test never touches a real radio or panel (I38).
+  - **Airplane mode is derived, not a Windows setting:** on when every radio the machine has is off. Setting it switches all present radios. It never writes Windows' own airplane state.
+  - **Do-not-disturb is the host's switch,** reached through `host.notifications.setDoNotDisturb` and mirrored from `host.notifications.doNotDisturb`. Windows' setting is untouched (S27.3).
+  - **Every change reads back (I34).** `quicksettings.set` ignores what it was asked for and publishes what the device reports; a brightness step the monitor does not honour shows the nearest step it did.
+  - **A refusal is a 10 s window.** `DeviceRefused` (retryable) disables the tile with the reason and keeps the real value; `DeviceAbsent` (not retryable) removes the tile. Both reach a caller as `CommandFailed` with `data.code`.
+  - **The manifest declares `quicksettings.set` with only `id` in its schema,** because the manifest argument-schema subset has no multi-type property and `value` is a boolean or a number. The plugin validates `value` itself and answers `InvalidArguments`.
+  - **Win+A is a non-default table entry** that needs a running provider (I35), and a second press closes the open panel. The test hook now also reports the `quicksettings.state` feed's snapshot, as it does for the notification feeds.
+  - **The built-in shell layout has eleven items,** so replacement startup waits for one more worker. Its CI budget is not re-baselined here; if the `budgets` job fails on this slice's pull request, the next entry takes the number from its artifact, as S26 did.
+- **Not checked (S27.4, Ben's hands):** whether Windows lets an unpackaged process switch Wi-Fi and Bluetooth, whether DDC/CI answers on Ben's monitors, and whether the built-in panel dims. The tests cover the fakes only. `docs/replacement-mode.md` says so under Known gaps; a refusal on the real machine shows as a disabled tile with its reason, and a failed check is a new entry here, not a workaround.
+- **Rejected:**
+  - **Driving Windows' Quick Settings or the airplane-mode switch through `ms-settings:` or its registry values:** it would change a setting the user owns and cannot be read back reliably.
+  - **A shared `Devices` project in the host:** the ports are used by one plugin, and the host never touches a radio.
+  - **Showing the requested value until the device confirms:** it breaks I34 and hides a refusal.
+
 ## 2026-11-04 — S26: the replacement-startup CI budget is re-baselined for the tenth shell item
 - **Context:** The built-in `subzerodev.shell` layout gained the Desktops panel item, a worker process of its own, so replacement startup now waits for ten live views instead of nine. The `budgets` job on this slice's pull request measured `replacementStartupMs` at 6172, 6451 and 5114 ms (median 6172) against the 5419 ms budget set in S23 from runs of 4131 to 4516 ms.
 - **Chosen:** Take the budget from the `budgets` artifact of this pull request, as S16 and S23 did: the 90th percentile of the three CI runs is 6451 ms, plus 20% gives 7741 ms. The reference-machine budget is unchanged until it is measured there.

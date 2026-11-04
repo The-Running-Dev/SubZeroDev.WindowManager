@@ -198,6 +198,26 @@ public sealed class NotificationHostTests
     }
 
     [Fact]
+    public void S27_5_win_a_is_swallowed_only_while_the_quick_settings_command_is_available()
+    {
+        var table = new WindowsKeyTable(new Dictionary<string, string>(), _ => { });
+        var chord = new KeyChord(KeyModifiers.Win, 'A');
+
+        Assert.False(table.SwallowsWithWin('A'));
+
+        table.Refresh(id => id == WindowsKeyTable.QuickSettingsCommand, _ => true);
+        Assert.True(table.SwallowsWithWin('A'));
+        Assert.Equal(WindowsKeyTable.QuickSettingsCommand, table.Find(chord)!.CommandId);
+
+        table.Refresh(id => id == WindowsKeyTable.QuickSettingsCommand, _ => false);
+        Assert.False(table.SwallowsWithWin('A'));
+        Assert.Null(table.Find(chord));
+
+        table.Refresh(_ => false, _ => true);
+        Assert.False(table.SwallowsWithWin('A'));
+    }
+
+    [Fact]
     public void S24_6_the_first_release_chords_stay_swallowed_with_no_plugin_running()
     {
         var table = new WindowsKeyTable(new Dictionary<string, string>(), _ => { });
@@ -234,10 +254,11 @@ public sealed class NotificationHostTests
         table.ReportUnresolved(_ => false, warnings.Add);
         table.ReportUnresolved(_ => false, warnings.Add);
 
-        var perPass = 2 + WindowsKeyTable.DesktopBindings.Count;
+        var perPass = 3 + WindowsKeyTable.DesktopBindings.Count;
         Assert.Equal(perPass, warnings.Count);
         Assert.Contains(warnings, w => w.Contains("→ samples.snip", StringComparison.Ordinal));
         Assert.Contains(warnings, w => w.Contains("→ notifications.openCentre", StringComparison.Ordinal));
+        Assert.Contains(warnings, w => w.Contains("→ quicksettings.open", StringComparison.Ordinal));
 
         table.ReportUnresolved(_ => true, warnings.Add);
         table.ReportUnresolved(_ => false, warnings.Add);
