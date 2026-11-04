@@ -18,6 +18,13 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-04 — S26: the replacement-startup CI budget is re-baselined for the tenth shell item
+- **Context:** The built-in `subzerodev.shell` layout gained the Desktops panel item, a worker process of its own, so replacement startup now waits for ten live views instead of nine. The `budgets` job on this slice's pull request measured `replacementStartupMs` at 6172, 6451 and 5114 ms (median 6172) against the 5419 ms budget set in S23 from runs of 4131 to 4516 ms.
+- **Chosen:** Take the budget from the `budgets` artifact of this pull request, as S16 and S23 did: the 90th percentile of the three CI runs is 6451 ms, plus 20% gives 7741 ms. The reference-machine budget is unchanged until it is measured there.
+- **Rejected:**
+  - Leaving the budget and retrying until a run passes, because the median sits over the limit and the extra worker is a real cost.
+  - Starting the Desktops worker after the other items are live, because the budget measures every item showing a live view and a lazy start would hide the cost instead of bounding it.
+
 ## 2026-11-04 — S26: how virtual desktops, hiding and thumbnails were built, and what the native checks found
 - **Context:** building S26 left open where the desktop code lives, how a switch publishes, what a test may touch, and three native questions (8, 12, 15).
 - **Chosen:**
