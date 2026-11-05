@@ -24,6 +24,7 @@
     <Project Path="src/SubZeroDev.WindowManager.Plugins.Desktops/SubZeroDev.WindowManager.Plugins.Desktops.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Plugins.QuickSettings/SubZeroDev.WindowManager.Plugins.QuickSettings.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.Plugins.PowerMenu/SubZeroDev.WindowManager.Plugins.PowerMenu.csproj" />
+    <Project Path="src/SubZeroDev.WindowManager.Plugins.Switcher/SubZeroDev.WindowManager.Plugins.Switcher.csproj" />
     <Project Path="src/SubZeroDev.WindowManager.PackTool/SubZeroDev.WindowManager.PackTool.csproj" />
   </Folder>
   <Folder Name="/tests/">

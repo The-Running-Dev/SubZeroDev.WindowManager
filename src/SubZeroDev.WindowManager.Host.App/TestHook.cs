@@ -554,6 +554,7 @@ internal sealed class TestHook
                         ["desktop"] = w.DesktopId.ToString("D"),
                         ["shellHidden"] = w.ShellHidden,
                         ["visible"] = w.Visible,
+                        ["active"] = w.Active,
                     }).ToArray()),
             },
             ["desktops"] = Desktops is null ? null : new JsonObject
@@ -699,6 +700,7 @@ internal sealed class TestHook
                     ["id"] = element.Name,
                     ["label"] = (element as WmButton)?.Label,
                     ["itemKey"] = popup.View.InfoOf(element)?.ItemKey,
+                    ["active"] = (element as WmButton)?.Active,
                     ["selected"] = (element as WmButton)?.Selected,
                     ["checked"] = (element as WmToggle)?.Checked,
                     ["value"] = (element as WmSlider)?.Value,

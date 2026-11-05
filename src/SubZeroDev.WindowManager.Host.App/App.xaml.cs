@@ -166,7 +166,9 @@ public sealed partial class App : Application
         var settingsService = _settingsService = new SettingsService(_catalog, _supervisor, config, pluginSettings, () => _layoutId);
         _feeds = new FeedBroker(_supervisor, _catalog, _pluginLogs);
         _supervisor.WorkerNotifications = _feeds.OnNotification;
-        var foreground = new ForegroundService();
+        var realForeground = new ForegroundService();
+        var syntheticForeground = hooked is null ? null : new SyntheticForeground(realForeground);
+        IForegroundService foreground = syntheticForeground ?? (IForegroundService)realForeground;
         _contributions = new ContributionHost(_supervisor, _catalog, _pluginLogs, _log, foreground);
         _router = new CommandRouter(_catalog, _supervisor, foreground, config, _log);
         _supervisor.WorkerRequests = (pluginId, request) => request.Method switch
@@ -185,6 +187,11 @@ public sealed partial class App : Application
         var synthetic = hooked is null ? null : new SyntheticWindows(windowFacts, "szd-synthetic");
         var windowModel = new WindowModel(synthetic ?? (IWindowFacts)windowFacts,new DispatcherPoster(dispatcher), scope: scope);
         synthetic?.Bind(windowModel);
+        if (synthetic is not null)
+        {
+            syntheticForeground?.Bind(synthetic);
+        }
+
         _syntheticWindows = synthetic;
 
         // The effects thread hides and shows other applications' windows (I27); the test hook's twin changes only what the
@@ -247,7 +254,7 @@ public sealed partial class App : Application
             RefreshKeyTable(report: false);
             _windowsKeys = WindowsKeyHook.Start(hooked is not null, keyTable.Swallows,
                 line => log.Write(LogLevel.Warning, "keys", line));
-            _windowsKeys.Pressed += (_, chord) => _ = OnWindowsKeyAsync(chord);
+            _windowsKeys.Pressed += (_, chord) => _ = chord.Modifiers.HasFlag(KeyModifiers.Alt) ? OnAltKeyAsync(chord) : OnWindowsKeyAsync(chord);
         }
         else
         {
@@ -324,7 +331,7 @@ public sealed partial class App : Application
             : Task.FromResult(CommandOutcome.Fail(CoreErrorCode.NotInReplacementMode, $"{id} only works when the app is the shell.")));
 
     /// <summary>The host's own commands that S6 serves; the others arrive with the slices that need them.</summary>
-    private void AddBuiltIns(CommandRouter router, ForegroundService foreground, DispatcherQueue dispatcher)
+    private void AddBuiltIns(CommandRouter router, IForegroundService foreground, DispatcherQueue dispatcher)
     {
         router.AddBuiltIn("host.exit", "Exit", (_, _) =>
         {
@@ -469,6 +476,18 @@ public sealed partial class App : Application
         if (report)
         {
             table.ReportUnresolved(commands.ContainsKey, line => _log?.Write(LogLevel.Warning, "keys", line));
+        }
+    }
+
+    private readonly Lock _altGate = new();
+    private Task _altChain = Task.CompletedTask;
+
+    /// <summary>An Alt+Tab step, commit or cancel waits for the one before it, so the switcher sees them in the order they were typed.</summary>
+    private Task OnAltKeyAsync(KeyChord chord)
+    {
+        lock (_altGate)
+        {
+            return _altChain = _altChain.ContinueWith(_ => OnWindowsKeyAsync(chord), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
         }
     }
 

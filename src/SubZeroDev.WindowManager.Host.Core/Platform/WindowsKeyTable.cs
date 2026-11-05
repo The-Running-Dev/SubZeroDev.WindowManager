@@ -24,6 +24,15 @@ public sealed partial class WindowsKeyTable
     /// <summary>The overview command of the <c>subzerodev.desktops</c> plugin; Win+Tab is left to Windows while it is not running (S26.6).</summary>
     public const string OverviewCommand = "desktops.openOverview";
 
+    /// <summary>The step command of the <c>subzerodev.switcher</c> plugin; Alt+Tab is left to Windows while it is not running (S31.2).</summary>
+    public const string SwitcherStepCommand = "switcher.step";
+
+    /// <summary>Alt's release after a step, sent by the hook as the chord <c>Alt</c> (virtual key 0).</summary>
+    public const string SwitcherCommitCommand = "switcher.commit";
+
+    /// <summary>Esc while the switcher is open, sent by the hook as the chord <c>Alt+Esc</c>.</summary>
+    public const string SwitcherCancelCommand = "switcher.cancel";
+
     private const uint Tab = 0x09;
     private const uint Left = 0x25;
     private const uint Right = 0x27;
@@ -37,6 +46,18 @@ public sealed partial class WindowsKeyTable
         new(new KeyChord(KeyModifiers.Win | KeyModifiers.Ctrl, Right), DesktopCommands.Switch, new JsonObject { ["direction"] = "next" }),
         new(new KeyChord(KeyModifiers.Win | KeyModifiers.Ctrl, 'D'), DesktopCommands.Create, new JsonObject { ["switchTo"] = true }),
         new(new KeyChord(KeyModifiers.Win | KeyModifiers.Ctrl, F4), DesktopCommands.Remove, new JsonObject { ["id"] = DesktopCommands.CurrentDesktop }),
+    ];
+
+    /// <summary>
+    /// The Alt+Tab sequence (S31): the two step chords, then the commit (Alt's release) and cancel (Esc) chords the hook
+    /// completes while a sequence is open. They share one provider, so they are in force together.
+    /// </summary>
+    public static IReadOnlyList<WindowsKeyBinding> SwitcherBindings { get; } =
+    [
+        new(new KeyChord(KeyModifiers.Alt, Tab), SwitcherStepCommand, new JsonObject { ["backwards"] = false }),
+        new(new KeyChord(KeyModifiers.Alt | KeyModifiers.Shift, Tab), SwitcherStepCommand, new JsonObject { ["backwards"] = true }),
+        new(new KeyChord(KeyModifiers.Alt, 0), SwitcherCommitCommand, null),
+        new(new KeyChord(KeyModifiers.Alt, WindowsKeyTracker.Escape), SwitcherCancelCommand, null),
     ];
 
     /// <summary>One chord: what the table or user binds it to, and the first-release binding it falls back to.</summary>
@@ -63,6 +84,11 @@ public sealed partial class WindowsKeyTable
         var powerMenu = new KeyChord(KeyModifiers.Win, 'X');
         _entries[powerMenu] = new Entry(new WindowsKeyBinding(powerMenu, PowerMenuCommand, null), null);
         foreach (var binding in DesktopBindings)
+        {
+            _entries[binding.Chord] = new Entry(binding, null);
+        }
+
+        foreach (var binding in SwitcherBindings)
         {
             _entries[binding.Chord] = new Entry(binding, null);
         }
@@ -95,9 +121,13 @@ public sealed partial class WindowsKeyTable
     /// <summary>True when the hook should swallow <c>Win+vk</c>: bound, and its command able to answer.</summary>
     public bool SwallowsWithWin(uint vk) => _snapshot.WithWin.Contains(vk);
 
-    /// <summary>True when the hook should swallow this chord (it holds Windows): bound, and its command able to answer.</summary>
+    /// <summary>
+    /// True when the hook should swallow this chord: it holds Windows, or is Alt+Tab or Alt+Shift+Tab, and is bound
+    /// with a command able to answer.
+    /// </summary>
     public bool Swallows(KeyModifiers modifiers, uint vk) =>
-        modifiers.HasFlag(KeyModifiers.Win) && vk != 0 && _snapshot.Effective.ContainsKey(new KeyChord(modifiers, vk));
+        (modifiers.HasFlag(KeyModifiers.Win) || (modifiers is KeyModifiers.Alt or (KeyModifiers.Alt | KeyModifiers.Shift) && vk == Tab))
+        && vk != 0 && _snapshot.Effective.ContainsKey(new KeyChord(modifiers, vk));
 
     /// <summary>Rebuilds the snapshot after a command's provider starts or stops.</summary>
     /// <param name="exists">Whether any plugin or the host declares the command.</param>

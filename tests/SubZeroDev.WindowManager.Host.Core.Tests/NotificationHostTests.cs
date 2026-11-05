@@ -300,7 +300,7 @@ public sealed class NotificationHostTests
         table.ReportUnresolved(_ => false, warnings.Add);
         table.ReportUnresolved(_ => false, warnings.Add);
 
-        var perPass = 4 + WindowsKeyTable.DesktopBindings.Count;
+        var perPass = 4 + WindowsKeyTable.DesktopBindings.Count + WindowsKeyTable.SwitcherBindings.Count;
         Assert.Equal(perPass, warnings.Count);
         Assert.Contains(warnings, w => w.Contains("→ samples.snip", StringComparison.Ordinal));
         Assert.Contains(warnings, w => w.Contains("→ powermenu.open", StringComparison.Ordinal));

@@ -61,6 +61,25 @@ internal sealed class SyntheticWindows(IWindowFacts inner, string monitorId) : I
     /// <summary>Whether <paramref name="handle"/> is one of these model-only windows.</summary>
     public bool Owns(nint handle) => _windows.ContainsKey(handle);
 
+    /// <summary>Brings one of these windows to the front, as the user would: it is shown again if minimised and the model is told.</summary>
+    /// <param name="handle">The window handle.</param>
+    /// <returns>False when the handle is not one of these windows.</returns>
+    public bool Activate(nint handle)
+    {
+        if (!_windows.TryGetValue(handle, out var facts))
+        {
+            return false;
+        }
+
+        if (facts.Minimised)
+        {
+            _windows[handle] = facts with { Minimised = false };
+        }
+
+        _model!.Observe(new WindowObservation(handle, ObservationKind.Foreground));
+        return true;
+    }
+
     /// <summary>Synthetic windows that are not shown.</summary>
     public int HiddenCount => _windows.Values.Count(f => !f.Visible);
 

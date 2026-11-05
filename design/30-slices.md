@@ -450,7 +450,7 @@ Acceptance:
 Out of scope: drag placement of icons.
 
 ## S31 — Themed Alt+Tab switcher
-Status: todo
+Status: done
 Delivers: Alt+Tab shows a themed switcher listing windows by recent activation, with Windows' own classic switcher as the fallback.
 Touches: plugin `subzerodev.switcher` (`switcher.step`, `switcher.commit`, `switcher.cancel`, the `switcher` overlay popup); the chord table (Alt+Tab, Alt+Shift+Tab)
 Depends on: S26
