@@ -892,3 +892,8 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
   - Plugin-drawn UI embedded across processes, because cross-process input, focus, DPI and accessibility are fragile, and themes cannot restyle it.
   - WebView2 surfaces with HTML and CSS themes, because the per-surface browser cost works against the startup and idle budgets.
   - Trusted in-process WinUI controls in the first release, because they share the host's crash risk. Deferred.
+
+## 2026-11-05 — S29 native badges require transport evidence before a decoder
+- **Context:** The S29 injected tests qualify model/presentation behavior only. The ordinary backchannel log drops repeated values and COPYDATA payloads, and its routing excludes WM_USER/WM_APP. A one-time startup broadcast also does not establish readiness for later-created application windows.
+- **Chosen:** A separate Windows SDK `ITaskbarList3` client and opt-in bounded raw tray/notification-child capture, with Explorer/replacement/restored-Explorer comparisons documented in `docs/taskbar-backchannel-experiment.md`. Capture precedes routing and changes neither native replies nor the empty decoder. Forced calls without readiness are labeled separately from conforming clients and simulated test messages.
+- **Not established:** No native Windows experiment was available in this development environment. The existing tray transport remains a hypothesis; real progress/overlays remain unsupported/unverified. Native delivery, full data/lifetime semantics, readiness for late windows, and visible behavior must be evidenced before implementation claims. No undocumented wire layout or alternative integration is selected from silence alone.

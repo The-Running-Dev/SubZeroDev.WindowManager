@@ -33,6 +33,17 @@ jobs:
           global-json-file: global.json
       - name: Build
         run: dotnet build SubZeroDev.WindowManager.slnx -c Release
+      - name: Build native taskbar diagnostic and check usage entry point
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'Visual C++ x64 tools are required for TaskbarProbe.' }
+          & cmd /d /c "`"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 && tools\TaskbarProbe\build.cmd"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & artifacts/taskbar-probe/TaskbarProbe.exe
+          if ($LASTEXITCODE -ne 2) { throw 'Expected the safe usage-only path to exit 2.' }
+          exit 0
       - name: Keep crash dumps
         shell: pwsh
         run: |

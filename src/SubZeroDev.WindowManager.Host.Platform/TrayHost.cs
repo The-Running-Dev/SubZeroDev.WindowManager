@@ -47,10 +47,12 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
     private const uint SweepMs = 500;
 
     private static readonly ConcurrentDictionary<nint, TrayHost> Hosts = new();
+    private static readonly ConcurrentDictionary<nint, TaskbarTrace> Traces = new();
 
     private readonly string? _hookDirectory;
     private readonly Action<string> _log;
     private readonly TrayAppBars? _appBars;
+    private readonly TaskbarTrace? _trace;
     private readonly Lock _gate = new();
     private readonly List<Entry> _icons = [];
     private readonly Dictionary<nint, uint> _bars = [];
@@ -67,6 +69,7 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
         var id = hookDirectory is null ? null : HookId(hookDirectory);
         ClassName = id is null ? RealClass : $"SubZeroDev.WindowManager.TrayWnd.{id}";
         CreatedMessageName = id is null ? RealCreatedMessage : $"SubZeroDev.WindowManager.TaskbarCreated.{id}";
+        _trace = TaskbarTrace.Open(ClassName, log);
     }
 
     public TrayState State { get; private set; } = TrayState.NotTried;
@@ -171,6 +174,7 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
         _disposed = true;
         Native.PostThreadMessage(_threadId, Native.WmQuit, 0, 0);
         _thread?.Join(TimeSpan.FromSeconds(2));
+        _trace?.Dispose();
         lock (_gate)
         {
             foreach (var entry in _icons)
@@ -283,11 +287,21 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
             }
 
             Hosts[Window] = this;
+            if (_trace is not null)
+            {
+                Traces[Window] = _trace;
+                _trace.WindowCreated(Window, ClassName);
+            }
             if (_hookDirectory is null)
             {
                 // Older apps look for the notification area's own child to place things next to it.
                 Register(RealNotifyClass, module);
                 _notifyWindow = Native.CreateWindowEx(0, RealNotifyClass, RealNotifyClass, Native.WsChild, 0, 0, 0, 0, Window, 0, module, 0);
+                if (_trace is not null && _notifyWindow != 0)
+                {
+                    Traces[_notifyWindow] = _trace;
+                    _trace.WindowCreated(_notifyWindow, RealNotifyClass);
+                }
             }
 
             // Apps at a lower integrity level must still reach the tray.
@@ -308,6 +322,8 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
 
         Native.KillTimer(Window, SweepTimer);
         Hosts.TryRemove(Window, out _);
+        Traces.TryRemove(Window, out _);
+        Traces.TryRemove(_notifyWindow, out _);
         if (_notifyWindow != 0)
         {
             Native.DestroyWindow(_notifyWindow);
@@ -686,6 +702,35 @@ public sealed unsafe class TrayHost : ITrayHost, IDisposable
     [UnmanagedCallersOnly]
     private static nint WindowProc(nint window, uint message, nuint wParam, nint lParam)
     {
+        // Capture BEFORE routing: WM_USER/WM_APP, registered messages and every COPYDATA kind.
+        // Only COPYDATA's documented, receiver-local buffer is copied, and only during this call.
+        if (Traces.TryGetValue(window, out var trace) && trace.Reserve(message))
+        {
+            try
+            {
+                if (message == WmCopyData && lParam != 0)
+                {
+                    var copy = (CopyDataStruct*)lParam;
+                    var count = (int)Math.Min(copy->Size, (uint)TaskbarTrace.MaximumPayload);
+                    var payload = copy->Data == 0 ? ReadOnlySpan<byte>.Empty : new ReadOnlySpan<byte>((void*)copy->Data, count);
+                    trace.Record(window, message, wParam, lParam, copy->Kind, copy->Size, payload,
+                        copy->Data == 0 && copy->Size > 0 ? "null-data" : null);
+                }
+                else
+                {
+                    trace.Record(window, message, wParam, lParam);
+                }
+            }
+            catch (Exception e)
+            {
+                // Diagnostic failure must not change the normal message result or escape into user32.
+                if (Hosts.TryGetValue(window, out var owner))
+                {
+                    owner._log($"TaskbarTraceFailed: {e.Message}");
+                }
+            }
+        }
+
         if ((message == WmCopyData || message == WmTimer) && Hosts.TryGetValue(window, out var host))
         {
             try
