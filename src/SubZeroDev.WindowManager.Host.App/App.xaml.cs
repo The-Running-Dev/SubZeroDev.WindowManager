@@ -240,7 +240,7 @@ public sealed partial class App : Application
             feeds.PublishHost(TrayFeed.FeedId, TrayFeed.Snapshot(_trayHost.Icons));
             feeds.PublishHost(DoNotDisturbFeed.FeedId, DoNotDisturbFeed.Snapshot(false));
 
-            // Progress and overlay badges arrive at the same window (S29); the model keeps them.
+            // S29's tray-window transport is a hypothesis: the default decoder produces no native badges.
             var model = windows.Model;
             _taskbar = new TaskbarBackchannel(_trayHost,
                 handle => model.ResolveHandle(handle) is { Value.Managed: { } managed } ? managed.Key : null,

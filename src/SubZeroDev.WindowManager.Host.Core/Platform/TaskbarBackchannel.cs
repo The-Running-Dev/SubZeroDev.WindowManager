@@ -2,7 +2,7 @@ namespace SubZeroDev.WindowManager.Host.Core;
 
 /// <summary>
 /// What the shell hears from <c>ITaskbarList3</c> callers: progress and overlay badges for a window's button
-/// (replacement mode only). The messages arrive at the host's <c>Shell_TrayWnd</c>; the sinks take the window's
+/// (replacement mode only). Native arrival at <c>Shell_TrayWnd</c> is unverified; the sinks take the window's
 /// key, so an application whose window is not tracked is ignored.
 /// </summary>
 public interface ITaskbarBackchannel : IDisposable
