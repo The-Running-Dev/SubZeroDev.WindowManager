@@ -67,6 +67,26 @@ public sealed class TaskbarTraceTests
     }
 
     [Fact]
+    public void Diagnostic_write_and_close_failures_do_not_escape_disposal()
+    {
+        var errors = new List<string>();
+        using (var trace = new TaskbarTrace(new FailingWriter(), "test-scoped", errors.Add))
+        {
+            Assert.True(trace.Reserve(0x401));
+            trace.Record(42, 0x401, 0, 0);
+        }
+
+        Assert.Contains(errors, error => error.Contains("write-failed", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("close-failed", StringComparison.Ordinal));
+    }
+
+    private sealed class FailingWriter : StringWriter
+    {
+        public override Task WriteLineAsync(string? value) => Task.FromException(new IOException("write-failed"));
+        protected override void Dispose(bool disposing) => throw new IOException("close-failed");
+    }
+
+    [Fact]
     public void Simulated_user32_stimuli_are_captured_before_routing_without_becoming_badges()
     {
         using var scratch = new Scratch();

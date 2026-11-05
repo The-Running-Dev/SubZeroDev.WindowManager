@@ -47,7 +47,14 @@ internal sealed class TaskbarTrace : IDisposable
             }
             finally
             {
-                output.Dispose();
+                try
+                {
+                    output.Dispose();
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or ObjectDisposedException)
+                {
+                    log($"TaskbarTraceFailed: {e.Message}");
+                }
             }
         });
     }

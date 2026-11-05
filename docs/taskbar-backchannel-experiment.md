@@ -45,13 +45,15 @@ Use **64-bit Spy++** for the Explorer baseline because this code cannot observe 
 
 The test uses **session-only takeover**. Do not use `--shell on`, change policy, or stop Explorer with `Stop-Process`. Begin with Explorer as the configured sign-in shell, no competing WindowManager guardian, and a reachable Task Manager (Ctrl+Shift+Esc). Check `--shell status` and save its JSON before starting. If another shell is configured, use a disposable account/VM instead of changing that configuration.
 
-In PowerShell at the root, set `$guardian` to the built/distributed **guardian** `SubZeroDev.WindowManager.exe` (with its matching host/content alongside it), not `SubZeroDev.WindowManager.Host.exe`. Use that same build for the entire run:
+In PowerShell at the root, stage a complete app using the existing release builder in a new output directory. This places the guardian at the root and its matching host/content under `host`. Use that same build for the entire run:
 
 ```powershell
-$guardian = (Resolve-Path 'YOUR-BUILD\SubZeroDev.WindowManager.exe').Path
+$experimentBuild = Join-Path $PWD ('artifacts\taskbar-shell-' + [guid]::NewGuid().ToString('N'))
+./build/release.ps1 -Output $experimentBuild
+$guardian = (Resolve-Path (Join-Path $experimentBuild 'release\SubZeroDev.WindowManager.exe')).Path
 & $guardian --shell status
 Get-FileHash $guardian
-Get-FileHash (Join-Path (Split-Path $guardian) 'SubZeroDev.WindowManager.Host.exe')
+Get-FileHash (Join-Path (Split-Path $guardian) 'host\SubZeroDev.WindowManager.Host.exe')
 ```
 
 1. **Explorer A (positive control):** start Spy++ logging on Explorer's actual tray and descendants/owning thread before launching the client. In another PowerShell: `./tools/TaskbarProbe/run.ps1 explorer-a`. Verify the logged tray PID belongs to Explorer. Observe readiness and the full sequence, repeat with F5, and save screenshots of 17%, 61%, paused, error, both overlays, and clears. Save the Spy++ log and selection/filter settings. If the visible control fails, stop and resolve that environment/client issue before interpreting replacement results.
