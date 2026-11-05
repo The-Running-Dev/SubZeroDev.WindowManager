@@ -22,8 +22,8 @@ param(
     param([string] $Destination, [bool] $SkipLaunch)
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
-    $bundleUrl = 'https://github.com/The-Running-Dev/SubZeroDev.WindowManager/releases/download/vm-acceptance-2026-11-05/WindowManager-VM-acceptance-2026-11-05.zip'
-    $bundleSha256 = 'f70658dc9d6f9e7afb41129f9aad236547bc2b28307cd0664d433a629d73eb17'
+    $bundleUrl = 'https://github.com/The-Running-Dev/SubZeroDev.WindowManager/releases/download/acceptance-vm-2026-11-05-r2/WindowManager-VM-acceptance-2026-11-05-r2.zip'
+    $bundleSha256 = '5d9b4e2cae958ec30c551a5985e077ae71fef23f51b297674f716353979c8674'
     $appFile = 'SubZeroDev.WindowManager-0.1.0-ci.23-win-x64.zip'
     $appSha256 = '3dff2572aaa68ee6a9ac870b8638e2ab7b897703c7448135256e0bcec1431028'
     $buildCommit = 'c86a05468b295febdf918d5b9db3b7fb61e49d5c'
@@ -65,7 +65,7 @@ param(
         if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
         $full = [IO.Path]::GetFullPath($Path)
         $parentFull = [IO.Path]::GetFullPath($Parent).TrimEnd('\')
-        if ([IO.Path]::GetDirectoryName($full) -ne $parentFull -or
+        if ([IO.Path]::GetDirectoryName($full).TrimEnd('\') -ne $parentFull -or
             -not [IO.Path]::GetFileName($full).StartsWith($Prefix, [StringComparison]::Ordinal)) {
             throw "Refusing cleanup outside the temporary directory boundary: $full"
         }
@@ -104,7 +104,8 @@ param(
             Write-Host 'Existing candidate verified; reusing the installation.'
         }
         else {
-            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+            # Windows PowerShell 5.1 New-Item -Force rejects an existing drive root.
+            [IO.Directory]::CreateDirectory($parent) | Out-Null
             $temporary = Join-Path ([IO.Path]::GetTempPath()) ('SubZeroDev-WM-download-' + [guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Path $temporary | Out-Null
             $download = Join-Path $temporary 'candidate.zip'
@@ -131,12 +132,15 @@ param(
             Copy-Item -LiteralPath (Join-Path $expanded 'docs') -Destination (Join-Path $stage 'docs') -Recurse
             Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $stage 'acceptance-artifacts.json')
             Copy-Item -LiteralPath (Join-Path $stage 'docs\acceptance\VM-PROMPT.md') -Destination (Join-Path $stage 'VM-PROMPT.md')
+            Copy-Item -LiteralPath (Join-Path $expanded 'tools\Test-AcceptanceVM.ps1') -Destination (Join-Path $stage 'Test-AcceptanceVM.ps1')
+            Copy-Item -LiteralPath (Join-Path $stage 'docs\acceptance\VM-MANUAL.md') -Destination (Join-Path $stage 'TESTING.md')
             $quickStart = @"
 WindowManager VM acceptance - installed to $destinationFull
 
 Launch: $destinationFull\SubZeroDev.WindowManager.exe
 Read:   $destinationFull\docs\acceptance\VM-START-HERE.md
-Prompt: $destinationFull\VM-PROMPT.md (paste its text block into Codex inside this VM)
+Tests:  $destinationFull\TESTING.md (manual tests; no Codex or SDK needed)
+Runner: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$destinationFull\Test-AcceptanceVM.ps1"
 Gates:  $destinationFull\docs\acceptance.md
 Build:  $destinationFull\acceptance-artifacts.json and vm-install.json
 Logs:   %LOCALAPPDATA%\SubZeroDev\WindowManager\logs
@@ -151,6 +155,8 @@ Sign out/in only when that test is prepared. Restore the VM snapshot if needed.
 No compiler, native TaskbarProbe, Spy++, notification certificate or automated
 test suite is installed. Native acceptance and physical device checks remain open.
 The bootstrap does not stop Explorer, change the sign-in shell or reboot.
+The runner opens the checklist, records observations, controls guest shell
+registration only when explicitly requested, and collects an evidence ZIP.
 "@
             $utf8 = New-Object Text.UTF8Encoding($false)
             [IO.File]::WriteAllText((Join-Path $stage 'VM-START-HERE.txt'), $quickStart, $utf8)
@@ -181,7 +187,8 @@ The bootstrap does not stop Explorer, change the sign-in shell or reboot.
         if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'The installed launcher is missing.' }
         Write-Host "Installed: $destinationFull"
         Write-Host "Instructions: $destinationFull\VM-START-HERE.txt"
-        Write-Host "Exact acceptance prompt: $destinationFull\VM-PROMPT.md"
+        Write-Host "Manual tests: $destinationFull\TESTING.md"
+        Write-Host "Runner: powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$destinationFull\Test-AcceptanceVM.ps1`""
         Write-Host 'Explorer is still enabled. Native acceptance is pending.'
         if (-not $SkipLaunch) {
             $running = @(Get-Process -Name 'SubZeroDev.WindowManager' -ErrorAction SilentlyContinue)
@@ -191,8 +198,18 @@ The bootstrap does not stop Explorer, change the sign-in shell or reboot.
                 if ($process.WaitForExit(4000)) { throw "Launcher exited early (code $($process.ExitCode)); inspect the application logs." }
                 Write-Host "Launcher started (PID $($process.Id)). Check the visible panels; this is not an acceptance pass."
             }
-            Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + (Join-Path $destinationFull 'VM-START-HERE.txt') + '"')
+            Start-Process -FilePath 'notepad.exe' -ArgumentList ('"' + (Join-Path $destinationFull 'TESTING.md') + '"')
         }
+    }
+    catch {
+        $failure = $_
+        $errorLog = Join-Path ([IO.Path]::GetTempPath()) 'WindowManager-bootstrap-error.log'
+        try {
+            [IO.File]::WriteAllText($errorLog, ($failure | Out-String), (New-Object Text.UTF8Encoding($false)))
+            Write-Warning "Setup failed. Error saved to $errorLog"
+        }
+        catch { Write-Warning 'Could not save the bootstrap error log.' }
+        throw $failure
     }
     finally {
         # A cleanup failure must not hide the original download/extraction error.

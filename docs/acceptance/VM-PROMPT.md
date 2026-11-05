@@ -1,6 +1,6 @@
-# Prompt for the assistant inside the VM
+# Optional prompt for an assistant inside the VM
 
-Paste the following into Codex running inside the disposable Windows VM:
+Codex is not required in the VM. For manual testing use [VM-MANUAL.md](VM-MANUAL.md) and the installed Test-AcceptanceVM.ps1 runner. If you choose to install an assistant in the guest, the following prompt is optional:
 
 ```text
 Continue SubZeroDev.WindowManager acceptance from PR #46:

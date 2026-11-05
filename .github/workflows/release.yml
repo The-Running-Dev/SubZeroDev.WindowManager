@@ -15,6 +15,8 @@ on:
       - 'docs/acceptance.md'
       - 'docs/acceptance/**'
       - 'tools/Start-AcceptanceVM.ps1'
+      - 'tools/Test-AcceptanceVM.ps1'
+      - 'tools/tests/Test-AcceptanceScripts.ps1'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 
@@ -73,6 +75,8 @@ jobs:
             docs/taskbar-backchannel-experiment.md
             docs/test-matrix.md
             docs/budgets.md
+            tools/Start-AcceptanceVM.ps1
+            tools/Test-AcceptanceVM.ps1
       - name: Publish the GitHub release
         if: github.ref_type == 'tag'
         env:

@@ -5,7 +5,7 @@
 Finish installing Windows 11 x64 and the guest graphics/integration tools. Take a clean VM snapshot. Open **64-bit Windows PowerShell** as your normal test user and paste:
 
 ```powershell
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.WindowManager/vm-acceptance-2026-11-05/tools/Start-AcceptanceVM.ps1' | iex
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.WindowManager/acceptance-vm-2026-11-05-r2/tools/Start-AcceptanceVM.ps1' | iex
 ```
 
 This downloads a pinned public VM prerelease (about 116 MB), checks its SHA-256 and the inner CI build hash, installs to **`C:\WindowManager`**, opens the local instructions in Notepad, and starts the app alongside Explorer. No GitHub login, Git, SDK, elevation or execution-policy change is needed. Leave this PowerShell window open until it prints the installation path. It does not replace the sign-in shell, stop Explorer or reboot.
@@ -15,13 +15,13 @@ The prerelease packages the successful `release-0.1.0-ci.23` build from PR #46, 
 The folder must be new on the first run. A repeat verifies the recorded installed files and reuses this same candidate; it does not overwrite an older/manual installation. For a different destination, or installation without launching:
 
 ```powershell
-$setup = irm 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.WindowManager/vm-acceptance-2026-11-05/tools/Start-AcceptanceVM.ps1'
+$setup = irm 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.WindowManager/acceptance-vm-2026-11-05-r2/tools/Start-AcceptanceVM.ps1'
 & ([scriptblock]::Create($setup)) -InstallDirectory 'C:\WindowManager-Test' -NoLaunch
 ```
 
-After setup, read `C:\WindowManager\VM-START-HERE.txt`. Copy the text block from **`C:\WindowManager\VM-PROMPT.md`** into Codex running inside the guest; the [same exact prompt is retained here](VM-PROMPT.md). The ledger and recovery guide are installed under `C:\WindowManager\docs`, with provenance in `acceptance-artifacts.json` and `vm-install.json` at the install root. Existing modified files cause a verification error; choose a fresh destination rather than deleting evidence or bypassing the hash check.
+After setup, read `C:\WindowManager\TESTING.md` and run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\WindowManager\Test-AcceptanceVM.ps1`. **No Codex is needed inside the VM.** The [manual test workflow](VM-MANUAL.md) includes exact commands for recording observations, enabling/restoring the guest shell, and collecting the evidence ZIP to bring back to the development machine. The [assistant prompt](VM-PROMPT.md) is optional.
 
-If download or hash verification fails, nothing is launched. If the app exits early, inspect `%LOCALAPPDATA%\SubZeroDev\WindowManager\logs`. A successful bootstrap is an installation/startup observation, not a completed acceptance gate. The instructions below still apply, including separately obtaining the native diagnostic and notification prerequisites.
+If download or hash verification fails, nothing is launched. The full error is saved to `%TEMP%\WindowManager-bootstrap-error.log`. If the app exits early, inspect `%LOCALAPPDATA%\SubZeroDev\WindowManager\logs`. A successful bootstrap is an installation/startup observation, not a completed acceptance gate. The instructions below still apply, including separately obtaining the native diagnostic and notification prerequisites.
 
 ## Acceptance sequence and earlier local ZIP
 
