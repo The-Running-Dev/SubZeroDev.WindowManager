@@ -1,0 +1,14 @@
+{
+  "baseCommit": "4951f011a145784620d5dd2fb3578c25435a625e",
+  "branch": "fix/desktop-acceptance",
+  "uncommittedChanges": true,
+  "version": "0.1.0-acceptance.4951f01.local",
+  "artifact": "WindowManager-acceptance-win-x64.zip",
+  "sha256": "b8101a0c8420d49362ed93daadee8f3a97cf46cded19af1c270d7fb4a5de6f0e",
+  "bytes": 115844054,
+  "purpose": "Disposable VM acceptance candidate; native gates remain open",
+  "reviewPatch": "WindowManager-acceptance.patch",
+  "reviewPatchSha256": "55dc7f012d0e83f681543f0b220f09bafad4d692f60cde4ff82df6c1bcedf87c",
+  "reviewPatchArchive": "WindowManager-acceptance.patch.gz",
+  "reviewPatchSha256Scope": "Uncompressed historical patch bytes"
+}

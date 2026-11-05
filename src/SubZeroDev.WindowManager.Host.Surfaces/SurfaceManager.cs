@@ -560,7 +560,7 @@ public sealed class SurfaceManager : ISurfaceManager
                 window.View.Render(_contributions.DescribePopup(key.Plugin, key.Popup));
                 // Focus moves only for a first TextInput or when the focused element went away, so a state
                 // update never pulls it back from where the user moved it.
-                if (window.IsOpen && window.Placement != PopupPlacement.Toast && ((!hadInput && window.View.TextInputs().Count > 0) || !window.HasFocusWithin))
+                if (window.IsOpen && window.TakesFocus && ((!hadInput && window.View.TextInputs().Count > 0) || !window.HasFocusWithin))
                 {
                     window.FocusContent();
                 }

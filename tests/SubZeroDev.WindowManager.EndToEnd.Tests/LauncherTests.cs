@@ -378,16 +378,23 @@ internal static partial class Interactive
         var previous = SetThreadDpiAwarenessContext(PerMonitorAwareV2);
         try
         {
-            if (!SetCursorPos(x, y))
-            {
-                throw new InvalidOperationException("SetCursorPos failed.");
-            }
+            // Inject a movement event as well as moving the cursor. SetCursorPos alone did not
+            // reliably reach WinUI pointer routing on the reference desktop. Centre each physical
+            // pixel in the normalized virtual-desktop range, including displays left of the primary.
+            const uint Move = 0x0001, Absolute = 0x8000, VirtualDesktop = 0x4000;
+            const int VirtualLeft = 76, VirtualTop = 77, VirtualWidth = 78, VirtualHeight = 79;
+            mouse_event(Move | Absolute | VirtualDesktop,
+                (int)((x - GetSystemMetrics(VirtualLeft) + 0.5) * 65536 / GetSystemMetrics(VirtualWidth)),
+                (int)((y - GetSystemMetrics(VirtualTop) + 0.5) * 65536 / GetSystemMetrics(VirtualHeight)), 0, 0);
         }
         finally
         {
             SetThreadDpiAwarenessContext(previous);
         }
     }
+
+    [LibraryImport("user32.dll")]
+    private static partial int GetSystemMetrics(int index);
 
     public static int ForegroundProcessId()
     {

@@ -2,7 +2,9 @@
 
 In coexistence mode (the default) the app runs alongside Explorer. In replacement mode Windows starts the app at sign-in instead of Explorer, and Explorer does not run.
 
-Nothing here needs administrator rights. Everything is per user.
+Shell registration is per user and needs no administrator rights. Notification certificate setup is a separate manual step described below.
+
+Implementation and native acceptance are tracked separately in [acceptance.md](acceptance.md); several real-shell gates remain open. Start in a disposable VM/account before changing your daily sign-in shell.
 
 ## Turning it on and off
 
@@ -113,12 +115,12 @@ These come from Explorer or processes it hosts, so in replacement mode they work
 | --- | --- | --- |
 | Start menu and search | Missing; the Start menu stays closed | The launcher (Windows key, Ctrl+Esc) |
 | Taskbar | Missing | Panels with running windows |
-| Toast notifications | Missing: applications that rely on them show nothing | None in the first release |
-| Notification centre and calendar flyout | Missing | The clock item |
+| Toast notifications | Implemented; Explorer-free history and package identity remain unverified (S24.1/S24.9) | Notifications plugin, after manual setup |
+| Notification centre and calendar flyout | Centre implemented; calendar flyout is outside scope | Bell / Win+N; S24 native gates remain open |
 | Quick Settings (Win+A) | Replaced by the shell's own panel: Wi-Fi, Bluetooth, airplane mode, brightness and do-not-disturb; Wi-Fi network choice and volume are not in it | The network and volume items; Settings for the rest |
-| Task View and virtual desktops (Win+Tab, Win+Ctrl+arrows) | Missing | None in the first release |
-| Alt+Tab | Degrades to the classic switcher Windows keeps without Explorer | Running windows |
-| Win+X menu | Supported | Win+X opens the power-menu popup from the user's WinX folders (built-in tools if there are none); its "Tools" button in the panel opens the same menu |
+| Task View and virtual desktops (Win+Tab, Win+Ctrl+arrows) | Shell-owned desktops and overview implemented; native popup thumbnail checks remain open | Desktops item / Win+Tab; hidden desktops use cards |
+| Alt+Tab | Themed switcher implemented; real chord masking, focus and thumbnails need acceptance | Classic switcher when the plugin is unavailable |
+| Win+X menu | Implemented; repeated native mouse selection needs acceptance | Win+X opens the power-menu popup from the user's WinX folders (built-in tools if there are none); its "Tools" button in the panel opens the same menu |
 | Snap layouts flyout | Degrades: Win+arrow snapping stays, the layouts flyout may not appear | — |
 
 ## Ways back to Explorer, checked on a real sign-in
@@ -148,9 +150,11 @@ Each is exercised once with the app registered (S23.3). Until then each says *pe
 
 - **Is the per-user value honoured on your build?** Windows 11 Enterprise 26200 is expected to honour it. If it does not, the fallback is the per-user Custom User Interface policy value, and that switch will be a decision entry. This is checked by hand (S17.7): after `--shell on` and signing out and in, the guardian runs and `explorer.exe` does not; after `--shell off` and another sign-in, Explorer is back.
 - Real audio, network and battery devices, and whether each `ms-settings:` page opens without Explorer, are checked by hand; the tests use a file of their own. The indicators show text labels until an asset pack gives their icons images. Wi-Fi networks are chosen in Settings, not in the popup.
-- The real Windows key and the five power commands are checked by hand; the tests inject marked keys the host swallows and record the commands. Win+Tab and the virtual-desktop keys are not handled.
+- The real Windows key and the five power commands are checked by hand; the tests inject marked keys the host swallows and record the commands. Win+Tab and the virtual-desktop keys now invoke the shell's own desktops; their real-session behavior belongs to the acceptance run.
 - Real tray apps and docked toolbars are checked by hand; the tests use a client of their own. Other app bars are not told (`ABN_POSCHANGED`) when the host's own panels change.
 - Your real wallpaper and Desktop folders are checked by hand; the tests use files of their own. Desktop icons stack in one column, with no wrapping grid, and cannot be dragged.
 - The quick-settings panel's real radios, DDC/CI brightness on Ben's monitors and the built-in panel's brightness are checked by hand (S27.4); the tests use fake devices and never change the machine's radios or brightness. Until Ben has run those checks, whether Windows lets an unpackaged process switch a radio is not known; a refusal shows as a disabled tile with its reason. A monitor that does not answer DDC/CI has no brightness tile.
 - A window that changes its icon can be marked for attention as if it flashed, until you activate it.
 - The week of daily use, the ways back on a real sign-in and a cold restart without `explorer.exe` are recorded by hand in the tables above.
+
+- Native taskbar progress/overlay badges are unsupported until the S29.3 transport and decoder gates pass. The injected tests and PR #45 diagnostic do not establish working native badges. See [the experiment](taskbar-backchannel-experiment.md).

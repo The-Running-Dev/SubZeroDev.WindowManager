@@ -64,6 +64,45 @@ public sealed class PowerMenuTests
         Assert.Equal(0, await run.StopAsync());
     }
 
+    // Requires an idle, isolated foreground desktop. This is an unresolved native acceptance gate,
+    // kept explicit so a normal CI run cannot be mistaken for qualifying pointer selection.
+    [Fact(Explicit = true)]
+    public async Task S28_3_a_pointer_click_chooses_an_entry_on_every_open()
+    {
+        HostRun.RequireDesktop();
+        using var run = Start();
+        Shortcut(Path.Combine(run.HookDirectory, "winx", "Group2", "Editor.lnk"), @"C:\Windows\System32\notepad.exe", "notes.txt");
+        await run.WaitForAsync(KeysReady, Startup);
+
+        for (var attempt = 1; attempt <= 10; attempt++)
+        {
+            Interactive.PressMarked(Interactive.LeftWin, 'X');
+            var status = await run.WaitForAsync(s => Menu(s)["open"]?.GetValue<bool>() == true
+                && Items(s).Count == 1 && Items(s)[0]["bounds"] is JsonObject
+                && (string?)Menu(s)["focused"] == "entry0", Reaction);
+            var bounds = Items(status)[0]["bounds"]!;
+            var x = ((int)bounds["left"]! + (int)bounds["right"]!) / 2;
+            var y = ((int)bounds["top"]! + (int)bounds["bottom"]!) / 2;
+            Assert.True(Interactive.IsWindowAt(x, y, (long)Menu(status)["hwnd"]!), "Only click the test popup.");
+            Interactive.MoveTo(x, y - 150);
+            await Task.Delay(150, TestContext.Current.CancellationToken);
+            Interactive.MoveTo(x, y);
+            await Task.Delay(150, TestContext.Current.CancellationToken);
+            Interactive.Click(x, y);
+            try
+            {
+                await run.WaitForAsync(s => Menu(s)["open"]?.GetValue<bool>() != true
+                    && DesktopActions(run).Count(line => line.Contains("winx-launch Editor.lnk notes.txt", StringComparison.Ordinal)) == attempt, Reaction);
+            }
+            catch (TimeoutException ex)
+            {
+                throw new TimeoutException($"Pointer selection failed on opening {attempt} of 10.", ex);
+            }
+        }
+
+        Assert.Equal(0, await run.StopAsync());
+    }
+
     [Fact]
     public async Task S28_2_without_winx_folders_the_menu_falls_back_to_the_built_in_tools()
     {

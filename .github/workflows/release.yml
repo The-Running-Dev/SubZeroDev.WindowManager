@@ -11,6 +11,9 @@ on:
       - 'src/SubZeroDev.WindowManager.Protocol/**'
       - 'src/SubZeroDev.WindowManager.PackTool/**'
       - 'src/SubZeroDev.WindowManager.Guardian/**'
+      - 'src/SubZeroDev.WindowManager.Host.Surfaces/**'
+      - 'docs/acceptance.md'
+      - 'docs/acceptance/**'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 
@@ -47,6 +50,14 @@ jobs:
           $env:SUBZERODEV_WM_SAMPLE_PACKAGE = (Resolve-Path artifacts/sample/example.hello.zip).Path
           $env:SUBZERODEV_WM_FIXTURE_PACKAGE = (Resolve-Path artifacts/sample/example.windows.zip).Path
           dotnet test tests/SubZeroDev.WindowManager.EndToEnd.Tests -c Release --no-build --filter "FullyQualifiedName~SubZeroDev.WindowManager.EndToEnd.Tests.ReleaseTests" --logger "console;verbosity=normal"
+      - name: Record acceptance build provenance
+        shell: pwsh
+        run: |
+          $archives = @(Get-ChildItem artifacts/SubZeroDev.WindowManager-*.zip | ForEach-Object {
+            [ordered]@{ file = $_.Name; bytes = $_.Length; sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+          })
+          [ordered]@{ commit = '${{ github.sha }}'; version = $env:VERSION; run = '${{ github.run_id }}'; archives = $archives } |
+            ConvertTo-Json -Depth 4 | Set-Content artifacts/acceptance-artifacts.json -Encoding utf8
       - name: Keep the build
         uses: actions/upload-artifact@v4
         with:
@@ -54,6 +65,13 @@ jobs:
           path: |
             artifacts/SubZeroDev.WindowManager-*.zip
             artifacts/packages/*.nupkg
+            artifacts/acceptance-artifacts.json
+            docs/acceptance.md
+            docs/acceptance/**
+            docs/replacement-mode.md
+            docs/taskbar-backchannel-experiment.md
+            docs/test-matrix.md
+            docs/budgets.md
       - name: Publish the GitHub release
         if: github.ref_type == 'tag'
         env:

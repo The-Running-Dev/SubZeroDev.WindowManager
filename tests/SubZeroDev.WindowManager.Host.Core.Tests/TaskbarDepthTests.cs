@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Text;
 using SubZeroDev.WindowManager.Host.Platform;
 using SubZeroDev.WindowManager.Plugins.RunningWindows;
@@ -421,7 +422,7 @@ public sealed class TaskbarDepthTests
         {
             Directory.CreateDirectory(_hook);
             Tray = TrayHost.Start(_hook, _ => { }, null);
-            Channel = new TaskbarBackchannel(Tray, handle => handle == 42 ? new WindowKey(42, 1) : null, Log.Add, decode);
+            Channel = new TaskbarBackchannel(Tray, handle => handle == 42 ? new WindowKey(42, 1) : null, Log.Enqueue, decode);
             Channel.Start((key, progress) => Progress.Add((key, progress)), (key, overlay) => Overlays.Add((key, overlay)));
         }
 
@@ -429,7 +430,7 @@ public sealed class TaskbarDepthTests
 
         public TaskbarBackchannel Channel { get; }
 
-        public List<string> Log { get; } = [];
+        public ConcurrentQueue<string> Log { get; } = new();
 
         public List<(WindowKey Key, WindowProgress Progress)> Progress { get; } = [];
 
