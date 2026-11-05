@@ -1,0 +1,17 @@
+{
+  "releaseTag": "vm-acceptance-2026-11-05",
+  "artifact": "WindowManager-VM-acceptance-2026-11-05.zip",
+  "url": "https://github.com/The-Running-Dev/SubZeroDev.WindowManager/releases/download/vm-acceptance-2026-11-05/WindowManager-VM-acceptance-2026-11-05.zip",
+  "sha256": "f70658dc9d6f9e7afb41129f9aad236547bc2b28307cd0664d433a629d73eb17",
+  "bytes": 115941168,
+  "ciRun": "42055798364",
+  "ciBuildCommit": "c86a05468b295febdf918d5b9db3b7fb61e49d5c",
+  "sourcePR": "https://github.com/The-Running-Dev/SubZeroDev.WindowManager/pull/46",
+  "sourceHeadCommit": "b69d3edcf03315bac82bc8fe022adcf7ca56668a",
+  "appArchive": {
+    "file": "SubZeroDev.WindowManager-0.1.0-ci.23-win-x64.zip",
+    "bytes": 115900560,
+    "sha256": "3dff2572aaa68ee6a9ac870b8638e2ab7b897703c7448135256e0bcec1431028"
+  },
+  "purpose": "Public disposable-VM bootstrap bundle; native acceptance remains open"
+}
