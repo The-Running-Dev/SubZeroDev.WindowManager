@@ -235,26 +235,10 @@ internal static partial class Interactive
     {
         const uint LeftDown = 0x0002;
         const uint LeftUp = 0x0004;
-        var previous = SetThreadDpiAwarenessContext(PerMonitorAwareV2);
-        try
-        {
-            if (!SetCursorPos(x, y))
-            {
-                throw new InvalidOperationException("SetCursorPos failed.");
-            }
-
-            mouse_event(LeftDown, 0, 0, 0, 0);
-            mouse_event(LeftUp, 0, 0, 0, 0);
-        }
-        finally
-        {
-            SetThreadDpiAwarenessContext(previous);
-        }
+        MoveTo(x, y);
+        mouse_event(LeftDown, 0, 0, 0, 0);
+        mouse_event(LeftUp, 0, 0, 0, 0);
     }
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool SetCursorPos(int x, int y);
 
     [LibraryImport("user32.dll")]
     private static partial void mouse_event(uint flags, int dx, int dy, int data, nint extraInfo);

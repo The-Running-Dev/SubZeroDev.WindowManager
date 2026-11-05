@@ -122,6 +122,9 @@ public sealed class PopupWindow
 
     public bool IsOpen { get; private set; }
 
+    /// <summary>Whether this opening may move keyboard focus; hover previews and toasts may not.</summary>
+    public bool TakesFocus { get; private set; }
+
     /// <summary>When the popup last took keyboard focus, in Unix milliseconds; for timing checks.</summary>
     public long ReadyAtUtcMs { get; private set; }
 
@@ -151,7 +154,11 @@ public sealed class PopupWindow
         _monitor = monitor;
         _place = place;
         Fit();
-        var activates = activate && Placement != PopupPlacement.Toast;
+        var activates = TakesFocus = activate && Placement != PopupPlacement.Toast;
+        if (!activates)
+        {
+            _focusPending = false;
+        }
         if (!IsOpen)
         {
             IsOpen = true;
@@ -176,7 +183,7 @@ public sealed class PopupWindow
     public void FocusContent()
     {
         Fit();
-        if (Placement == PopupPlacement.Toast)
+        if (!TakesFocus)
         {
             return;
         }
@@ -213,7 +220,7 @@ public sealed class PopupWindow
 
     private void TryFocus()
     {
-        if (!_focusPending || !IsOpen)
+        if (!_focusPending || !IsOpen || !TakesFocus)
         {
             return;
         }
@@ -264,6 +271,7 @@ public sealed class PopupWindow
         }
 
         IsOpen = false;
+        TakesFocus = false;
         _active = false;
         _focusPending = false;
         _window.AppWindow.Hide();
@@ -274,6 +282,8 @@ public sealed class PopupWindow
     {
         var wasOpen = IsOpen;
         IsOpen = false;
+        TakesFocus = false;
+        _focusPending = false;
         _closeRequested = true;
         _window.Close();
         if (wasOpen)

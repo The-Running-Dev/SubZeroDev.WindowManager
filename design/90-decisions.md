@@ -18,6 +18,14 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ---
 
+## 2026-11-05 — Native acceptance remains separate from implementation completion
+- **Context:** All slices are marked done, but cold sign-in, notifications without Explorer, real DWM thumbnails, native taskbar decoding and several input/device paths still lack acceptance evidence. Main at `4951f01` includes the taskbar transport diagnostic, not a verified decoder.
+- **Chosen:** Track the remaining gates and snapshot-based VM sequence in `docs/acceptance.md`. An empty disposable Windows VM qualifies shell/session behavior first; real radios, DDC/CI displays and built-in panel brightness still need hardware. Do not infer acceptance from the slice status or synthetic tests.
+- **Focus correction:** Remember whether each popup opening allows focus, and enforce that policy during render updates and deferred focus callbacks. A hover preview opened without activation could previously take focus when its worker supplied or updated the view. The native hover regression exposed this on the original implementation; the corrected implementation has passed the focus assertions.
+- **Pointer evidence:** New explicit tests exercise ten Win+X pointer selections and a hover preview's open/update/close path. Runs on the development desktop have both passed and failed, including after waiting for focus and pacing movement. No native pointer fix is established. Preserve these as explicit acceptance probes (`-explicit on`) and repeat in the isolated VM; a default test run does not qualify them.
+- **Test isolation:** Use a concurrent queue for the backchannel test's diagnostic sink, since unrelated native broadcasts can log concurrently. Keep the assertion for the test's own message.
+- **Budget CI:** Allow exactly one additional invocation of each of the two observed slow-runner cases (`S23_2`, `S25_11`), with unchanged assertions, thresholds and internal measurement counts. Every other budget test remains strict. Keep XML and metrics from both attempts and report a recovered failure as a warning. A second failure fails the job.
+
 ## 2026-11-05 — S31: the Alt+Tab sequence lives in the key tracker, chords reach the host in order, and the switcher owns only the list
 - **Context:** S31 takes Alt+Tab from Windows when the `subzerodev.switcher` plugin is running. The sequence spans several key events (Alt held, Tab pressed repeatedly, Alt released or Esc), so it needed a home that sees every key, and the plugin needed a reason to be started.
 - **Chosen:**

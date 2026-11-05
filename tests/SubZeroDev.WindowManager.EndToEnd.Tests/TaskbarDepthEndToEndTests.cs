@@ -73,6 +73,41 @@ public sealed class TaskbarDepthEndToEndTests
         Assert.Equal(0, await run.StopAsync());
     }
 
+    // Run explicitly in the acceptance VM: native pointer delivery is still intermittent on the
+    // development desktop. Synthetic window content does not qualify live DWM thumbnails.
+    [Fact(Explicit = true)]
+    public async Task S29_2_pointer_hover_opens_updates_and_closes_a_preview_without_focusing_it()
+    {
+        HostRun.RequireDesktop();
+        using var run = Start("always");
+        await run.WaitForAsync(Ready, Startup);
+        await SyntheticAsync(run, "add", 2);
+        var status = await run.WaitForAsync(s => Buttons(s).Count == 1 && Buttons(s)[0]["bounds"] is JsonObject, Reaction);
+        var bounds = Buttons(status)[0]["bounds"]!;
+        var x = ((int)bounds["left"]! + (int)bounds["right"]!) / 2;
+        var y = ((int)bounds["top"]! + (int)bounds["bottom"]!) / 2;
+        var panel = status["panels"]![0]!;
+        Assert.True(Interactive.IsWindowAt(x, y, (long)panel["handle"]!), "Only hover the test panel.");
+        var foreground = Interactive.ForegroundProcessId();
+        Interactive.MoveTo(x, (int)panel["bounds"]!["top"]! - 100);
+        await Task.Delay(150, TestContext.Current.CancellationToken);
+        Interactive.MoveTo(x, y);
+        status = await run.WaitForAsync(s => Popup(s, "preview") is { } popup && (bool?)popup["open"] == true
+            && popup["thumbnails"]!.AsArray().Count == 2, Reaction);
+        Assert.Equal(foreground, Interactive.ForegroundProcessId());
+        Assert.Equal(0, (long)Popup(status, "preview")!["readyAtUtcMs"]!);
+
+        await SyntheticAsync(run, "add", 1);
+        status = await run.WaitForAsync(s => Popup(s, "preview")?["thumbnails"]?.AsArray().Count == 3, Reaction);
+        Assert.Equal(foreground, Interactive.ForegroundProcessId());
+        Assert.Equal(0, (long)Popup(status, "preview")!["readyAtUtcMs"]!);
+
+        var panelBounds = panel["bounds"]!;
+        Interactive.MoveTo(x, (int)panelBounds["top"]! - 400);
+        await run.WaitForAsync(s => (bool?)Popup(s, "preview")?["open"] != true, Reaction);
+        Assert.Equal(0, await run.StopAsync());
+    }
+
     [Fact]
     public async Task S29_4_the_jump_list_offers_a_task_then_the_readable_entries_and_choosing_one_launches_it()
     {

@@ -7,6 +7,8 @@ Built from [10-design.md](10-design.md) and [20-contract.md](20-contract.md). Th
 
 Each criterion runs as an automated test unless it says *manual*. A manual check is recorded in the slice's pull request with the observed result.
 
+`Status: done` below records implementation progress. Outstanding native acceptance gates, including the S24 and S29 validation gates, remain tracked in [the acceptance ledger](../docs/acceptance.md). The replacement release is not accepted merely because every slice is marked done.
+
 ## S1 — Themed panel on the desktop
 Status: done
 Delivers: Ben can start the app and get a panel along the bottom of the main screen. Windows treats it like a second taskbar, its look comes from an editable theme file, and it disappears cleanly on quit.

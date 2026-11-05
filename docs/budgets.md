@@ -42,3 +42,5 @@ SUBZERODEV_WM_BUDGETS=measure SUBZERODEV_WM_BUDGET_OUT=artifacts/budgets tests/S
 ## Checking
 
 The `budgets` job in `.github/workflows/ci.yml` runs startup, idle and replacement startup three times on every pull request with `SUBZERODEV_WM_BUDGETS=ci` and fails when a median is more than 10% over its CI budget. `SUBZERODEV_WM_BUDGETS=reference` checks against the reference column instead. `SUBZERODEV_WM_BUDGET_RUNS` changes the number of runs.
+
+CI retries only `S23_2_replacement_startup_stays_within_budget` and `S25_11_idle_with_hundreds_of_windows_stays_within_budget` once, through `tools/Check-Budgets.ps1`. Other budget tests fail immediately. Thresholds, run counts and assertions are unchanged. Each invocation writes XML and measurements into a separate subdirectory of the uploaded `budgets` artifact; a recovered failure emits a warning and a step-summary entry. A second failure fails the job. This limits the two observed slow-runner flakes without silently discarding the first result.
