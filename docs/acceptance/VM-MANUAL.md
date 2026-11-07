@@ -3,6 +3,8 @@
 No Codex, Git, SDK or GitHub login is needed in the guest. Use this checklist at
 the VM console and bring the evidence ZIP back to the development machine.
 Commands below assume installation at `C:\WindowManager`. Use a normal test user.
+Most of this list can be run by a script instead; see [the scripted run](VM-SCRIPTED.md)
+(`Invoke-AcceptanceAuto.ps1`, in bundles that include it). What it cannot settle is listed there.
 
 ## Install and start
 

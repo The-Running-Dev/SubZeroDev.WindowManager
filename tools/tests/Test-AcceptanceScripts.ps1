@@ -80,6 +80,12 @@ try {
     finally { [IO.File]::WriteAllBytes($victim, $before) }
     'PASS: corrupt downloads, unknown folders and modified installed files are refused.'
 
+    # Bundles built before the scripted suite existed legitimately lack it; when present it must be complete.
+    $autoInstalled = @('Invoke-AcceptanceAuto.ps1', 'acceptance\Logic.ps1', 'acceptance\Common.ps1', 'acceptance\Probes.ps1' |
+        Where-Object { Test-Path -LiteralPath (Join-Path $testRoot $_) -PathType Leaf })
+    if ($autoInstalled.Count -eq 0) { 'NOTE: this bundle predates the scripted acceptance suite; install of it not exercised.' }
+    elseif ($autoInstalled.Count -ne 4) { throw "Scripted acceptance suite partly installed: $($autoInstalled -join ', ')" }
+    else { 'PASS: the scripted acceptance suite is installed beside the manual runner.' }
     $runner = Join-Path $testRoot 'Test-AcceptanceVM.ps1'
     $env:SUBZERODEV_WM_DATA_ROOT = Join-Path $testRoot 'fake-data'
     [IO.Directory]::CreateDirectory((Join-Path $env:SUBZERODEV_WM_DATA_ROOT 'logs')) | Out-Null
