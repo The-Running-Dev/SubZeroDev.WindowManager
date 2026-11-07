@@ -385,6 +385,205 @@ function Invoke-ProbeBackToExplorer {
     Add-Observation $gate 'guardian-not-started-after-shell-off' $(if (-not $guardian.Count) { 'Pass' } else { 'Fail' }) ("guardian processes: $($guardian.Count)")
 }
 
+# ------------------------------------------------------------------------------ shared helpers for the probes below
+
+function Read-SharedLines { param([string] $Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return @() }
+    $stream = [IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+    try {
+        $reader = New-Object IO.StreamReader($stream)
+        $lines = New-Object Collections.Generic.List[string]
+        while ($null -ne ($line = $reader.ReadLine())) { $lines.Add($line) }
+        return $lines.ToArray()
+    }
+    finally { $stream.Dispose() }
+}
+
+function Get-WindowByHandle { param([long] $Handle) [WmAcc]::Windows() | Where-Object { $_.Handle -eq $Handle } | Select-Object -First 1 }
+
+function Get-ZState { param([long[]] $PanelHandles, [long] $Fixture) Get-PanelZState -Windows @([WmAcc]::Windows()) -Panels $PanelHandles -Fixture $Fixture }
+
+function Format-ProblemList { param([object[]] $Problems)
+    $list = @($Problems)
+    $text = "$($list.Count) warning/error lines"
+    if ($list.Count) { $text += ': ' + (($list | Select-Object -First 5 | ForEach-Object { '[' + $_.Area + '] ' + $_.Message }) -join ' || ') }
+    return $text
+}
+
+# ------------------------------------------------------------------------------ S29.3 taskbar transport (real ITaskbarList3 client)
+
+# Mode 'Baseline' (under Explorer) saves the probe's client-side facts; mode 'Host' (replacement shell) compares with them
+# and reads the host's opt-in trace. The probe is a real x64 Win32 client; nothing is simulated.
+function Invoke-ProbeTaskbarTransport {
+    param([ValidateSet('Baseline', 'Host')][string] $Mode = 'Host', [string] $TracePath = '')
+    $gate = 'S29.3'
+    $exe = Join-Path $script:Acc.Install 'TaskbarProbe.exe'
+    if (-not (Test-Path -LiteralPath $exe)) { Add-Observation $gate 'taskbar-transport-probe' Skipped 'TaskbarProbe.exe is not in this install (bundles before r3 lack it)'; return }
+    $log = Join-Path $script:Acc.Results ('taskbar-probe-{0}-{1}.log' -f $script:Acc.Stage, (Get-Stamp))
+    $baselinePath = Join-Path $script:Acc.Results 'taskbar-baseline.json'
+    $process = Start-Process -FilePath $exe -ArgumentList @('"' + $log + '"') -PassThru
+    $window = $null
+    $forced = $false
+    try {
+        $window = Wait-Until -TimeoutMs 15000 -PollMs 100 -Condition { Get-TopWindows -ProcessId @([uint32]$process.Id) | Select-Object -First 1 }
+        $ready = Wait-Until -TimeoutMs 20000 -PollMs 250 -Condition { (Get-TaskbarProbeFacts -Lines (Read-SharedLines $log)).Readiness }
+        if (-not $ready -and $window -and (Set-ForegroundByClick $window)) { Send-KeyTap F6; $forced = $true }
+        [void](Wait-Until -TimeoutMs 50000 -PollMs 500 -Condition { (Get-TaskbarProbeFacts -Lines (Read-SharedLines $log)).SequencesEnded -ge 1 })
+    }
+    finally {
+        if ($window) { [WmAcc]::Close($window.Handle) }
+        if (-not $process.WaitForExit(15000)) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+    }
+    $facts = Get-TaskbarProbeFacts -Lines (Read-SharedLines $log)
+    $forcedText = if ($forced) { ', calls were FORCED without readiness' } else { '' }
+    $summary = ('readiness={0}, native calls={1}, failed={2}, sequences ended={3}, deadlines={4}, clean end={5}{6}' -f $facts.Readiness, $facts.NativeCalls, $facts.FailedCalls, $facts.SequencesEnded, $facts.Deadlines, $facts.CleanEnd, $forcedText)
+    if ($Mode -eq 'Baseline') {
+        $clean = [bool]($facts.Readiness -and $facts.CleanEnd -and $facts.SequencesEnded -ge 1 -and $facts.FailedCalls -eq 0 -and $facts.NativeCalls -gt 0 -and -not $forced)
+        $evidence = @($log)
+        if ($clean) { [IO.File]::WriteAllText($baselinePath, ($facts | ConvertTo-Json -Depth 3), $script:AccUtf8); $evidence += $baselinePath }
+        Add-Observation $gate 'taskbar-probe-explorer-baseline' $(if ($clean) { 'Pass' } else { 'Inconclusive' }) ("the probe against Explorer: $summary") $evidence
+        return
+    }
+    $baseline = $null
+    if (Test-Path -LiteralPath $baselinePath) { try { $baseline = [IO.File]::ReadAllText($baselinePath) | ConvertFrom-Json } catch { $baseline = $null } }
+    $trace = $null
+    if ($TracePath -and (Test-Path -LiteralPath $TracePath)) { $trace = Get-TraceFacts -Lines (Read-SharedLines $TracePath) }
+    $traceFailed = @(Get-HostLogLines | Where-Object { $_.Message -match 'TaskbarTraceFailed' }).Count -gt 0
+    $verdict = Get-TaskbarTransportVerdict -Probe $facts -Trace $trace -TraceFailedInLog $traceFailed -Baseline $baseline
+    $traceText = 'host trace: none'
+    if ($trace) {
+        $distinct = if (@($trace.Distinct).Count) { @($trace.Distinct) -join ', ' } else { 'none' }
+        $traceText = ('host trace: {0} messages, distinct: {1}' -f $trace.Messages, $distinct)
+    }
+    $shot = Save-Screen 'taskbar-transport'
+    $evidence = @($log, $shot)
+    if ($TracePath -and (Test-Path -LiteralPath $TracePath)) { $evidence += $TracePath }
+    Add-Observation $gate 'taskbar-transport-probe-vs-host' $verdict.Verdict ("the probe against the host shell: $summary. $traceText. $($verdict.Reason)") $evidence
+    if (@($facts.FailedDetail).Count) { Add-Observation $gate 'taskbar-native-call-failures' Fail ('failed calls: ' + (@($facts.FailedDetail) -join ' | ')) @($log) }
+}
+
+# ------------------------------------------------------------------------------ S12.6 Win+D with a desktop panel shown
+
+function Invoke-ProbeShowDesktop {
+    $gate = 'S12.6'
+    $since = [DateTimeOffset]::UtcNow
+    $desktops = @(Get-HostWindows | Where-Object { $_.Title -like 'SubZeroDev.WindowManager desktop*' })
+    if (-not $desktops.Count) { Add-Observation $gate 'win-d-with-desktop-panel' Inconclusive 'no visible desktop window in this layout, so Win+D with a desktop panel cannot be observed' @((Save-Screen 'showdesk-no-desktop')); return }
+    $fixture = Start-FixtureWindow 'WM-ACC-SHOWDESK' 'LightSkyBlue' 140 120
+    try {
+        if (-not (Set-ForegroundByClick $fixture)) { Add-Observation $gate 'fixture-setup' Inconclusive 'could not bring the fixture to the foreground by a click'; return }
+        Send-Chord @('WIN') 'D'
+        $minimised = Wait-Until -TimeoutMs 3500 -PollMs 80 -Condition { $w = Get-WindowByHandle $fixture.Handle; if ($w -and ($w.Minimized -or -not $w.Visible)) { $w } }
+        $shotShown = Save-Screen 'showdesk-after-win-d'
+        $minText = if ($minimised) { 'the fixture was minimised or hidden after Win+D' } else { 'the fixture was still visible 3.5 s after Win+D' }
+        Add-Observation $gate 'win-d-minimises-the-window' $(if ($minimised) { 'Pass' } else { 'Fail' }) $minText @($shotShown)
+        $stillThere = @(Get-HostWindows | Where-Object { $_.Title -like 'SubZeroDev.WindowManager desktop*' })
+        Add-Observation $gate 'desktop-panel-stays-visible-after-win-d' $(if ($stillThere.Count) { 'Pass' } else { 'Fail' }) ("visible desktop windows before $($desktops.Count), after $($stillThere.Count)")
+        if ($minimised) {
+            Send-Chord @('WIN') 'D'
+            $restored = Wait-Until -TimeoutMs 3500 -PollMs 80 -Condition { $w = Get-WindowByHandle $fixture.Handle; if ($w -and $w.Visible -and -not $w.Minimized) { $w } }
+            if ($restored) { Add-Observation $gate 'second-win-d-restores-the-window' Pass 'a second Win+D brought the fixture back' }
+            else {
+                [WmAcc]::Restore($fixture.Handle)
+                Add-Observation $gate 'second-win-d-restores-the-window' Inconclusive 'a second Win+D did not bring the fixture back; whether it should (Explorer toggles, the host may only show the desktop) is a design question, so the window was restored directly' @((Save-Screen 'showdesk-second-win-d'))
+            }
+        }
+        Start-Sleep -Milliseconds 600
+        $w = Get-WindowByHandle $fixture.Handle
+        if ($w -and $w.Visible -and -not $w.Minimized) {
+            $screen = [WmAcc]::Screen()
+            Click-At -X ($screen[0] + [int]($screen[2] * 0.85)) -Y ($screen[1] + [int]($screen[3] * 0.65))
+            Start-Sleep -Milliseconds 800
+            $state = Get-ZState @($desktops | ForEach-Object { $_.Handle }) $fixture.Handle
+            $zVerdict = if ($state -eq 'below') { 'Pass' } elseif ($state -eq 'unknown' -or $state -eq 'hidden') { 'Inconclusive' } else { 'Fail' }
+            Add-Observation $gate 'desktop-panel-stays-below-normal-window-after-click' $zVerdict ("z-order of the desktop windows relative to the fixture after a click on empty desktop: $state") @((Save-Screen 'showdesk-after-click'))
+        }
+        $problems = @(Get-HostProblems -Since $since)
+        Add-Observation $gate 'host-log-during-show-desktop' $(if (-not $problems.Count) { 'Pass' } else { 'Inconclusive' }) (Format-ProblemList $problems)
+    }
+    finally {
+        $w = Get-WindowByHandle $fixture.Handle
+        if ($w -and $w.Minimized) { [WmAcc]::Restore($fixture.Handle) }
+        Stop-Fixtures
+    }
+}
+
+# ------------------------------------------------------------------------------ S12.3 full-screen window drops the panels
+
+function Invoke-ProbeFullScreen {
+    $gate = 'S12.3'
+    $since = [DateTimeOffset]::UtcNow
+    $panels = @(Get-HostWindows | Where-Object { $_.Title -like 'SubZeroDev.WindowManager panel*' })
+    if (-not $panels.Count) { Add-Observation $gate 'panels-drop-below-full-screen-window' Inconclusive 'no visible panel to observe' @((Save-Screen 'fullscreen-no-panel')); return }
+    $handles = @($panels | ForEach-Object { $_.Handle })
+    $normal = Start-FixtureWindow 'WM-ACC-NORMAL' 'LightGreen' 200 160
+    try {
+        if (-not (Set-ForegroundByClick $normal)) { Add-Observation $gate 'fixture-setup' Inconclusive 'could not bring the normal fixture to the foreground'; return }
+        $baseline = Wait-Until -TimeoutMs 3000 -PollMs 100 -Condition { $z = Get-ZState $handles $normal.Handle; if ($z -ne 'unknown') { $z } }
+        $baseText = "z-order of the panels relative to a normal window: $baseline"
+        if ($baseline -ne 'above') { $baseText += '; unless they are above it, dropping below a full-screen window cannot be told apart' }
+        Add-Observation $gate 'panels-above-a-normal-window' $(if ($baseline -eq 'above') { 'Pass' } else { 'Inconclusive' }) $baseText @((Save-Screen 'fullscreen-baseline'))
+
+        $full = Start-FixtureWindow 'WM-ACC-FULLSCREEN' 'Gold' 0 0 -FullScreen
+        $screen = [WmAcc]::Screen()
+        Click-At -X ($screen[0] + [int]($screen[2] / 2)) -Y ($screen[1] + [int]($screen[3] / 2))
+        $focused = [bool](Wait-Until -TimeoutMs 2500 -PollMs 50 -Condition { [WmAcc]::Foreground() -eq $full.Handle })
+        $fullNow = Get-WindowByHandle $full.Handle
+        $covers = [bool]($fullNow -and (($fullNow.Right - $fullNow.Left) -ge $screen[2]) -and (($fullNow.Bottom - $fullNow.Top) -ge $screen[3]))
+        $dropped = Wait-Until -TimeoutMs 5000 -PollMs 150 -Condition { $z = Get-ZState $handles $full.Handle; if ($z -eq 'below' -or $z -eq 'hidden') { $z } }
+        $state = if ($dropped) { $dropped } else { Get-ZState $handles $full.Handle }
+        $shot = Save-Screen 'fullscreen-active'
+        if (-not $focused -or -not $covers) { Add-Observation $gate 'panels-drop-below-full-screen-window' Inconclusive ("the full-screen fixture did not take the foreground or cover the monitor (foreground=$focused, covers=$covers); panels were $state") @($shot) }
+        elseif ($state -eq 'below') { Add-Observation $gate 'panels-drop-below-full-screen-window' Pass 'with a borderless window covering the monitor in the foreground, every visible panel lay below it' @($shot) }
+        elseif ($state -eq 'hidden') { Add-Observation $gate 'panels-drop-below-full-screen-window' Inconclusive 'the panels were hidden rather than lowered; the monitor is uncovered either way, but the contract says below' @($shot) }
+        else { Add-Observation $gate 'panels-drop-below-full-screen-window' Fail "panels were still $state relative to the full-screen window 5 s after it took the foreground" @($shot) }
+
+        [WmAcc]::Close($full.Handle)
+        [void](Wait-Until -TimeoutMs 4000 -PollMs 100 -Condition { -not (Get-WindowByHandle $full.Handle) })
+        [void](Set-ForegroundByClick $normal)
+        $back = Wait-Until -TimeoutMs 5000 -PollMs 150 -Condition { if ((Get-ZState $handles $normal.Handle) -eq 'above') { 'above' } }
+        $backVerdict = if ($back) { 'Pass' } elseif ($baseline -ne 'above') { 'Inconclusive' } else { 'Fail' }
+        $backText = if ($back) { 'after the full-screen window closed the panels were above a normal window again' } else { 'the panels were not above a normal window 5 s after the full-screen window closed' }
+        Add-Observation $gate 'panels-return-above-after-full-screen-closes' $backVerdict $backText @((Save-Screen 'fullscreen-after'))
+        $problems = @(Get-HostProblems -Since $since)
+        Add-Observation $gate 'host-log-during-full-screen' $(if (-not $problems.Count) { 'Pass' } else { 'Inconclusive' }) (Format-ProblemList $problems)
+        Add-Observation $gate 'real-game-or-presentation' Skipped 'not scripted: a real game or slideshow can use exclusive full screen, which this borderless window is not'
+    }
+    finally { Stop-Fixtures }
+}
+
+# ------------------------------------------------------------------------------ S14.4 sample presets, screenshots for the docs
+
+function Invoke-ProbeSampleShots {
+    $gate = 'S14.4'
+    $path = Join-Path $script:Acc.DataRoot 'settings.json'
+    if (-not (Test-Path -LiteralPath $path)) { Add-Observation $gate 'sample-presets' Inconclusive "no settings.json under $($script:Acc.DataRoot)"; return }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $originalBytes = [IO.File]::ReadAllBytes($path)
+    $originalText = $utf8.GetString($originalBytes)
+    if ($null -eq (Set-PresetInSettingsText -Text $originalText -PresetId 'x')) { Add-Observation $gate 'sample-presets' Inconclusive 'settings.json has no activePreset string, so the preset cannot be switched by editing it'; return }
+    $since = [DateTimeOffset]::UtcNow
+    try {
+        foreach ($sample in @(@{ Id = 'subzerodev.sample-glass'; Name = 'glass' }, @{ Id = 'subzerodev.sample-retro'; Name = 'retro' })) {
+            $mark = [DateTimeOffset]::UtcNow
+            [IO.File]::WriteAllText($path, (Set-PresetInSettingsText -Text $originalText -PresetId $sample.Id), $utf8)
+            $pattern = "activePreset is now '?" + [regex]::Escape($sample.Id)
+            $applied = Wait-Until -TimeoutMs 10000 -PollMs 250 -Condition { Get-HostLogLines -Since $mark | Where-Object { $_.Message -match $pattern } | Select-Object -First 1 }
+            Start-Sleep -Seconds 3
+            $shot = Save-Screen ('preset-' + $sample.Name)
+            $appliedText = if ($applied) { "the host logged the switch to $($sample.Id)" } else { "the host did not log a switch to $($sample.Id) within 10 s of editing settings.json" }
+            Add-Observation $gate ('hot-reload-applies-' + $sample.Name) $(if ($applied) { 'Pass' } else { 'Fail' }) $appliedText @($shot)
+            Add-Observation $gate ('looks-right-' + $sample.Name) Inconclusive 'a person must judge the screenshot against docs/samples.md; it can also be copied to docs/images' @($shot)
+        }
+    }
+    finally {
+        [IO.File]::WriteAllBytes($path, $originalBytes)
+        Start-Sleep -Seconds 3
+    }
+    $problems = @(Get-HostProblems -Since $since)
+    Add-Observation $gate 'host-log-during-preset-switch' $(if (-not $problems.Count) { 'Pass' } else { 'Inconclusive' }) (Format-ProblemList $problems)
+}
+
 # ------------------------------------------------------------------------------ evidence-only and not-scripted rows
 
 function Invoke-ProbeJumpListEvidence {

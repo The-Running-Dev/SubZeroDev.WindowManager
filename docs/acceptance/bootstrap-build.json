@@ -1,18 +1,18 @@
 {
-  "releaseTag": "acceptance-vm-2026-11-05-r2",
-  "artifact": "WindowManager-VM-acceptance-2026-11-05-r2.zip",
-  "url": "https://github.com/The-Running-Dev/SubZeroDev.WindowManager/releases/download/acceptance-vm-2026-11-05-r2/WindowManager-VM-acceptance-2026-11-05-r2.zip",
-  "sha256": "5d9b4e2cae958ec30c551a5985e077ae71fef23f51b297674f716353979c8674",
-  "bytes": 115947529,
-  "ciRun": "42055798364",
-  "ciBuildCommit": "c86a05468b295febdf918d5b9db3b7fb61e49d5c",
-  "sourcePR": "https://github.com/The-Running-Dev/SubZeroDev.WindowManager/pull/46",
-  "sourceHeadCommit": "b69d3edcf03315bac82bc8fe022adcf7ca56668a",
+  "releaseTag": "acceptance-vm-2026-11-07-r1",
+  "artifact": "WindowManager-VM-acceptance-2026-11-07-r1.zip",
+  "url": "https://github.com/The-Running-Dev/SubZeroDev.WindowManager/releases/download/acceptance-vm-2026-11-07-r1/WindowManager-VM-acceptance-2026-11-07-r1.zip",
+  "sha256": "03013eda05e1af8d20c5bd33745710995267a519f57f519b0ad88c6d0d79955c",
+  "bytes": 114454284,
+  "ciRun": "42384768182",
+  "ciBuildCommit": "4489ad03945cbc94fb6ac52e475b8c37cc983c85",
+  "sourcePR": "https://github.com/The-Running-Dev/SubZeroDev.WindowManager/pull/49",
+  "sourceHeadCommit": "76bbd9743fe54925b0f5637ce291d9173f23f79a",
   "appArchive": {
-    "file": "SubZeroDev.WindowManager-0.1.0-ci.23-win-x64.zip",
-    "bytes": 115900560,
-    "sha256": "3dff2572aaa68ee6a9ac870b8638e2ab7b897703c7448135256e0bcec1431028"
+    "file": "SubZeroDev.WindowManager-0.1.0-ci.29-win-x64.zip",
+    "bytes": 115901126,
+    "sha256": "6ad5315f53c1c104a0e51d92b141da11a2a48ec988d80bc35d2d0f7415c04a68"
   },
-  "purpose": "Public disposable-VM bootstrap bundle; native acceptance remains open",
-  "bootstrapRevision": "acceptance-vm-2026-11-05-r2"
+  "purpose": "Public disposable-VM bootstrap bundle with the scripted acceptance suite; native acceptance remains open",
+  "bootstrapRevision": "acceptance-vm-2026-11-07-r1"
 }

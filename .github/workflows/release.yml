@@ -18,6 +18,7 @@ on:
       - 'tools/Test-AcceptanceVM.ps1'
       - 'tools/Invoke-AcceptanceAuto.ps1'
       - 'tools/acceptance/**'
+      - 'tools/TaskbarProbe/**'
       - 'tools/tests/Test-AcceptanceScripts.ps1'
       - 'tools/tests/Test-AcceptanceAuto.ps1'
       - '.github/workflows/release.yml'
@@ -70,6 +71,17 @@ jobs:
           })
           [ordered]@{ commit = '${{ github.sha }}'; version = $env:VERSION; run = '${{ github.run_id }}'; archives = $archives } |
             ConvertTo-Json -Depth 4 | Set-Content artifacts/acceptance-artifacts.json -Encoding utf8
+      - name: Build the native taskbar diagnostic for the VM bundle
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'Visual C++ x64 tools are required for TaskbarProbe.' }
+          & cmd /d /c "`"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 && tools\TaskbarProbe\build.cmd"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & artifacts/taskbar-probe/TaskbarProbe.exe
+          if ($LASTEXITCODE -ne 2) { throw 'Expected the safe usage-only path to exit 2.' }
+          exit 0
       - name: Keep the build
         uses: actions/upload-artifact@v4
         with:
@@ -88,6 +100,7 @@ jobs:
             tools/Test-AcceptanceVM.ps1
             tools/Invoke-AcceptanceAuto.ps1
             tools/acceptance/**
+            artifacts/taskbar-probe/TaskbarProbe.exe
       - name: Publish the GitHub release
         if: github.ref_type == 'tag'
         env:

@@ -22,11 +22,11 @@ param(
     param([string] $Destination, [bool] $SkipLaunch)
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
-    $bundleUrl = 'https://github.com/The-Running-Dev/SubZeroDev.WindowManager/releases/download/acceptance-vm-2026-11-05-r2/WindowManager-VM-acceptance-2026-11-05-r2.zip'
-    $bundleSha256 = '5d9b4e2cae958ec30c551a5985e077ae71fef23f51b297674f716353979c8674'
-    $appFile = 'SubZeroDev.WindowManager-0.1.0-ci.23-win-x64.zip'
-    $appSha256 = '3dff2572aaa68ee6a9ac870b8638e2ab7b897703c7448135256e0bcec1431028'
-    $buildCommit = 'c86a05468b295febdf918d5b9db3b7fb61e49d5c'
+    $bundleUrl = 'https://github.com/The-Running-Dev/SubZeroDev.WindowManager/releases/download/acceptance-vm-2026-11-07-r1/WindowManager-VM-acceptance-2026-11-07-r1.zip'
+    $bundleSha256 = '03013eda05e1af8d20c5bd33745710995267a519f57f519b0ad88c6d0d79955c'
+    $appFile = 'SubZeroDev.WindowManager-0.1.0-ci.29-win-x64.zip'
+    $appSha256 = '6ad5315f53c1c104a0e51d92b141da11a2a48ec988d80bc35d2d0f7415c04a68'
+    $buildCommit = '4489ad03945cbc94fb6ac52e475b8c37cc983c85'
     $temporary = $null
     $stage = $null
 
@@ -141,6 +141,8 @@ param(
             if ($hasAuto) {
                 Copy-Item -LiteralPath $autoScript -Destination (Join-Path $stage 'Invoke-AcceptanceAuto.ps1')
                 Copy-Item -LiteralPath $autoModules -Destination (Join-Path $stage 'acceptance') -Recurse
+                $taskbarProbe = Join-Path $expanded 'tools\TaskbarProbe.exe'
+                if (Test-Path -LiteralPath $taskbarProbe -PathType Leaf) { Copy-Item -LiteralPath $taskbarProbe -Destination (Join-Path $stage 'TaskbarProbe.exe') }
             }
             $autoLine = if ($hasAuto) { "Auto:   powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$destinationFull\Invoke-AcceptanceAuto.ps1`" -ConfirmDisposableVm`n        (scripted run; sends real keys and mouse input, so leave the VM alone while it runs)`n" } else { '' }
             $quickStart = @"
@@ -161,8 +163,8 @@ After reading the guide, guest-only registration commands are:
   & '$destinationFull\SubZeroDev.WindowManager.exe' --shell off
 Sign out/in only when that test is prepared. Restore the VM snapshot if needed.
 
-No compiler, native TaskbarProbe, Spy++, notification certificate or automated
-test suite is installed. Native acceptance and physical device checks remain open.
+No compiler, Spy++ or notification certificate is installed. Native acceptance
+and physical device checks remain open.
 The bootstrap does not stop Explorer, change the sign-in shell or reboot.
 The runner opens the checklist, records observations, controls guest shell
 registration only when explicitly requested, and collects an evidence ZIP.
