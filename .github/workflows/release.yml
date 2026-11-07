@@ -16,7 +16,10 @@ on:
       - 'docs/acceptance/**'
       - 'tools/Start-AcceptanceVM.ps1'
       - 'tools/Test-AcceptanceVM.ps1'
+      - 'tools/Invoke-AcceptanceAuto.ps1'
+      - 'tools/acceptance/**'
       - 'tools/tests/Test-AcceptanceScripts.ps1'
+      - 'tools/tests/Test-AcceptanceAuto.ps1'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 
@@ -53,6 +56,12 @@ jobs:
           $env:SUBZERODEV_WM_SAMPLE_PACKAGE = (Resolve-Path artifacts/sample/example.hello.zip).Path
           $env:SUBZERODEV_WM_FIXTURE_PACKAGE = (Resolve-Path artifacts/sample/example.windows.zip).Path
           dotnet test tests/SubZeroDev.WindowManager.EndToEnd.Tests -c Release --no-build --filter "FullyQualifiedName~SubZeroDev.WindowManager.EndToEnd.Tests.ReleaseTests" --logger "console;verbosity=normal"
+      - name: Scripted acceptance suite parses and its decision logic holds
+        shell: pwsh
+        run: ./tools/tests/Test-AcceptanceAuto.ps1
+      - name: Scripted acceptance suite parses under Windows PowerShell 5.1
+        shell: powershell
+        run: ./tools/tests/Test-AcceptanceAuto.ps1
       - name: Record acceptance build provenance
         shell: pwsh
         run: |
@@ -77,6 +86,8 @@ jobs:
             docs/budgets.md
             tools/Start-AcceptanceVM.ps1
             tools/Test-AcceptanceVM.ps1
+            tools/Invoke-AcceptanceAuto.ps1
+            tools/acceptance/**
       - name: Publish the GitHub release
         if: github.ref_type == 'tag'
         env:

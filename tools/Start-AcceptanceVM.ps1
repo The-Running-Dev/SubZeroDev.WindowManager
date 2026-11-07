@@ -134,6 +134,15 @@ param(
             Copy-Item -LiteralPath (Join-Path $stage 'docs\acceptance\VM-PROMPT.md') -Destination (Join-Path $stage 'VM-PROMPT.md')
             Copy-Item -LiteralPath (Join-Path $expanded 'tools\Test-AcceptanceVM.ps1') -Destination (Join-Path $stage 'Test-AcceptanceVM.ps1')
             Copy-Item -LiteralPath (Join-Path $stage 'docs\acceptance\VM-MANUAL.md') -Destination (Join-Path $stage 'TESTING.md')
+            # Candidates built before the scripted suite existed do not carry it; the pinned bundle decides.
+            $autoScript = Join-Path $expanded 'tools\Invoke-AcceptanceAuto.ps1'
+            $autoModules = Join-Path $expanded 'tools\acceptance'
+            $hasAuto = (Test-Path -LiteralPath $autoScript -PathType Leaf) -and (Test-Path -LiteralPath $autoModules -PathType Container)
+            if ($hasAuto) {
+                Copy-Item -LiteralPath $autoScript -Destination (Join-Path $stage 'Invoke-AcceptanceAuto.ps1')
+                Copy-Item -LiteralPath $autoModules -Destination (Join-Path $stage 'acceptance') -Recurse
+            }
+            $autoLine = if ($hasAuto) { "Auto:   powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$destinationFull\Invoke-AcceptanceAuto.ps1`" -ConfirmDisposableVm`n        (scripted run; sends real keys and mouse input, so leave the VM alone while it runs)`n" } else { '' }
             $quickStart = @"
 WindowManager VM acceptance - installed to $destinationFull
 
@@ -141,7 +150,7 @@ Launch: $destinationFull\SubZeroDev.WindowManager.exe
 Read:   $destinationFull\docs\acceptance\VM-START-HERE.md
 Tests:  $destinationFull\TESTING.md (manual tests; no Codex or SDK needed)
 Runner: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$destinationFull\Test-AcceptanceVM.ps1"
-Gates:  $destinationFull\docs\acceptance.md
+$($autoLine)Gates:  $destinationFull\docs\acceptance.md
 Build:  $destinationFull\acceptance-artifacts.json and vm-install.json
 Logs:   %LOCALAPPDATA%\SubZeroDev\WindowManager\logs
 
@@ -189,6 +198,9 @@ registration only when explicitly requested, and collects an evidence ZIP.
         Write-Host "Instructions: $destinationFull\VM-START-HERE.txt"
         Write-Host "Manual tests: $destinationFull\TESTING.md"
         Write-Host "Runner: powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$destinationFull\Test-AcceptanceVM.ps1`""
+        if (Test-Path -LiteralPath (Join-Path $destinationFull 'Invoke-AcceptanceAuto.ps1') -PathType Leaf) {
+            Write-Host "Scripted: powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$destinationFull\Invoke-AcceptanceAuto.ps1`" -ConfirmDisposableVm"
+        }
         Write-Host 'Explorer is still enabled. Native acceptance is pending.'
         if (-not $SkipLaunch) {
             $running = @(Get-Process -Name 'SubZeroDev.WindowManager' -ErrorAction SilentlyContinue)

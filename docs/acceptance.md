@@ -4,7 +4,7 @@ The implementation slices S1–S31 are marked done. That records implementation 
 
 This ledger reconciles the S31 handoff with main at `4951f01` (including PR #45's taskbar transport diagnostic). Automated tests use isolated data, marked keys, synthetic windows and fake devices. They cannot establish behavior at a real Explorer-free sign-in.
 
-The [VM start guide](acceptance/VM-START-HERE.md), [inspection and verification report](acceptance/INSPECTION.md), and [local build provenance](acceptance/acceptance-build.json) are retained with this ledger. The historical candidate patch is beside them; downloadable CI builds are Actions artifacts rather than Git source files.
+A script can run most VM checks and collect the evidence: see the [scripted acceptance run](acceptance/VM-SCRIPTED.md), which also lists what stays manual. The [VM start guide](acceptance/VM-START-HERE.md), [inspection and verification report](acceptance/INSPECTION.md), and [local build provenance](acceptance/acceptance-build.json) are retained with this ledger. The historical candidate patch is beside them; downloadable CI builds are Actions artifacts rather than Git source files.
 
 ## Remaining gates
 

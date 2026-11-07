@@ -19,7 +19,7 @@ $setup = irm 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.Windo
 & ([scriptblock]::Create($setup)) -InstallDirectory 'C:\WindowManager-Test' -NoLaunch
 ```
 
-After setup, read `C:\WindowManager\TESTING.md` and run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\WindowManager\Test-AcceptanceVM.ps1`. **No Codex is needed inside the VM.** The [manual test workflow](VM-MANUAL.md) includes exact commands for recording observations, enabling/restoring the guest shell, and collecting the evidence ZIP to bring back to the development machine. The [assistant prompt](VM-PROMPT.md) is optional.
+After setup, read `C:\WindowManager\TESTING.md` and run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\WindowManager\Test-AcceptanceVM.ps1`. **No Codex is needed inside the VM.** The [manual test workflow](VM-MANUAL.md) includes exact commands for recording observations, enabling/restoring the guest shell, and collecting the evidence ZIP to bring back to the development machine. The [assistant prompt](VM-PROMPT.md) is optional. To have a script do most of the checks for you, see the [scripted acceptance run](VM-SCRIPTED.md) (`Invoke-AcceptanceAuto.ps1`, in bundles that include it).
 
 If download or hash verification fails, nothing is launched. The full error is saved to `%TEMP%\WindowManager-bootstrap-error.log`. If the app exits early, inspect `%LOCALAPPDATA%\SubZeroDev\WindowManager\logs`. A successful bootstrap is an installation/startup observation, not a completed acceptance gate. The instructions below still apply, including separately obtaining the native diagnostic and notification prerequisites.
 
