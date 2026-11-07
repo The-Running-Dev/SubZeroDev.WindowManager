@@ -227,7 +227,7 @@ function Stop-Tree {
 
 # ---------------------------------------------------------------- input
 
-$script:Vk = @{ ALT = 0xA4; LALT = 0xA4; CTRL = 0xA2; SHIFT = 0xA0; WIN = 0x5B; TAB = 0x09; ESC = 0x1B; ENTER = 0x0D; DOWN = 0x28; UP = 0x26; RIGHT = 0x27; LEFT = 0x25; F2 = 0x71; DELETE = 0x2E; SPACE = 0x20; APPS = 0x5D }
+$script:Vk = @{ ALT = 0xA4; LALT = 0xA4; CTRL = 0xA2; SHIFT = 0xA0; WIN = 0x5B; TAB = 0x09; ESC = 0x1B; ENTER = 0x0D; DOWN = 0x28; UP = 0x26; RIGHT = 0x27; LEFT = 0x25; F2 = 0x71; F5 = 0x74; F6 = 0x75; DELETE = 0x2E; SPACE = 0x20; APPS = 0x5D }
 function ConvertTo-KeyCode([string] $Name) {
     if ($script:Vk.ContainsKey($Name.ToUpperInvariant())) { return [uint16]$script:Vk[$Name.ToUpperInvariant()] }
     if ($Name.Length -eq 1) { return [uint16][char]$Name.ToUpperInvariant() }
@@ -398,7 +398,8 @@ function Stop-WindowManager {
 
 # A WinForms window in its own process (Windows PowerShell 5.1: the classic native HMENU menu bar, so Alt puts it in real menu mode).
 function Start-FixtureWindow {
-    param([Parameter(Mandatory)][string] $Title, [string] $Colour = 'LightSteelBlue', [int] $X = 120, [int] $Y = 120)
+    param([Parameter(Mandatory)][string] $Title, [string] $Colour = 'LightSteelBlue', [int] $X = 120, [int] $Y = 120, [switch] $FullScreen)
+    $fullScreenLines = if ($FullScreen) { '$f.FormBorderStyle = ''None''; $f.StartPosition = ''Manual''; $f.Bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds; $f.Menu = $null' } else { '' }
     $script = @"
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 `$f = New-Object Windows.Forms.Form
@@ -407,6 +408,7 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 `$mm = New-Object Windows.Forms.MainMenu
 [void]`$mm.MenuItems.Add('&File'); [void]`$mm.MenuItems.Add('&Edit')
 `$f.Menu = `$mm
+$fullScreenLines
 `$l = New-Object Windows.Forms.Label; `$l.Text = '$Title'; `$l.Font = New-Object Drawing.Font('Segoe UI', 28); `$l.AutoSize = `$true; `$l.Location = New-Object Drawing.Point(20, 80); `$f.Controls.Add(`$l)
 [Windows.Forms.Application]::Run(`$f)
 "@

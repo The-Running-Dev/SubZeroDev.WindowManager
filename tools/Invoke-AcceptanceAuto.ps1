@@ -9,10 +9,14 @@ auto-observations.csv, auto-report.md, screenshots, UI dumps and the evidence ZI
 
 Stages (each runs once, in order):
   coexistence  start beside Explorer, soak, hover preview, desktop menu, Win+X real-mouse
-               probe, Alt+Tab, Explorer restart.
-  replacement  only with -IncludeReplacement: registers the guest shell, signs out, resumes
+               probe, Alt+Tab, the native taskbar client (the Explorer baseline), Win+D with
+               a desktop panel, a full-screen window, the two sample presets (screenshots),
+               Explorer restart.
+  replacement  only with -IncludeReplacement: registers the guest shell (and, if the bundle
+               carries TaskbarProbe.exe, turns on the host's taskbar trace), signs out, resumes
                by itself after sign-in (a scheduled sign-in task), probes the replacement
-               shell, restores Explorer, signs out again and checks Explorer is back.
+               shell with the same probes, restores Explorer, signs out again and checks
+               Explorer is back.
 
 Guards: refuses to run unless the machine reports a hypervisor AND a VM manufacturer/model,
 and unless you pass -ConfirmDisposableVm. The replacement stage also needs -SnapshotTaken
@@ -26,7 +30,7 @@ param(
     [switch] $IncludeReplacement,
     [switch] $SnapshotTaken,
     [switch] $AllowSignOut,
-    [ValidateSet('Coexistence', 'WinX', 'AltTab', 'Hover', 'Desktop', 'ExplorerRestart')]
+    [ValidateSet('Coexistence', 'WinX', 'AltTab', 'Hover', 'Desktop', 'ExplorerRestart', 'TaskbarTransport', 'ShowDesktop', 'FullScreen', 'Samples')]
     [string[]] $Only,
     [ValidateRange(1, 200)]
     [int] $WinXAttempts = 20,
@@ -129,9 +133,31 @@ function Invoke-CoexistenceStage {
     if (Want 'Desktop') { Invoke-Probe 'S30' { Invoke-ProbeDesktop } }
     if (Want 'WinX') { Invoke-Probe 'S28' { Invoke-ProbeWinX -Attempts $WinXAttempts } }
     if (Want 'AltTab') { Invoke-Probe 'S31' { Invoke-ProbeAltTab } }
+    if (Want 'TaskbarTransport') { Invoke-Probe 'S29.3' { Invoke-ProbeTaskbarTransport -Mode Baseline } }
+    if (Want 'ShowDesktop') { Invoke-Probe 'S12.6' { Invoke-ProbeShowDesktop } }
+    if (Want 'FullScreen') { Invoke-Probe 'S12.3' { Invoke-ProbeFullScreen } }
+    if (Want 'Samples') { Invoke-Probe 'S14.4' { Invoke-ProbeSampleShots } }
     if (Want 'ExplorerRestart') { Invoke-Probe 'ExplorerRestore' { Invoke-ProbeExplorerRestart } }
     Invoke-Probe 'S29.4' { Invoke-ProbeJumpListEvidence }
     if ($all) { Stop-WindowManager }
+}
+
+$traceVariable = 'SUBZERODEV_WM_TASKBAR_TRACE'
+
+# The host's opt-in taskbar trace is switched on through the user environment, which the replacement
+# shell inherits at the next sign-in. It is removed again on every way out of the run.
+function Set-TaskbarTraceVariable {
+    param($State)
+    if (-not (Test-Path -LiteralPath (Join-Path $install 'TaskbarProbe.exe'))) { return '' }
+    $path = Join-Path $results ('host-taskbar-trace-' + (Get-Stamp) + '.jsonl')
+    try { Set-ItemProperty -Path 'HKCU:\Environment' -Name $traceVariable -Value $path -Type String }
+    catch { Write-Warning ('Could not enable the host taskbar trace: ' + $_.Exception.Message); return '' }
+    $State | Add-Member -NotePropertyName taskbarTrace -NotePropertyValue $path -Force
+    return $path
+}
+
+function Remove-TaskbarTraceVariable {
+    try { Remove-ItemProperty -Path 'HKCU:\Environment' -Name $traceVariable -ErrorAction SilentlyContinue } catch { }
 }
 
 function Start-ReplacementArm {
@@ -139,10 +165,11 @@ function Start-ReplacementArm {
     $null = Initialize-Acceptance -Install $install -Results $results -Stage 'replacement-arm'
     $State.shellBefore = [string](Get-ShellRegistration)
     $State.phase = 'replacement-run'
+    [void](Set-TaskbarTraceVariable $State)
     Save-State $State
     $on = Invoke-Guardian @('--shell', 'on') 'shell-on'
     if ($on.ExitCode -ne 0) {
-        $State.phase = 'aborted'; Save-State $State; Remove-ResumeTask
+        $State.phase = 'aborted'; Save-State $State; Remove-ResumeTask; Remove-TaskbarTraceVariable
         Add-Observation 'Replacement' 'shell-on' Fail ("--shell on exited with $($on.ExitCode); see $($on.Output) and $($on.Error). Nothing was changed.")
         return $false
     }
@@ -165,12 +192,18 @@ function Invoke-ReplacementStage {
             Invoke-Probe 'S30' { Invoke-ProbeDesktop }
             Invoke-Probe 'S28' { Invoke-ProbeWinX -Attempts $WinXAttempts }
             Invoke-Probe 'S31' { Invoke-ProbeAltTab }
+            $tracePath = [string]$State.taskbarTrace
+            Invoke-Probe 'S29.3' { Invoke-ProbeTaskbarTransport -Mode Host -TracePath $tracePath }
+            Invoke-Probe 'S12.6' { Invoke-ProbeShowDesktop }
+            Invoke-Probe 'S12.3' { Invoke-ProbeFullScreen }
+            Invoke-Probe 'S14.4' { Invoke-ProbeSampleShots }
         }
     }
     catch { Add-Observation 'Replacement' 'stage-error' Inconclusive $_.Exception.Message }
     finally {
         $script:Acc.GateSuffix = ''
         try { Stop-Fixtures } catch { }
+        Remove-TaskbarTraceVariable
         # Whatever happened above, the guest must go back to Explorer.
         $off = Invoke-Guardian @('--shell', 'off') 'shell-off'
         Add-Observation 'WaysBack' 'shell-off-exit-code' $(if ($off.ExitCode -eq 0) { 'Pass' } else { 'Fail' }) ("--shell off exited with $($off.ExitCode); see $($off.Output)")
@@ -191,6 +224,7 @@ function Invoke-RestoreStage {
     $State.phase = 'done'
     Save-State $State
     Remove-ResumeTask
+    Remove-TaskbarTraceVariable
 }
 
 # ---------------------------------------------------------------- report and hand-off to the manual runner
@@ -244,6 +278,7 @@ function Invoke-AbortRun {
     Stop-WindowManager
     $off = Invoke-Guardian @('--shell', 'off') 'abort-shell-off'
     Remove-ResumeTask
+    Remove-TaskbarTraceVariable
     $state = Read-State
     if ($state) { $state.phase = 'aborted'; Save-State $state }
     Write-Host ("--shell off exited with $($off.ExitCode). Sign-in task removed. If this session is still under the replacement shell, sign out to get Explorer back, or restore the VM snapshot.") -ForegroundColor Yellow
@@ -283,7 +318,7 @@ try {
         if (-not $AllowSignOut) { throw 'The replacement stage signs the guest out twice. Pass -AllowSignOut to allow it.' }
         if (-not (Register-ResumeTask)) { throw 'The replacement stage needs the sign-in task. Nothing was changed.' }
     }
-    $state = [pscustomobject]@{ phase = 'coexistence'; includeReplacement = [bool]$IncludeReplacement; shellBefore = ''; startedUtc = [DateTime]::UtcNow.ToString('o'); install = $install }
+    $state = [pscustomobject]@{ phase = 'coexistence'; includeReplacement = [bool]$IncludeReplacement; shellBefore = ''; startedUtc = [DateTime]::UtcNow.ToString('o'); install = $install; taskbarTrace = '' }
     Save-State $state
     Invoke-CoexistenceStage
     $next = Get-NextPhase 'coexistence' ([bool]$IncludeReplacement)

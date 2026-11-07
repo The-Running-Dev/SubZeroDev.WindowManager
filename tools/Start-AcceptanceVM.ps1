@@ -141,6 +141,8 @@ param(
             if ($hasAuto) {
                 Copy-Item -LiteralPath $autoScript -Destination (Join-Path $stage 'Invoke-AcceptanceAuto.ps1')
                 Copy-Item -LiteralPath $autoModules -Destination (Join-Path $stage 'acceptance') -Recurse
+                $taskbarProbe = Join-Path $expanded 'tools\TaskbarProbe.exe'
+                if (Test-Path -LiteralPath $taskbarProbe -PathType Leaf) { Copy-Item -LiteralPath $taskbarProbe -Destination (Join-Path $stage 'TaskbarProbe.exe') }
             }
             $autoLine = if ($hasAuto) { "Auto:   powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$destinationFull\Invoke-AcceptanceAuto.ps1`" -ConfirmDisposableVm`n        (scripted run; sends real keys and mouse input, so leave the VM alone while it runs)`n" } else { '' }
             $quickStart = @"
@@ -161,8 +163,8 @@ After reading the guide, guest-only registration commands are:
   & '$destinationFull\SubZeroDev.WindowManager.exe' --shell off
 Sign out/in only when that test is prepared. Restore the VM snapshot if needed.
 
-No compiler, native TaskbarProbe, Spy++, notification certificate or automated
-test suite is installed. Native acceptance and physical device checks remain open.
+No compiler, Spy++ or notification certificate is installed. Native acceptance
+and physical device checks remain open.
 The bootstrap does not stop Explorer, change the sign-in shell or reboot.
 The runner opens the checklist, records observations, controls guest shell
 registration only when explicitly requested, and collects an evidence ZIP.

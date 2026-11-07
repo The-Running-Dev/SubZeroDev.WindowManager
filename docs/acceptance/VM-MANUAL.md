@@ -4,7 +4,7 @@ No Codex, Git, SDK or GitHub login is needed in the guest. Use this checklist at
 the VM console and bring the evidence ZIP back to the development machine.
 Commands below assume installation at `C:\WindowManager`. Use a normal test user.
 Most of this list can be run by a script instead; see [the scripted run](VM-SCRIPTED.md)
-(`Invoke-AcceptanceAuto.ps1`, in bundles that include it). What it cannot settle is listed there.
+(`Invoke-AcceptanceAuto.ps1`). What it cannot settle is listed there.
 
 ## Install and start
 
@@ -14,15 +14,15 @@ that can be restored from outside the guest. Open 64-bit Windows PowerShell:
 ```powershell
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $setup = Join-Path $env:TEMP 'Start-AcceptanceVM.ps1'
-Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.WindowManager/acceptance-vm-2026-11-05-r2/tools/Start-AcceptanceVM.ps1' -OutFile $setup
+Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.WindowManager/acceptance-vm-2026-11-07-r1/tools/Start-AcceptanceVM.ps1' -OutFile $setup
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup
 ```
 
 This downloads and verifies the candidate, starts it alongside Explorer, and
 opens instructions. The script is saved locally so an error stays visible. It
 does not change the machine's execution policy, stop Explorer or sign out.
-The old `vm-acceptance-2026-11-05` script has a Windows PowerShell drive-root bug;
-use the `acceptance-vm-2026-11-05-r2` URL above.
+Earlier scripts (`vm-acceptance-2026-11-05` and the `r2` revision) are superseded;
+use the `acceptance-vm-2026-11-07-r1` URL above.
 
 Open the installed checklist and capture baseline information:
 

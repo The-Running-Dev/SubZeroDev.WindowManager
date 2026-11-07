@@ -53,6 +53,13 @@ foreach ($file in $files) {
     $text = [IO.File]::ReadAllText($file)
     if ($text -match '\$env:SUBZERODEV_WM_TEST_HOOK\s*=') { throw "$file sets the test hook; the real-desktop suite must not." }
 }
+$orchestrator = [IO.File]::ReadAllText((Join-Path $tools 'Invoke-AcceptanceAuto.ps1'))
+foreach ($name in 'TaskbarTransport', 'ShowDesktop', 'FullScreen', 'Samples') {
+    Assert-True ($orchestrator -match "'$name'") "the orchestrator accepts -Only $name"
+}
+Assert-True ($orchestrator -match 'Remove-TaskbarTraceVariable') 'the orchestrator removes the taskbar trace variable'
+Assert-True ([regex]::Matches($orchestrator, 'Remove-TaskbarTraceVariable').Count -ge 4) 'the trace variable is removed on every way out'
+Pass 'the orchestrator exposes the new probes and cleans up the trace variable.'
 $common = [IO.File]::ReadAllText((Join-Path $modules 'Common.ps1'))
 Assert-True ($common -match "if \(\`$env:SUBZERODEV_WM_TEST_HOOK\) \{ throw") 'the guard refuses to run with the test hook set'
 Pass 'the suite never sets the test hook and refuses to run with it set.'
@@ -135,6 +142,85 @@ foreach ($needle in 'S24.1', 'S27.4', 'S29.3', 'S29.4', 'S30 / S31', '150 %', 'p
     Assert-True (@($still | Where-Object { $_ -like "*$needle*" }).Count -ge 1) "still-manual list mentions $needle"
 }
 Pass 'the still-manual list names every item a script cannot settle.'
+
+$probeLog = @(
+    '2026-11-07T10:00:00.000Z qpc=1 run=0 TaskbarButtonCreated-received hwnd=0x1',
+    '2026-11-07T10:00:00.100Z qpc=2 run=1 sequence-start',
+    '2026-11-07T10:00:00.200Z qpc=3 run=1 call-begin SetProgressState',
+    '2026-11-07T10:00:00.210Z qpc=4 run=1 SetProgressState hr=0x00000000',
+    '2026-11-07T10:00:02.210Z qpc=5 run=1 SetOverlayIcon hr=0x00000000',
+    '2026-11-07T10:00:22.000Z qpc=6 run=1 sequence-end',
+    '2026-11-07T10:00:23.000Z qpc=7 run=1 cleanup-begin',
+    '2026-11-07T10:00:23.500Z qpc=8 run=1 end readinessReceived=1 runs=1',
+    'garbage line'
+)
+$probe = Get-TaskbarProbeFacts -Lines $probeLog
+Assert-Equal $probe.Lines 8 'probe lines parsed'
+Assert-True $probe.Readiness 'probe readiness'
+Assert-Equal $probe.NativeCalls 2 'probe native calls'
+Assert-Equal $probe.FailedCalls 0 'probe failed calls'
+Assert-Equal $probe.SequencesEnded 1 'probe sequences ended'
+Assert-True $probe.CleanEnd 'probe clean end'
+Assert-Equal $probe.Runs 1 'probe runs'
+$failed = Get-TaskbarProbeFacts -Lines ($probeLog + '2026-11-07T10:00:03.000Z qpc=9 run=1 SetOverlayIcon hr=0x80004005')
+Assert-Equal $failed.FailedCalls 1 'a failing HRESULT is counted'
+Assert-Equal @($failed.FailedDetail).Count 1 'a failing HRESULT is described'
+$empty = Get-TaskbarProbeFacts -Lines @()
+Assert-Equal $empty.Lines 0 'no probe lines'
+Assert-True (-not $empty.Readiness) 'no readiness without lines'
+Pass 'Get-TaskbarProbeFacts counts what the probe log states.'
+
+$traceLines = @(
+    '{"type":"start","utc":"2026-11-07T10:00:00Z"}',
+    '{"type":"message","message":"0xC155","hwnd":1}',
+    '{"type":"message","message":"0xC155","hwnd":1}',
+    '{"type":"message","message":"0xC156","hwnd":1}',
+    'not json',
+    '{"type":"end","eligible":3,"captured":3,"dropped":0}'
+)
+$trace = Get-TraceFacts -Lines $traceLines
+Assert-True $trace.Started 'trace started'
+Assert-True $trace.Ended 'trace ended'
+Assert-Equal $trace.Messages 3 'trace messages'
+Assert-Equal $trace.Unparsable 1 'trace unparsable'
+Assert-Equal $trace.Eligible 3 'trace eligible'
+Assert-Equal @($trace.Distinct).Count 2 'trace distinct messages'
+$live = Get-TraceFacts -Lines $traceLines[0..2]
+Assert-True ($live.Started -and -not $live.Ended) 'a live trace has no end record'
+Pass 'Get-TraceFacts reads the host trace, live or finished.'
+
+$baseline = [pscustomobject]@{ Readiness = $true; NativeCalls = 2; FailedCalls = 0; SequencesEnded = 1 }
+$ok = Get-TaskbarTransportVerdict -Probe $probe -Trace $live -TraceFailedInLog $false -Baseline $baseline
+Assert-Equal $ok.Verdict 'Inconclusive' 'the transport verdict is never a Pass on its own'
+Assert-True ($ok.Reason -match 'match the Explorer baseline') 'a matching baseline is stated'
+$mismatch = Get-TaskbarTransportVerdict -Probe $probe -Trace $live -TraceFailedInLog $false -Baseline ([pscustomobject]@{ Readiness = $true; NativeCalls = 10; FailedCalls = 0; SequencesEnded = 1 })
+Assert-True ($mismatch.Reason -match 'differs from the Explorer baseline in native call count') 'a baseline mismatch is named'
+Assert-True ((Get-TaskbarTransportVerdict -Probe $probe -Trace $null -TraceFailedInLog $false -Baseline $baseline).Reason -match 'no host trace file') 'a missing trace is named'
+Assert-True ((Get-TaskbarTransportVerdict -Probe $probe -Trace $live -TraceFailedInLog $true -Baseline $baseline).Reason -match 'TaskbarTraceFailed') 'a failed trace start is named'
+Assert-True ((Get-TaskbarTransportVerdict -Probe $probe -Trace $live -TraceFailedInLog $false -Baseline $null).Reason -match 'no Explorer baseline') 'a missing baseline is named'
+Assert-True ((Get-TaskbarTransportVerdict -Probe $empty -Trace $live -TraceFailedInLog $false -Baseline $baseline).Reason -match 'no log') 'an empty probe log is named'
+Pass 'Get-TaskbarTransportVerdict never passes and names every reason.'
+
+$wins = @(
+    [pscustomobject]@{ Handle = 10; Visible = $true }, [pscustomobject]@{ Handle = 20; Visible = $true },
+    [pscustomobject]@{ Handle = 99; Visible = $true }, [pscustomobject]@{ Handle = 30; Visible = $true }
+)
+Assert-Equal (Get-PanelZState -Windows $wins -Panels @(10, 20) -Fixture 99) 'above' 'panels above the fixture'
+Assert-Equal (Get-PanelZState -Windows $wins -Panels @(30) -Fixture 99) 'below' 'panel below the fixture'
+Assert-Equal (Get-PanelZState -Windows $wins -Panels @(10, 30) -Fixture 99) 'mixed' 'panels on both sides'
+Assert-Equal (Get-PanelZState -Windows $wins -Panels @(10) -Fixture 5) 'unknown' 'fixture missing'
+Assert-Equal (Get-PanelZState -Windows $wins -Panels @(77) -Fixture 99) 'unknown' 'panel missing'
+$hidden = @([pscustomobject]@{ Handle = 10; Visible = $false }, [pscustomobject]@{ Handle = 99; Visible = $true })
+Assert-Equal (Get-PanelZState -Windows $hidden -Panels @(10) -Fixture 99) 'hidden' 'panels hidden'
+Pass 'Get-PanelZState classifies the panel z-order against a fixture window.'
+
+$settingsText = "{`n  `"theme`": `"dark`",`n  `"activePreset`" : `"subzerodev.default`",`n  `"x`": 1`n}"
+$switched = Set-PresetInSettingsText -Text $settingsText -PresetId 'subzerodev.sample-retro'
+Assert-True ($switched -match '"activePreset" : "subzerodev.sample-retro"') 'the preset is replaced in place'
+Assert-True ($switched -match '"theme": "dark"') 'the rest of the settings is untouched'
+Assert-Equal ($switched.Length - $settingsText.Length) ('subzerodev.sample-retro'.Length - 'subzerodev.default'.Length) 'only the preset text changed'
+Assert-True ($null -eq (Set-PresetInSettingsText -Text '{"a":1}' -PresetId 'x')) 'no activePreset means no edit'
+Pass 'Set-PresetInSettingsText swaps only the activePreset string.'
 
 $records = @(
     [pscustomobject]@{ gate = 'S28'; check = 'winx-real-mouse-x20'; verdict = 'Fail'; detail = '12 of 20'; stage = 'coexistence'; evidence = '' },

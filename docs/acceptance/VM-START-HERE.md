@@ -5,21 +5,21 @@
 Finish installing Windows 11 x64 and the guest graphics/integration tools. Take a clean VM snapshot. Open **64-bit Windows PowerShell** as your normal test user and paste:
 
 ```powershell
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.WindowManager/acceptance-vm-2026-11-05-r2/tools/Start-AcceptanceVM.ps1' | iex
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.WindowManager/acceptance-vm-2026-11-07-r1/tools/Start-AcceptanceVM.ps1' | iex
 ```
 
 This downloads a pinned public VM prerelease (about 116 MB), checks its SHA-256 and the inner CI build hash, installs to **`C:\WindowManager`**, opens the local instructions in Notepad, and starts the app alongside Explorer. No GitHub login, Git, SDK, elevation or execution-policy change is needed. Leave this PowerShell window open until it prints the installation path. It does not replace the sign-in shell, stop Explorer or reboot.
 
-The prerelease packages the successful `release-0.1.0-ci.23` build from PR #46, not an arbitrary latest build. The inner CI manifest records merge commit `c86a05468b295febdf918d5b9db3b7fb61e49d5c` and workflow run `42055798364`. That run checks packaging and release smoke behavior; it does not qualify native shell acceptance.
+The prerelease packages one specific successful CI build, not an arbitrary latest build. The inner `acceptance-artifacts.json` (copied to the install folder) records its commit, version and workflow run, and the installer refuses any other. That run checks packaging and release smoke behavior; it does not qualify native shell acceptance.
 
 The folder must be new on the first run. A repeat verifies the recorded installed files and reuses this same candidate; it does not overwrite an older/manual installation. For a different destination, or installation without launching:
 
 ```powershell
-$setup = irm 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.WindowManager/acceptance-vm-2026-11-05-r2/tools/Start-AcceptanceVM.ps1'
+$setup = irm 'https://raw.githubusercontent.com/The-Running-Dev/SubZeroDev.WindowManager/acceptance-vm-2026-11-07-r1/tools/Start-AcceptanceVM.ps1'
 & ([scriptblock]::Create($setup)) -InstallDirectory 'C:\WindowManager-Test' -NoLaunch
 ```
 
-After setup, read `C:\WindowManager\TESTING.md` and run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\WindowManager\Test-AcceptanceVM.ps1`. **No Codex is needed inside the VM.** The [manual test workflow](VM-MANUAL.md) includes exact commands for recording observations, enabling/restoring the guest shell, and collecting the evidence ZIP to bring back to the development machine. The [assistant prompt](VM-PROMPT.md) is optional. To have a script do most of the checks for you, see the [scripted acceptance run](VM-SCRIPTED.md) (`Invoke-AcceptanceAuto.ps1`, in bundles that include it).
+After setup, read `C:\WindowManager\TESTING.md` and run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\WindowManager\Test-AcceptanceVM.ps1`. **No Codex is needed inside the VM.** The [manual test workflow](VM-MANUAL.md) includes exact commands for recording observations, enabling/restoring the guest shell, and collecting the evidence ZIP to bring back to the development machine. The [assistant prompt](VM-PROMPT.md) is optional. To have a script do most of the checks for you, see the [scripted acceptance run](VM-SCRIPTED.md) (`Invoke-AcceptanceAuto.ps1`).
 
 If download or hash verification fails, nothing is launched. The full error is saved to `%TEMP%\WindowManager-bootstrap-error.log`. If the app exits early, inspect `%LOCALAPPDATA%\SubZeroDev\WindowManager\logs`. A successful bootstrap is an installation/startup observation, not a completed acceptance gate. The instructions below still apply, including separately obtaining the native diagnostic and notification prerequisites.
 
