@@ -1,0 +1,1848 @@
+{
+  "baseline": {
+    "sourceCommit": "94dbdec332dac7a2bfab5ccd3e05ef4c2bc933d9",
+    "scope": "portable simulation; no Windows host, IPC reader, native UI, or production provider",
+    "runtime": ".NET 10.0.8",
+    "os": "Ubuntu 24.04.3 LTS",
+    "logicalProcessors": 8,
+    "groups": {
+      "control": {
+        "minimum": 0.018298042109494286,
+        "maximum": 0.05043815799846989,
+        "median": 0.03304927589036524,
+        "failures": 0,
+        "windows": [
+          {
+            "started": 10411688741749,
+            "ended": 10421688960910,
+            "elapsedMs": 10000.2191,
+            "cpuMs": 3.305,
+            "percent": 0.03304927589036524,
+            "passed": true
+          },
+          {
+            "started": 10421689254051,
+            "ended": 10431689744937,
+            "elapsedMs": 10000.4908,
+            "cpuMs": 3.949,
+            "percent": 0.03948806192592068,
+            "passed": true
+          },
+          {
+            "started": 10431689755090,
+            "ended": 10441693049799,
+            "elapsedMs": 10003.2947,
+            "cpuMs": 3.371,
+            "percent": 0.033698897224331496,
+            "passed": true
+          },
+          {
+            "started": 10701800837254,
+            "ended": 10711803072617,
+            "elapsedMs": 10002.2353,
+            "cpuMs": 4.792,
+            "percent": 0.04790929083621938,
+            "passed": true
+          },
+          {
+            "started": 10711803299308,
+            "ended": 10721804905863,
+            "elapsedMs": 10001.6065,
+            "cpuMs": 1.898,
+            "percent": 0.018976951352765177,
+            "passed": true
+          },
+          {
+            "started": 10721804927252,
+            "ended": 10731805424041,
+            "elapsedMs": 10000.4967,
+            "cpuMs": 3.044,
+            "percent": 0.030438488120295065,
+            "passed": true
+          },
+          {
+            "started": 10830703200745,
+            "ended": 10840704270829,
+            "elapsedMs": 10001.07,
+            "cpuMs": 1.83,
+            "percent": 0.018298042109494286,
+            "passed": true
+          },
+          {
+            "started": 10840704682410,
+            "ended": 10850705081026,
+            "elapsedMs": 10000.3986,
+            "cpuMs": 2.873,
+            "percent": 0.02872885486784497,
+            "passed": true
+          },
+          {
+            "started": 10850705095805,
+            "ended": 10860705461058,
+            "elapsedMs": 10000.3652,
+            "cpuMs": 5.044,
+            "percent": 0.05043815799846989,
+            "passed": true
+          }
+        ]
+      },
+      "fake": {
+        "minimum": 0.4707085360964527,
+        "maximum": 2.7003729559854732,
+        "median": 0.5120850022134494,
+        "failures": 1,
+        "windows": [
+          {
+            "started": 10444186810512,
+            "ended": 10454185577578,
+            "elapsedMs": 9998.767,
+            "cpuMs": 270.004,
+            "percent": 2.7003729559854732,
+            "passed": false
+          },
+          {
+            "started": 10454188383793,
+            "ended": 10464196292662,
+            "elapsedMs": 10007.9088,
+            "cpuMs": 51.249,
+            "percent": 0.5120850022134494,
+            "passed": true
+          },
+          {
+            "started": 10464196304372,
+            "ended": 10474196335533,
+            "elapsedMs": 10000.0311,
+            "cpuMs": 47.071,
+            "percent": 0.4707085360964527,
+            "passed": true
+          },
+          {
+            "started": 10573052949374,
+            "ended": 10583055187196,
+            "elapsedMs": 10002.2378,
+            "cpuMs": 149.205,
+            "percent": 1.4917161837524,
+            "passed": true
+          },
+          {
+            "started": 10583055682780,
+            "ended": 10593052200993,
+            "elapsedMs": 9996.5182,
+            "cpuMs": 48.142,
+            "percent": 0.4815876791981432,
+            "passed": true
+          },
+          {
+            "started": 10593052215145,
+            "ended": 10603052590989,
+            "elapsedMs": 10000.3758,
+            "cpuMs": 47.753,
+            "percent": 0.4775120550969694,
+            "passed": true
+          },
+          {
+            "started": 10862861527818,
+            "ended": 10872863559302,
+            "elapsedMs": 10002.0314,
+            "cpuMs": 146.749,
+            "percent": 1.4671919546263372,
+            "passed": true
+          },
+          {
+            "started": 10872868586087,
+            "ended": 10882873052301,
+            "elapsedMs": 10004.4662,
+            "cpuMs": 54.883,
+            "percent": 0.5485849909713324,
+            "passed": true
+          },
+          {
+            "started": 10882873070850,
+            "ended": 10892873461754,
+            "elapsedMs": 10000.3909,
+            "cpuMs": 47.647,
+            "percent": 0.4764513755157311,
+            "passed": true
+          }
+        ]
+      },
+      "fake-traced": {
+        "minimum": 0.4405447255838225,
+        "maximum": 2.418421621510083,
+        "median": 1.0751584477700553,
+        "failures": 2,
+        "windows": [
+          {
+            "started": 10476368901060,
+            "ended": 10486372260726,
+            "elapsedMs": 10003.3596,
+            "cpuMs": 183.827,
+            "percent": 1.8376526222250371,
+            "passed": true
+          },
+          {
+            "started": 10486372554966,
+            "ended": 10496373355687,
+            "elapsedMs": 10000.8007,
+            "cpuMs": 44.058,
+            "percent": 0.4405447255838225,
+            "passed": true
+          },
+          {
+            "started": 10496373382003,
+            "ended": 10506372173260,
+            "elapsedMs": 9998.7912,
+            "cpuMs": 46.121,
+            "percent": 0.4612657578048035,
+            "passed": true
+          },
+          {
+            "started": 10605182692527,
+            "ended": 10615185290871,
+            "elapsedMs": 10002.5983,
+            "cpuMs": 241.905,
+            "percent": 2.418421621510083,
+            "passed": false
+          },
+          {
+            "started": 10615186369364,
+            "ended": 10625189442308,
+            "elapsedMs": 10003.0729,
+            "cpuMs": 224.264,
+            "percent": 2.2419510708554373,
+            "passed": false
+          },
+          {
+            "started": 10625189465207,
+            "ended": 10635193021220,
+            "elapsedMs": 10003.556,
+            "cpuMs": 98.87,
+            "percent": 0.9883485432580174,
+            "passed": true
+          },
+          {
+            "started": 10733962847787,
+            "ended": 10743964586970,
+            "elapsedMs": 10001.7391,
+            "cpuMs": 169.069,
+            "percent": 1.6903960232276003,
+            "passed": true
+          },
+          {
+            "started": 10743965174421,
+            "ended": 10753965033877,
+            "elapsedMs": 9999.8594,
+            "cpuMs": 44.134,
+            "percent": 0.4413462053276469,
+            "passed": true
+          },
+          {
+            "started": 10753965057128,
+            "ended": 10763968605936,
+            "elapsedMs": 10003.5488,
+            "cpuMs": 107.554,
+            "percent": 1.0751584477700553,
+            "passed": true
+          }
+        ]
+      },
+      "worker": {
+        "minimum": 0.37705207058206036,
+        "maximum": 1.703313607926606,
+        "median": 1.3484652885395934,
+        "failures": 0,
+        "windows": [
+          {
+            "started": 10508680897687,
+            "ended": 10518680759143,
+            "elapsedMs": 9999.8614,
+            "cpuMs": 170.329,
+            "percent": 1.703313607926606,
+            "passed": true
+          },
+          {
+            "started": 10518681315957,
+            "ended": 10528684974124,
+            "elapsedMs": 10003.6581,
+            "cpuMs": 37.719,
+            "percent": 0.37705207058206036,
+            "passed": true
+          },
+          {
+            "started": 10528685030027,
+            "ended": 10538685285764,
+            "elapsedMs": 10000.2557,
+            "cpuMs": 44.912,
+            "percent": 0.4491085162952383,
+            "passed": true
+          },
+          {
+            "started": 10637481971977,
+            "ended": 10647481206827,
+            "elapsedMs": 9999.2348,
+            "cpuMs": 163.208,
+            "percent": 1.6322048963186662,
+            "passed": true
+          },
+          {
+            "started": 10647481588695,
+            "ended": 10657481825717,
+            "elapsedMs": 10000.237,
+            "cpuMs": 41.316,
+            "percent": 0.4131502083400624,
+            "passed": true
+          },
+          {
+            "started": 10657481842101,
+            "ended": 10667480863636,
+            "elapsedMs": 9999.0215,
+            "cpuMs": 44.834,
+            "percent": 0.44838387436210636,
+            "passed": true
+          },
+          {
+            "started": 10766330948845,
+            "ended": 10776328764206,
+            "elapsedMs": 9997.8153,
+            "cpuMs": 166.943,
+            "percent": 1.6697948000699716,
+            "passed": true
+          },
+          {
+            "started": 10776329054936,
+            "ended": 10786332723653,
+            "elapsedMs": 10003.6687,
+            "cpuMs": 134.896,
+            "percent": 1.3484652885395934,
+            "passed": true
+          },
+          {
+            "started": 10786332744127,
+            "ended": 10796333583324,
+            "elapsedMs": 10000.8391,
+            "cpuMs": 139.012,
+            "percent": 1.3900033648176582,
+            "passed": true
+          }
+        ]
+      },
+      "worker-traced": {
+        "minimum": 0.4287895178704102,
+        "maximum": 4.665544932474204,
+        "median": 0.48833037616160485,
+        "failures": 1,
+        "windows": [
+          {
+            "started": 10540948666564,
+            "ended": 10550953501304,
+            "elapsedMs": 10004.8347,
+            "cpuMs": 184.897,
+            "percent": 1.848076510449493,
+            "passed": true
+          },
+          {
+            "started": 10550953830068,
+            "ended": 10560953141702,
+            "elapsedMs": 9999.3116,
+            "cpuMs": 42.876,
+            "percent": 0.4287895178704102,
+            "passed": true
+          },
+          {
+            "started": 10560953154533,
+            "ended": 10570956723943,
+            "elapsedMs": 10003.5694,
+            "cpuMs": 66.108,
+            "percent": 0.6608441183004138,
+            "passed": true
+          },
+          {
+            "started": 10669718189645,
+            "ended": 10679717457351,
+            "elapsedMs": 9999.2677,
+            "cpuMs": 175.612,
+            "percent": 1.7562486100857164,
+            "passed": true
+          },
+          {
+            "started": 10679717768256,
+            "ended": 10689716736684,
+            "elapsedMs": 9998.9684,
+            "cpuMs": 48.828,
+            "percent": 0.48833037616160485,
+            "passed": true
+          },
+          {
+            "started": 10689716796576,
+            "ended": 10699720374111,
+            "elapsedMs": 10003.5775,
+            "cpuMs": 48.625,
+            "percent": 0.4860761062729809,
+            "passed": true
+          },
+          {
+            "started": 10798612942681,
+            "ended": 10808613232188,
+            "elapsedMs": 10000.2895,
+            "cpuMs": 466.568,
+            "percent": 4.665544932474204,
+            "passed": false
+          },
+          {
+            "started": 10808613617815,
+            "ended": 10818614303763,
+            "elapsedMs": 10000.6859,
+            "cpuMs": 47.062,
+            "percent": 0.47058772238812135,
+            "passed": true
+          },
+          {
+            "started": 10818614321218,
+            "ended": 10828620315726,
+            "elapsedMs": 10005.9945,
+            "cpuMs": 46.734,
+            "percent": 0.46706002087048915,
+            "passed": true
+          }
+        ]
+      }
+    },
+    "runs": {
+      "control-1.json": {
+        "mode": "control",
+        "startup": {
+          "elapsedMs": 2008.6759,
+          "cpuMs": 18.065
+        },
+        "windows": [
+          {
+            "started": 10411688741749,
+            "ended": 10421688960910,
+            "elapsedMs": 10000.2191,
+            "cpuMs": 3.305,
+            "percent": 0.03304927589036524,
+            "passed": true
+          },
+          {
+            "started": 10421689254051,
+            "ended": 10431689744937,
+            "elapsedMs": 10000.4908,
+            "cpuMs": 3.949,
+            "percent": 0.03948806192592068,
+            "passed": true
+          },
+          {
+            "started": 10431689755090,
+            "ended": 10441693049799,
+            "elapsedMs": 10003.2947,
+            "cpuMs": 3.371,
+            "percent": 0.033698897224331496,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "control-2.json": {
+        "mode": "control",
+        "startup": {
+          "elapsedMs": 2007.492,
+          "cpuMs": 16.791
+        },
+        "windows": [
+          {
+            "started": 10701800837254,
+            "ended": 10711803072617,
+            "elapsedMs": 10002.2353,
+            "cpuMs": 4.792,
+            "percent": 0.04790929083621938,
+            "passed": true
+          },
+          {
+            "started": 10711803299308,
+            "ended": 10721804905863,
+            "elapsedMs": 10001.6065,
+            "cpuMs": 1.898,
+            "percent": 0.018976951352765177,
+            "passed": true
+          },
+          {
+            "started": 10721804927252,
+            "ended": 10731805424041,
+            "elapsedMs": 10000.4967,
+            "cpuMs": 3.044,
+            "percent": 0.030438488120295065,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "control-3.json": {
+        "mode": "control",
+        "startup": {
+          "elapsedMs": 2007.2124,
+          "cpuMs": 16.222
+        },
+        "windows": [
+          {
+            "started": 10830703200745,
+            "ended": 10840704270829,
+            "elapsedMs": 10001.07,
+            "cpuMs": 1.83,
+            "percent": 0.018298042109494286,
+            "passed": true
+          },
+          {
+            "started": 10840704682410,
+            "ended": 10850705081026,
+            "elapsedMs": 10000.3986,
+            "cpuMs": 2.873,
+            "percent": 0.02872885486784497,
+            "passed": true
+          },
+          {
+            "started": 10850705095805,
+            "ended": 10860705461058,
+            "elapsedMs": 10000.3652,
+            "cpuMs": 5.044,
+            "percent": 0.05043815799846989,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "fake-1.json": {
+        "mode": "fake",
+        "startup": {
+          "elapsedMs": 2056.7148,
+          "cpuMs": 249.897
+        },
+        "windows": [
+          {
+            "started": 10444186810512,
+            "ended": 10454185577578,
+            "elapsedMs": 9998.767,
+            "cpuMs": 270.004,
+            "percent": 2.7003729559854732,
+            "passed": false
+          },
+          {
+            "started": 10454188383793,
+            "ended": 10464196292662,
+            "elapsedMs": 10007.9088,
+            "cpuMs": 51.249,
+            "percent": 0.5120850022134494,
+            "passed": true
+          },
+          {
+            "started": 10464196304372,
+            "ended": 10474196335533,
+            "elapsedMs": 10000.0311,
+            "cpuMs": 47.071,
+            "percent": 0.4707085360964527,
+            "passed": true
+          }
+        ],
+        "passed": false
+      },
+      "fake-2.json": {
+        "mode": "fake",
+        "startup": {
+          "elapsedMs": 2027.0875,
+          "cpuMs": 81.878
+        },
+        "windows": [
+          {
+            "started": 10573052949374,
+            "ended": 10583055187196,
+            "elapsedMs": 10002.2378,
+            "cpuMs": 149.205,
+            "percent": 1.4917161837524,
+            "passed": true
+          },
+          {
+            "started": 10583055682780,
+            "ended": 10593052200993,
+            "elapsedMs": 9996.5182,
+            "cpuMs": 48.142,
+            "percent": 0.4815876791981432,
+            "passed": true
+          },
+          {
+            "started": 10593052215145,
+            "ended": 10603052590989,
+            "elapsedMs": 10000.3758,
+            "cpuMs": 47.753,
+            "percent": 0.4775120550969694,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "fake-3.json": {
+        "mode": "fake",
+        "startup": {
+          "elapsedMs": 2044.4412,
+          "cpuMs": 94.539
+        },
+        "windows": [
+          {
+            "started": 10862861527818,
+            "ended": 10872863559302,
+            "elapsedMs": 10002.0314,
+            "cpuMs": 146.749,
+            "percent": 1.4671919546263372,
+            "passed": true
+          },
+          {
+            "started": 10872868586087,
+            "ended": 10882873052301,
+            "elapsedMs": 10004.4662,
+            "cpuMs": 54.883,
+            "percent": 0.5485849909713324,
+            "passed": true
+          },
+          {
+            "started": 10882873070850,
+            "ended": 10892873461754,
+            "elapsedMs": 10000.3909,
+            "cpuMs": 47.647,
+            "percent": 0.4764513755157311,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "fake-traced-1.json": {
+        "mode": "fake-traced",
+        "startup": {
+          "elapsedMs": 2044.3799,
+          "cpuMs": 100.085
+        },
+        "windows": [
+          {
+            "started": 10476368901060,
+            "ended": 10486372260726,
+            "elapsedMs": 10003.3596,
+            "cpuMs": 183.827,
+            "percent": 1.8376526222250371,
+            "passed": true
+          },
+          {
+            "started": 10486372554966,
+            "ended": 10496373355687,
+            "elapsedMs": 10000.8007,
+            "cpuMs": 44.058,
+            "percent": 0.4405447255838225,
+            "passed": true
+          },
+          {
+            "started": 10496373382003,
+            "ended": 10506372173260,
+            "elapsedMs": 9998.7912,
+            "cpuMs": 46.121,
+            "percent": 0.4612657578048035,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "fake-traced-2.json": {
+        "mode": "fake-traced",
+        "startup": {
+          "elapsedMs": 2026.7388,
+          "cpuMs": 77.974
+        },
+        "windows": [
+          {
+            "started": 10605182692527,
+            "ended": 10615185290871,
+            "elapsedMs": 10002.5983,
+            "cpuMs": 241.905,
+            "percent": 2.418421621510083,
+            "passed": false
+          },
+          {
+            "started": 10615186369364,
+            "ended": 10625189442308,
+            "elapsedMs": 10003.0729,
+            "cpuMs": 224.264,
+            "percent": 2.2419510708554373,
+            "passed": false
+          },
+          {
+            "started": 10625189465207,
+            "ended": 10635193021220,
+            "elapsedMs": 10003.556,
+            "cpuMs": 98.87,
+            "percent": 0.9883485432580174,
+            "passed": true
+          }
+        ],
+        "passed": false
+      },
+      "fake-traced-3.json": {
+        "mode": "fake-traced",
+        "startup": {
+          "elapsedMs": 2036.9721,
+          "cpuMs": 93.897
+        },
+        "windows": [
+          {
+            "started": 10733962847787,
+            "ended": 10743964586970,
+            "elapsedMs": 10001.7391,
+            "cpuMs": 169.069,
+            "percent": 1.6903960232276003,
+            "passed": true
+          },
+          {
+            "started": 10743965174421,
+            "ended": 10753965033877,
+            "elapsedMs": 9999.8594,
+            "cpuMs": 44.134,
+            "percent": 0.4413462053276469,
+            "passed": true
+          },
+          {
+            "started": 10753965057128,
+            "ended": 10763968605936,
+            "elapsedMs": 10003.5488,
+            "cpuMs": 107.554,
+            "percent": 1.0751584477700553,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-1.json": {
+        "mode": "worker",
+        "startup": {
+          "elapsedMs": 2181.9824,
+          "cpuMs": 245.456
+        },
+        "windows": [
+          {
+            "started": 10508680897687,
+            "ended": 10518680759143,
+            "elapsedMs": 9999.8614,
+            "cpuMs": 170.329,
+            "percent": 1.703313607926606,
+            "passed": true
+          },
+          {
+            "started": 10518681315957,
+            "ended": 10528684974124,
+            "elapsedMs": 10003.6581,
+            "cpuMs": 37.719,
+            "percent": 0.37705207058206036,
+            "passed": true
+          },
+          {
+            "started": 10528685030027,
+            "ended": 10538685285764,
+            "elapsedMs": 10000.2557,
+            "cpuMs": 44.912,
+            "percent": 0.4491085162952383,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-2.json": {
+        "mode": "worker",
+        "startup": {
+          "elapsedMs": 2174.9396,
+          "cpuMs": 229.125
+        },
+        "windows": [
+          {
+            "started": 10637481971977,
+            "ended": 10647481206827,
+            "elapsedMs": 9999.2348,
+            "cpuMs": 163.208,
+            "percent": 1.6322048963186662,
+            "passed": true
+          },
+          {
+            "started": 10647481588695,
+            "ended": 10657481825717,
+            "elapsedMs": 10000.237,
+            "cpuMs": 41.316,
+            "percent": 0.4131502083400624,
+            "passed": true
+          },
+          {
+            "started": 10657481842101,
+            "ended": 10667480863636,
+            "elapsedMs": 9999.0215,
+            "cpuMs": 44.834,
+            "percent": 0.44838387436210636,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-3.json": {
+        "mode": "worker",
+        "startup": {
+          "elapsedMs": 2166.9653,
+          "cpuMs": 219.169
+        },
+        "windows": [
+          {
+            "started": 10766330948845,
+            "ended": 10776328764206,
+            "elapsedMs": 9997.8153,
+            "cpuMs": 166.943,
+            "percent": 1.6697948000699716,
+            "passed": true
+          },
+          {
+            "started": 10776329054936,
+            "ended": 10786332723653,
+            "elapsedMs": 10003.6687,
+            "cpuMs": 134.896,
+            "percent": 1.3484652885395934,
+            "passed": true
+          },
+          {
+            "started": 10786332744127,
+            "ended": 10796333583324,
+            "elapsedMs": 10000.8391,
+            "cpuMs": 139.012,
+            "percent": 1.3900033648176582,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-traced-1.json": {
+        "mode": "worker-traced",
+        "startup": {
+          "elapsedMs": 2191.3906,
+          "cpuMs": 238.324
+        },
+        "windows": [
+          {
+            "started": 10540948666564,
+            "ended": 10550953501304,
+            "elapsedMs": 10004.8347,
+            "cpuMs": 184.897,
+            "percent": 1.848076510449493,
+            "passed": true
+          },
+          {
+            "started": 10550953830068,
+            "ended": 10560953141702,
+            "elapsedMs": 9999.3116,
+            "cpuMs": 42.876,
+            "percent": 0.4287895178704102,
+            "passed": true
+          },
+          {
+            "started": 10560953154533,
+            "ended": 10570956723943,
+            "elapsedMs": 10003.5694,
+            "cpuMs": 66.108,
+            "percent": 0.6608441183004138,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-traced-2.json": {
+        "mode": "worker-traced",
+        "startup": {
+          "elapsedMs": 2167.7752,
+          "cpuMs": 200.423
+        },
+        "windows": [
+          {
+            "started": 10669718189645,
+            "ended": 10679717457351,
+            "elapsedMs": 9999.2677,
+            "cpuMs": 175.612,
+            "percent": 1.7562486100857164,
+            "passed": true
+          },
+          {
+            "started": 10679717768256,
+            "ended": 10689716736684,
+            "elapsedMs": 9998.9684,
+            "cpuMs": 48.828,
+            "percent": 0.48833037616160485,
+            "passed": true
+          },
+          {
+            "started": 10689716796576,
+            "ended": 10699720374111,
+            "elapsedMs": 10003.5775,
+            "cpuMs": 48.625,
+            "percent": 0.4860761062729809,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-traced-3.json": {
+        "mode": "worker-traced",
+        "startup": {
+          "elapsedMs": 2179.4045,
+          "cpuMs": 224.167
+        },
+        "windows": [
+          {
+            "started": 10798612942681,
+            "ended": 10808613232188,
+            "elapsedMs": 10000.2895,
+            "cpuMs": 466.568,
+            "percent": 4.665544932474204,
+            "passed": false
+          },
+          {
+            "started": 10808613617815,
+            "ended": 10818614303763,
+            "elapsedMs": 10000.6859,
+            "cpuMs": 47.062,
+            "percent": 0.47058772238812135,
+            "passed": true
+          },
+          {
+            "started": 10818614321218,
+            "ended": 10828620315726,
+            "elapsedMs": 10005.9945,
+            "cpuMs": 46.734,
+            "percent": 0.46706002087048915,
+            "passed": true
+          }
+        ],
+        "passed": false
+      }
+    },
+    "traceReadOrRefreshOrObserveEventsDuringIdle": 0,
+    "archiveSha256": "f2975ab5953ec1813a882cd4f5bddb299ffd55f05f18dc8acb43f0a410285a25"
+  },
+  "corrected": {
+    "sourceCommit": "5b511a7261a21ac054316d94027e987a73aa2389",
+    "scope": "portable simulation; no Windows host, IPC reader, native UI, or production provider",
+    "runtime": ".NET 10.0.8",
+    "os": "Ubuntu 24.04.3 LTS",
+    "logicalProcessors": 8,
+    "groups": {
+      "control": {
+        "minimum": 0.014129334649631349,
+        "maximum": 0.047815902177183414,
+        "median": 0.02968785178704469,
+        "failures": 0,
+        "windows": [
+          {
+            "started": 10955910373795,
+            "ended": 10965910826458,
+            "elapsedMs": 10000.4526,
+            "cpuMs": 1.56,
+            "percent": 0.015599293975954647,
+            "passed": true
+          },
+          {
+            "started": 10965911119223,
+            "ended": 10975912562127,
+            "elapsedMs": 10001.4429,
+            "cpuMs": 3.111,
+            "percent": 0.03110551178570444,
+            "passed": true
+          },
+          {
+            "started": 10975912575669,
+            "ended": 10985913262786,
+            "elapsedMs": 10000.6871,
+            "cpuMs": 3.67,
+            "percent": 0.03669747851625115,
+            "passed": true
+          },
+          {
+            "started": 11245894860268,
+            "ended": 11255896113683,
+            "elapsedMs": 10001.2534,
+            "cpuMs": 2.426,
+            "percent": 0.024256959632679643,
+            "passed": true
+          },
+          {
+            "started": 11255896488339,
+            "ended": 11265897345409,
+            "elapsedMs": 10000.857,
+            "cpuMs": 4.782,
+            "percent": 0.047815902177183414,
+            "passed": true
+          },
+          {
+            "started": 11265897386484,
+            "ended": 11275897746503,
+            "elapsedMs": 10000.36,
+            "cpuMs": 4.531,
+            "percent": 0.04530836889871964,
+            "passed": true
+          },
+          {
+            "started": 11374702909079,
+            "ended": 11384703380048,
+            "elapsedMs": 10000.4709,
+            "cpuMs": 1.413,
+            "percent": 0.014129334649631349,
+            "passed": true
+          },
+          {
+            "started": 11384703634356,
+            "ended": 11394704358003,
+            "elapsedMs": 10000.7236,
+            "cpuMs": 2.969,
+            "percent": 0.02968785178704469,
+            "passed": true
+          },
+          {
+            "started": 11394704369049,
+            "ended": 11404705741699,
+            "elapsedMs": 10001.3726,
+            "cpuMs": 1.659,
+            "percent": 0.016587723169117805,
+            "passed": true
+          }
+        ]
+      },
+      "fake": {
+        "minimum": 0.01715901884730231,
+        "maximum": 0.05430935319439978,
+        "median": 0.029680658606316832,
+        "failures": 0,
+        "windows": [
+          {
+            "started": 10988083105206,
+            "ended": 10998085065620,
+            "elapsedMs": 10001.9604,
+            "cpuMs": 5.432,
+            "percent": 0.05430935319439978,
+            "passed": true
+          },
+          {
+            "started": 10998085289725,
+            "ended": 11008085661339,
+            "elapsedMs": 10000.3716,
+            "cpuMs": 2.238,
+            "percent": 0.022379168390102625,
+            "passed": true
+          },
+          {
+            "started": 11008085672212,
+            "ended": 11018088819560,
+            "elapsedMs": 10003.1473,
+            "cpuMs": 2.969,
+            "percent": 0.029680658606316832,
+            "passed": true
+          },
+          {
+            "started": 11117004495583,
+            "ended": 11127005067395,
+            "elapsedMs": 10000.5718,
+            "cpuMs": 1.716,
+            "percent": 0.01715901884730231,
+            "passed": true
+          },
+          {
+            "started": 11127005390051,
+            "ended": 11137008448239,
+            "elapsedMs": 10003.0581,
+            "cpuMs": 3.537,
+            "percent": 0.03535918680708253,
+            "passed": true
+          },
+          {
+            "started": 11137008461468,
+            "ended": 11147009074111,
+            "elapsedMs": 10000.6126,
+            "cpuMs": 4.904,
+            "percent": 0.049036995993625425,
+            "passed": true
+          },
+          {
+            "started": 11406859486365,
+            "ended": 11416861139698,
+            "elapsedMs": 10001.6533,
+            "cpuMs": 2.951,
+            "percent": 0.029505121918193263,
+            "passed": true
+          },
+          {
+            "started": 11416861347923,
+            "ended": 11426862391451,
+            "elapsedMs": 10001.0435,
+            "cpuMs": 3.319,
+            "percent": 0.03318653698486563,
+            "passed": true
+          },
+          {
+            "started": 11426862409163,
+            "ended": 11436865509994,
+            "elapsedMs": 10003.1008,
+            "cpuMs": 2.241,
+            "percent": 0.022403053261244754,
+            "passed": true
+          }
+        ]
+      },
+      "fake-traced": {
+        "minimum": 0.014419392510993511,
+        "maximum": 0.05458441765160677,
+        "median": 0.03147830835570897,
+        "failures": 0,
+        "windows": [
+          {
+            "started": 11020343034085,
+            "ended": 11030343571502,
+            "elapsedMs": 10000.5374,
+            "cpuMs": 3.148,
+            "percent": 0.03147830835570897,
+            "passed": true
+          },
+          {
+            "started": 11030343815124,
+            "ended": 11040344428253,
+            "elapsedMs": 10000.6131,
+            "cpuMs": 3.353,
+            "percent": 0.03352794440172873,
+            "passed": true
+          },
+          {
+            "started": 11040344443976,
+            "ended": 11050344865339,
+            "elapsedMs": 10000.4213,
+            "cpuMs": 1.442,
+            "percent": 0.014419392510993511,
+            "passed": true
+          },
+          {
+            "started": 11149178498955,
+            "ended": 11159179521739,
+            "elapsedMs": 10001.0227,
+            "cpuMs": 5.459,
+            "percent": 0.05458441765160677,
+            "passed": true
+          },
+          {
+            "started": 11159179847422,
+            "ended": 11169180162820,
+            "elapsedMs": 10000.3153,
+            "cpuMs": 3.249,
+            "percent": 0.03248897562259862,
+            "passed": true
+          },
+          {
+            "started": 11169180177976,
+            "ended": 11179180523378,
+            "elapsedMs": 10000.3454,
+            "cpuMs": 1.795,
+            "percent": 0.017949380028413817,
+            "passed": true
+          },
+          {
+            "started": 11278045375515,
+            "ended": 11288049524822,
+            "elapsedMs": 10004.1493,
+            "cpuMs": 3.188,
+            "percent": 0.03186677751800446,
+            "passed": true
+          },
+          {
+            "started": 11288049820504,
+            "ended": 11298050198303,
+            "elapsedMs": 10000.3777,
+            "cpuMs": 2.021,
+            "percent": 0.02020923669712995,
+            "passed": true
+          },
+          {
+            "started": 11298050213833,
+            "ended": 11308051601878,
+            "elapsedMs": 10001.388,
+            "cpuMs": 3.015,
+            "percent": 0.030145815760772403,
+            "passed": true
+          }
+        ]
+      },
+      "worker": {
+        "minimum": 0.014599388869581918,
+        "maximum": 0.04316304124109637,
+        "median": 0.021717977839083403,
+        "failures": 0,
+        "windows": [
+          {
+            "started": 11052632520163,
+            "ended": 11062632938808,
+            "elapsedMs": 10000.4186,
+            "cpuMs": 1.46,
+            "percent": 0.014599388869581918,
+            "passed": true
+          },
+          {
+            "started": 11062633292509,
+            "ended": 11072633751513,
+            "elapsedMs": 10000.459,
+            "cpuMs": 2.86,
+            "percent": 0.028598687320251996,
+            "passed": true
+          },
+          {
+            "started": 11072633766907,
+            "ended": 11082634698046,
+            "elapsedMs": 10000.9311,
+            "cpuMs": 2.172,
+            "percent": 0.021717977839083403,
+            "passed": true
+          },
+          {
+            "started": 11181589202432,
+            "ended": 11191589960623,
+            "elapsedMs": 10000.7581,
+            "cpuMs": 1.865,
+            "percent": 0.018648586250676336,
+            "passed": true
+          },
+          {
+            "started": 11191590240534,
+            "ended": 11201592889497,
+            "elapsedMs": 10002.6489,
+            "cpuMs": 3.705,
+            "percent": 0.03704018842448824,
+            "passed": true
+          },
+          {
+            "started": 11201592905829,
+            "ended": 11211593700642,
+            "elapsedMs": 10000.7948,
+            "cpuMs": 1.463,
+            "percent": 0.014628837300011396,
+            "passed": true
+          },
+          {
+            "started": 11310363518390,
+            "ended": 11320368273378,
+            "elapsedMs": 10004.7549,
+            "cpuMs": 1.611,
+            "percent": 0.01610234349669076,
+            "passed": true
+          },
+          {
+            "started": 11320368586077,
+            "ended": 11330372515158,
+            "elapsedMs": 10003.929,
+            "cpuMs": 4.318,
+            "percent": 0.04316304124109637,
+            "passed": true
+          },
+          {
+            "started": 11330372529216,
+            "ended": 11340372887216,
+            "elapsedMs": 10000.358,
+            "cpuMs": 2.381,
+            "percent": 0.023809147632514755,
+            "passed": true
+          }
+        ]
+      },
+      "worker-traced": {
+        "minimum": 0.017035200162002353,
+        "maximum": 0.04867637158948237,
+        "median": 0.031398874664332034,
+        "failures": 0,
+        "windows": [
+          {
+            "started": 11084861301086,
+            "ended": 11094864100932,
+            "elapsedMs": 10002.7998,
+            "cpuMs": 4.869,
+            "percent": 0.04867637158948237,
+            "passed": true
+          },
+          {
+            "started": 11094864344563,
+            "ended": 11104864739396,
+            "elapsedMs": 10000.3948,
+            "cpuMs": 4.401,
+            "percent": 0.04400826255379437,
+            "passed": true
+          },
+          {
+            "started": 11104864751198,
+            "ended": 11114874122136,
+            "elapsedMs": 10009.3709,
+            "cpuMs": 4.167,
+            "percent": 0.04163098801743874,
+            "passed": true
+          },
+          {
+            "started": 11213813344603,
+            "ended": 11223816302848,
+            "elapsedMs": 10002.9582,
+            "cpuMs": 2.348,
+            "percent": 0.023473056200514767,
+            "passed": true
+          },
+          {
+            "started": 11223816596785,
+            "ended": 11233816931375,
+            "elapsedMs": 10000.3345,
+            "cpuMs": 3.37,
+            "percent": 0.03369887277270575,
+            "passed": true
+          },
+          {
+            "started": 11233816947150,
+            "ended": 11243817744242,
+            "elapsedMs": 10000.797,
+            "cpuMs": 2.117,
+            "percent": 0.021168312885463027,
+            "passed": true
+          },
+          {
+            "started": 11342620703595,
+            "ended": 11352621374458,
+            "elapsedMs": 10000.6708,
+            "cpuMs": 2.275,
+            "percent": 0.02274847403236191,
+            "passed": true
+          },
+          {
+            "started": 11352621591989,
+            "ended": 11362621950451,
+            "elapsedMs": 10000.3584,
+            "cpuMs": 3.14,
+            "percent": 0.031398874664332034,
+            "passed": true
+          },
+          {
+            "started": 11362621968268,
+            "ended": 11372624785919,
+            "elapsedMs": 10002.8176,
+            "cpuMs": 1.704,
+            "percent": 0.017035200162002353,
+            "passed": true
+          }
+        ]
+      }
+    },
+    "runs": {
+      "control-1.json": {
+        "mode": "control",
+        "startup": {
+          "elapsedMs": 2007.8087,
+          "cpuMs": 18.522
+        },
+        "windows": [
+          {
+            "started": 10955910373795,
+            "ended": 10965910826458,
+            "elapsedMs": 10000.4526,
+            "cpuMs": 1.56,
+            "percent": 0.015599293975954647,
+            "passed": true
+          },
+          {
+            "started": 10965911119223,
+            "ended": 10975912562127,
+            "elapsedMs": 10001.4429,
+            "cpuMs": 3.111,
+            "percent": 0.03110551178570444,
+            "passed": true
+          },
+          {
+            "started": 10975912575669,
+            "ended": 10985913262786,
+            "elapsedMs": 10000.6871,
+            "cpuMs": 3.67,
+            "percent": 0.03669747851625115,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "control-2.json": {
+        "mode": "control",
+        "startup": {
+          "elapsedMs": 2010.0529,
+          "cpuMs": 17.933
+        },
+        "windows": [
+          {
+            "started": 11245894860268,
+            "ended": 11255896113683,
+            "elapsedMs": 10001.2534,
+            "cpuMs": 2.426,
+            "percent": 0.024256959632679643,
+            "passed": true
+          },
+          {
+            "started": 11255896488339,
+            "ended": 11265897345409,
+            "elapsedMs": 10000.857,
+            "cpuMs": 4.782,
+            "percent": 0.047815902177183414,
+            "passed": true
+          },
+          {
+            "started": 11265897386484,
+            "ended": 11275897746503,
+            "elapsedMs": 10000.36,
+            "cpuMs": 4.531,
+            "percent": 0.04530836889871964,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "control-3.json": {
+        "mode": "control",
+        "startup": {
+          "elapsedMs": 2008.3372,
+          "cpuMs": 18.106
+        },
+        "windows": [
+          {
+            "started": 11374702909079,
+            "ended": 11384703380048,
+            "elapsedMs": 10000.4709,
+            "cpuMs": 1.413,
+            "percent": 0.014129334649631349,
+            "passed": true
+          },
+          {
+            "started": 11384703634356,
+            "ended": 11394704358003,
+            "elapsedMs": 10000.7236,
+            "cpuMs": 2.969,
+            "percent": 0.02968785178704469,
+            "passed": true
+          },
+          {
+            "started": 11394704369049,
+            "ended": 11404705741699,
+            "elapsedMs": 10001.3726,
+            "cpuMs": 1.659,
+            "percent": 0.016587723169117805,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "fake-1.json": {
+        "mode": "fake",
+        "startup": {
+          "elapsedMs": 2027.5754,
+          "cpuMs": 37.785
+        },
+        "windows": [
+          {
+            "started": 10988083105206,
+            "ended": 10998085065620,
+            "elapsedMs": 10001.9604,
+            "cpuMs": 5.432,
+            "percent": 0.05430935319439978,
+            "passed": true
+          },
+          {
+            "started": 10998085289725,
+            "ended": 11008085661339,
+            "elapsedMs": 10000.3716,
+            "cpuMs": 2.238,
+            "percent": 0.022379168390102625,
+            "passed": true
+          },
+          {
+            "started": 11008085672212,
+            "ended": 11018088819560,
+            "elapsedMs": 10003.1473,
+            "cpuMs": 2.969,
+            "percent": 0.029680658606316832,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "fake-2.json": {
+        "mode": "fake",
+        "startup": {
+          "elapsedMs": 2033.2609,
+          "cpuMs": 45.597
+        },
+        "windows": [
+          {
+            "started": 11117004495583,
+            "ended": 11127005067395,
+            "elapsedMs": 10000.5718,
+            "cpuMs": 1.716,
+            "percent": 0.01715901884730231,
+            "passed": true
+          },
+          {
+            "started": 11127005390051,
+            "ended": 11137008448239,
+            "elapsedMs": 10003.0581,
+            "cpuMs": 3.537,
+            "percent": 0.03535918680708253,
+            "passed": true
+          },
+          {
+            "started": 11137008461468,
+            "ended": 11147009074111,
+            "elapsedMs": 10000.6126,
+            "cpuMs": 4.904,
+            "percent": 0.049036995993625425,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "fake-3.json": {
+        "mode": "fake",
+        "startup": {
+          "elapsedMs": 2030.5297,
+          "cpuMs": 40.721
+        },
+        "windows": [
+          {
+            "started": 11406859486365,
+            "ended": 11416861139698,
+            "elapsedMs": 10001.6533,
+            "cpuMs": 2.951,
+            "percent": 0.029505121918193263,
+            "passed": true
+          },
+          {
+            "started": 11416861347923,
+            "ended": 11426862391451,
+            "elapsedMs": 10001.0435,
+            "cpuMs": 3.319,
+            "percent": 0.03318653698486563,
+            "passed": true
+          },
+          {
+            "started": 11426862409163,
+            "ended": 11436865509994,
+            "elapsedMs": 10003.1008,
+            "cpuMs": 2.241,
+            "percent": 0.022403053261244754,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "fake-traced-1.json": {
+        "mode": "fake-traced",
+        "startup": {
+          "elapsedMs": 2135.8315,
+          "cpuMs": 145.635
+        },
+        "windows": [
+          {
+            "started": 11020343034085,
+            "ended": 11030343571502,
+            "elapsedMs": 10000.5374,
+            "cpuMs": 3.148,
+            "percent": 0.03147830835570897,
+            "passed": true
+          },
+          {
+            "started": 11030343815124,
+            "ended": 11040344428253,
+            "elapsedMs": 10000.6131,
+            "cpuMs": 3.353,
+            "percent": 0.03352794440172873,
+            "passed": true
+          },
+          {
+            "started": 11040344443976,
+            "ended": 11050344865339,
+            "elapsedMs": 10000.4213,
+            "cpuMs": 1.442,
+            "percent": 0.014419392510993511,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "fake-traced-2.json": {
+        "mode": "fake-traced",
+        "startup": {
+          "elapsedMs": 2028.0341,
+          "cpuMs": 44.036
+        },
+        "windows": [
+          {
+            "started": 11149178498955,
+            "ended": 11159179521739,
+            "elapsedMs": 10001.0227,
+            "cpuMs": 5.459,
+            "percent": 0.05458441765160677,
+            "passed": true
+          },
+          {
+            "started": 11159179847422,
+            "ended": 11169180162820,
+            "elapsedMs": 10000.3153,
+            "cpuMs": 3.249,
+            "percent": 0.03248897562259862,
+            "passed": true
+          },
+          {
+            "started": 11169180177976,
+            "ended": 11179180523378,
+            "elapsedMs": 10000.3454,
+            "cpuMs": 1.795,
+            "percent": 0.017949380028413817,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "fake-traced-3.json": {
+        "mode": "fake-traced",
+        "startup": {
+          "elapsedMs": 2031.8914,
+          "cpuMs": 44.299
+        },
+        "windows": [
+          {
+            "started": 11278045375515,
+            "ended": 11288049524822,
+            "elapsedMs": 10004.1493,
+            "cpuMs": 3.188,
+            "percent": 0.03186677751800446,
+            "passed": true
+          },
+          {
+            "started": 11288049820504,
+            "ended": 11298050198303,
+            "elapsedMs": 10000.3777,
+            "cpuMs": 2.021,
+            "percent": 0.02020923669712995,
+            "passed": true
+          },
+          {
+            "started": 11298050213833,
+            "ended": 11308051601878,
+            "elapsedMs": 10001.388,
+            "cpuMs": 3.015,
+            "percent": 0.030145815760772403,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-1.json": {
+        "mode": "worker",
+        "startup": {
+          "elapsedMs": 2153.7214,
+          "cpuMs": 161.593
+        },
+        "windows": [
+          {
+            "started": 11052632520163,
+            "ended": 11062632938808,
+            "elapsedMs": 10000.4186,
+            "cpuMs": 1.46,
+            "percent": 0.014599388869581918,
+            "passed": true
+          },
+          {
+            "started": 11062633292509,
+            "ended": 11072633751513,
+            "elapsedMs": 10000.459,
+            "cpuMs": 2.86,
+            "percent": 0.028598687320251996,
+            "passed": true
+          },
+          {
+            "started": 11072633766907,
+            "ended": 11082634698046,
+            "elapsedMs": 10000.9311,
+            "cpuMs": 2.172,
+            "percent": 0.021717977839083403,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-2.json": {
+        "mode": "worker",
+        "startup": {
+          "elapsedMs": 2152.7258,
+          "cpuMs": 162.543
+        },
+        "windows": [
+          {
+            "started": 11181589202432,
+            "ended": 11191589960623,
+            "elapsedMs": 10000.7581,
+            "cpuMs": 1.865,
+            "percent": 0.018648586250676336,
+            "passed": true
+          },
+          {
+            "started": 11191590240534,
+            "ended": 11201592889497,
+            "elapsedMs": 10002.6489,
+            "cpuMs": 3.705,
+            "percent": 0.03704018842448824,
+            "passed": true
+          },
+          {
+            "started": 11201592905829,
+            "ended": 11211593700642,
+            "elapsedMs": 10000.7948,
+            "cpuMs": 1.463,
+            "percent": 0.014628837300011396,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-3.json": {
+        "mode": "worker",
+        "startup": {
+          "elapsedMs": 2179.4289,
+          "cpuMs": 177.665
+        },
+        "windows": [
+          {
+            "started": 11310363518390,
+            "ended": 11320368273378,
+            "elapsedMs": 10004.7549,
+            "cpuMs": 1.611,
+            "percent": 0.01610234349669076,
+            "passed": true
+          },
+          {
+            "started": 11320368586077,
+            "ended": 11330372515158,
+            "elapsedMs": 10003.929,
+            "cpuMs": 4.318,
+            "percent": 0.04316304124109637,
+            "passed": true
+          },
+          {
+            "started": 11330372529216,
+            "ended": 11340372887216,
+            "elapsedMs": 10000.358,
+            "cpuMs": 2.381,
+            "percent": 0.023809147632514755,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-traced-1.json": {
+        "mode": "worker-traced",
+        "startup": {
+          "elapsedMs": 2159.6983,
+          "cpuMs": 163.728
+        },
+        "windows": [
+          {
+            "started": 11084861301086,
+            "ended": 11094864100932,
+            "elapsedMs": 10002.7998,
+            "cpuMs": 4.869,
+            "percent": 0.04867637158948237,
+            "passed": true
+          },
+          {
+            "started": 11094864344563,
+            "ended": 11104864739396,
+            "elapsedMs": 10000.3948,
+            "cpuMs": 4.401,
+            "percent": 0.04400826255379437,
+            "passed": true
+          },
+          {
+            "started": 11104864751198,
+            "ended": 11114874122136,
+            "elapsedMs": 10009.3709,
+            "cpuMs": 4.167,
+            "percent": 0.04163098801743874,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-traced-2.json": {
+        "mode": "worker-traced",
+        "startup": {
+          "elapsedMs": 2152.7416,
+          "cpuMs": 165.057
+        },
+        "windows": [
+          {
+            "started": 11213813344603,
+            "ended": 11223816302848,
+            "elapsedMs": 10002.9582,
+            "cpuMs": 2.348,
+            "percent": 0.023473056200514767,
+            "passed": true
+          },
+          {
+            "started": 11223816596785,
+            "ended": 11233816931375,
+            "elapsedMs": 10000.3345,
+            "cpuMs": 3.37,
+            "percent": 0.03369887277270575,
+            "passed": true
+          },
+          {
+            "started": 11233816947150,
+            "ended": 11243817744242,
+            "elapsedMs": 10000.797,
+            "cpuMs": 2.117,
+            "percent": 0.021168312885463027,
+            "passed": true
+          }
+        ],
+        "passed": true
+      },
+      "worker-traced-3.json": {
+        "mode": "worker-traced",
+        "startup": {
+          "elapsedMs": 2178.5841,
+          "cpuMs": 178.986
+        },
+        "windows": [
+          {
+            "started": 11342620703595,
+            "ended": 11352621374458,
+            "elapsedMs": 10000.6708,
+            "cpuMs": 2.275,
+            "percent": 0.02274847403236191,
+            "passed": true
+          },
+          {
+            "started": 11352621591989,
+            "ended": 11362621950451,
+            "elapsedMs": 10000.3584,
+            "cpuMs": 3.14,
+            "percent": 0.031398874664332034,
+            "passed": true
+          },
+          {
+            "started": 11362621968268,
+            "ended": 11372624785919,
+            "elapsedMs": 10002.8176,
+            "cpuMs": 1.704,
+            "percent": 0.017035200162002353,
+            "passed": true
+          }
+        ],
+        "passed": true
+      }
+    },
+    "traceReadOrRefreshOrObserveEventsDuringIdle": 0,
+    "archiveSha256": "5db3973ec43d8b98394078c61f679dda64f7edec0676e04ee2faf278c05711c4"
+  }
+}

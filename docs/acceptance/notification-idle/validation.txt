@@ -1,0 +1,26 @@
+Portable Release build: passed (0 warnings, 0 errors).
+Baseline comparison: exit 1; 4 of 36 provider windows failed; 9 waiting controls passed.
+Corrected comparison: exit 0; all 36 provider windows and 9 controls passed.
+Regression with old fake:
+Unhandled exception. System.InvalidOperationException: The fake still wakes on an idle polling timer.
+   at NotificationIdleProbe.Check(Boolean condition, String message) in /workspace/scratch/25cfa1bf4d29/WindowManager/tools/NotificationIdleProbe/Program.cs:line 168
+   at NotificationIdleProbe.SelfTest() in /workspace/scratch/25cfa1bf4d29/WindowManager/tools/NotificationIdleProbe/Program.cs:line 141
+   at NotificationIdleProbe.SelfTest() in /workspace/scratch/25cfa1bf4d29/WindowManager/tools/NotificationIdleProbe/Program.cs:line 163
+   at NotificationIdleProbe.Main(String[] args) in /workspace/scratch/25cfa1bf4d29/WindowManager/tools/NotificationIdleProbe/Program.cs:line 15
+   at NotificationIdleProbe.<Main>(String[] args)
+
+Regression with correction: passed (idle observation, atomic replacement, deletion/recreation, bounded content-free diagnostics).
+Local Windows E2E build attempt:
+/tmp/windowmanager-dotnet/sdk/10.0.300/Sdks/Microsoft.NET.Sdk/targets/Microsoft.PackageDependencyResolution.targets(266,5): error NETSDK1004: Assets file '/workspace/scratch/25cfa1bf4d29/WindowManager/tests/SubZeroDev.WindowManager.EndToEnd.Tests/obj/project.assets.json' not found. Run a NuGet package restore to generate this file. [/workspace/scratch/25cfa1bf4d29/WindowManager/tests/SubZeroDev.WindowManager.EndToEnd.Tests/SubZeroDev.WindowManager.EndToEnd.Tests.csproj]
+
+Build FAILED.
+
+/tmp/windowmanager-dotnet/sdk/10.0.300/Sdks/Microsoft.NET.Sdk/targets/Microsoft.PackageDependencyResolution.targets(266,5): error NETSDK1004: Assets file '/workspace/scratch/25cfa1bf4d29/WindowManager/tests/SubZeroDev.WindowManager.EndToEnd.Tests/obj/project.assets.json' not found. Run a NuGet package restore to generate this file. [/workspace/scratch/25cfa1bf4d29/WindowManager/tests/SubZeroDev.WindowManager.EndToEnd.Tests/SubZeroDev.WindowManager.EndToEnd.Tests.csproj]
+    0 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:00.63
+
+Windows tests did not run locally. YAML parse and git diff --check passed.
+
+Remote Windows validation on fc35d7699b492fdacd46459b796fecef4094fc6b (run 42525703609): Windows build passed; portable self-test and hygiene passed; isolated S24.8 passed 1 test, 0 failures, 0 skips; all 9 windows below 2%, maximum 0.6249695389846699%. Full suite and broader budgets still running when evidence was recorded.
