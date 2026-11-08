@@ -1,10 +1,10 @@
 # S24.8 idle CPU investigation
 
-Status: **unresolved; native acceptance remains open**. The <2% of one core limit and ten-second measurement window are unchanged. A subsequent pass does not erase a failure.
+Status: **a fake-provider correction is proposed; native acceptance remains open**. The <2% of one core limit and ten-second measurement window are unchanged. A subsequent pass does not erase a failure.
 
 ## What the code establishes
 
-- `FakeHistory` polls file metadata every 100 ms. It reparses the JSON and raises a refresh only after the file stamp changes, or a command changes the history. Polling an unchanged file does not itself publish feeds.
+- Before this change, `FakeHistory` polled file metadata every 100 ms. It reparsed the JSON and raised a refresh only after the file stamp changed, or a command changed the history. Polling an unchanged file did not itself publish feeds. The correction replaces that timer with `FileSystemWatcher`, following atomic replacements, creation, deletion and writes. Duplicate stamps are suppressed under the existing lock; overflow invalidates the snapshot and requests a read.
 - `NotificationsPlugin` coalesces refresh requests and serializes processing. The startup refresh seeds the known history without raising a toast. A failed read schedules a five-second retry.
 - `RealHistory` uses `UserNotificationListener.NotificationChanged` plus a **60-second resync**, including configurations where the native event is unavailable. It does not use the fake's file polling. A ten-second quiet window alone cannot qualify the resync cost.
 - The old S24.8 sample covered one worker process after readiness and two seconds of settling. Its CPU numerator already excluded the host/test-runner processes, but included worker runtime/JIT/GC, SDK traffic and fake-provider activity. Host status polling can still affect scheduling and worker traffic indirectly.
@@ -12,7 +12,7 @@ Status: **unresolved; native acceptance remains open**. The <2% of one core limi
 
 ## Evidence added
 
-Set `SUBZERODEV_WM_NOTIFICATION_DIAGNOSTICS=1` with the existing test hook to collect a bounded in-memory activity trace. The worker writes `notification-diagnostics.json` only when it stops. It records monotonic start/end stamps for `worker.start`, `worker.refresh`, `fake.read` and `fake.poll`, with OS/runtime and dropped-event count. It contains no notification text, identifiers or paths. Timings are **elapsed durations, not CPU samples**; async refresh time can include waiting, and nested read/refresh durations must not be added together as CPU attribution. Runtime/JIT/GC and SDK activity remain unattributed by this trace.
+Set `SUBZERODEV_WM_NOTIFICATION_DIAGNOSTICS=1` with the existing test hook to collect a bounded in-memory activity trace. The worker writes `notification-diagnostics.json` only when it stops. It records monotonic start/end stamps for `worker.start`, `worker.refresh`, `fake.read` and `fake.observe` (the baseline trace used `fake.poll`), with OS/runtime and dropped-event count. It contains no notification text, identifiers or paths. Timings are **elapsed durations, not CPU samples**; async refresh time can include waiting, and nested read/refresh durations must not be added together as CPU attribution. Runtime/JIT/GC and SDK activity remain unattributed by this trace.
 
 S24.8 now launches three fresh workers. Each keeps the original two-second settling period, then measures **three consecutive ten-second windows**. Every window must remain below 2%; no median, successful retry or later quiet window replaces a failure. One-second process CPU slices locate bursts within each window. Startup/settling CPU is reported separately. The trace and all nine windows share monotonic timestamps, so activity can be correlated without writing trace files during measurement. JSON is saved after each window and on failure; CI uploads it with `if: always()`.
 
@@ -37,10 +37,10 @@ dotnet run --project tools/NotificationIdleProbe -c Release --no-build -- --meas
 
 The entry point runs three fresh processes for each of five modes in rotating order: waiting control, fake only, traced fake, worker with fake, traced worker with fake. Each process settles for two seconds and retains three ten-second CPU windows, startup CPU and any trace. All cases run even when a budget window fails; the command returns nonzero if any exceeds the same strict budget. This compares tracing overhead as well as fake/processing activity. Do not run builds or other probes concurrently with the comparison.
 
-The self-test verifies that idle polling performs no extra reads/refreshes, a file change triggers processing, and diagnostics are bounded and content-free. It does not qualify CPU performance.
+The self-test verifies that unchanged history performs no observation/read/refresh work, atomic replacement triggers processing, deletion and recreation are followed, and diagnostics are bounded and content-free. Restoring the old polling implementation makes it fail with `The fake still wakes on an idle polling timer.`; restoring the correction passes. It does not qualify CPU performance.
 
 ## Decision and remaining evidence
 
-No production optimization is justified until the excessive activity is reproduced and attributed. This change corrects the measurement/reporting gap and supplies a repeatable diagnostic path; it does **not** claim to fix the intermittent native CPU failure.
+The portable baseline reproduces excessive process CPU without native UI and, in a fake-only case, without notification worker processing. It retains four failing windows out of 45 (maximum 4.6655%). All traced idle windows have zero history reads and worker refreshes. The polling body itself accounts for only part of process CPU; runtime and scheduling costs are not individually attributed. The justified correction removes unnecessary periodic fake-provider work. It does not change `RealHistory` or disable normal runtime behavior, and does **not** claim to have explained the historical Windows failures. The matching corrected comparison is being completed before handoff.
 
 Native S24.8 remains open until repeated Windows desktop runs, both isolated and following the full suite, retain all windows and explain any failures. If process CPU spikes while the activity trace is quiet, capture a runtime/CPU profile for JIT/GC, SDK/transport and scheduler attribution; elapsed trace durations alone do not prove the cause. Production qualification additionally needs identity/consent, real notification events and windows spanning the 60-second resync, recorded separately from fake-provider acceptance.

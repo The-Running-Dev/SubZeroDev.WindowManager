@@ -13,7 +13,7 @@ internal static class NotificationIdleProbe
         if (args is ["--self-test"])
         {
             await SelfTest();
-            Console.WriteLine("PASS: idle polling, changed-history processing, content-free bounded diagnostics, strict budget reporting.");
+            Console.WriteLine("PASS: event-driven idle history, atomic replacement processing, content-free bounded diagnostics.");
             return 0;
         }
 
@@ -122,10 +122,13 @@ internal static class NotificationIdleProbe
         var plugin = connection.CreatePlugin<NotificationsPlugin>();
         await connection.StartAsync(plugin);
         await Until(() => plugin.Current.Ready);
+        var idleStarted = Stopwatch.GetTimestamp();
         await Task.Delay(550);
+        var idleEnded = Stopwatch.GetTimestamp();
         // Disable pop-ups to keep this processing regression independent of native surfaces and host replies.
         plugin.ApplyBellSettings(new JsonObject { ["popups"] = false });
-        File.WriteAllText(path, """{"items":[{"id":"1"},{"id":"2"}]}""");
+        File.WriteAllText(path + ".tmp", """{"items":[{"id":"1"},{"id":"2"}]}""");
+        File.Move(path + ".tmp", path, overwrite: true);
         await Until(() => plugin.Current.Unread == 2);
         await Task.Delay(350);
         await connection.StopAsync(plugin);
@@ -133,9 +136,26 @@ internal static class NotificationIdleProbe
         Check(!trace.Contains("secret-", StringComparison.Ordinal), "Diagnostics leaked notification content.");
         var events = JsonNode.Parse(trace)!["activities"]!.AsArray();
         Check(events.Count(e => (string?)e!["Kind"] == "worker.start") == 1, "Missing startup activity.");
-        Check(events.Count(e => (string?)e!["Kind"] == "fake.poll") >= 5, "The fake polling path was not observed.");
+        Check(!events.Any(e => (string?)e!["Kind"] == "fake.observe"
+            && (long)e!["Started"]! >= idleStarted && (long)e["Started"]! < idleEnded), "The fake performed work while its file was unchanged.");
+        Check(events.All(e => (string?)e!["Kind"] != "fake.poll"), "The fake still wakes on an idle polling timer.");
+        Check(events.Any(e => (string?)e!["Kind"] == "fake.observe"), "The fake missed an atomic file replacement.");
         Check(events.Count(e => (string?)e!["Kind"] == "worker.refresh") == 2, "An unchanged fake caused refreshes, or a change was missed.");
         Check(events.Count(e => (string?)e!["Kind"] == "fake.read") == 2, "Polling reparsed unchanged history.");
+        // The observer must follow deletion, recreation and atomic replacement, not a handle to an old file.
+        var changes = 0;
+        using (var history = new FakeHistory(root.Path))
+        {
+            history.Changed += (_, _) => Interlocked.Increment(ref changes);
+            File.Delete(path);
+            await Until(() => Volatile.Read(ref changes) > 0);
+            Check((await history.ReadAsync(CancellationToken.None)).Items.Count == 0, "Deletion left stale history.");
+            var before = Volatile.Read(ref changes);
+            File.WriteAllText(path + ".tmp", """{"items":[{"id":"recreated"}]}""");
+            File.Move(path + ".tmp", path);
+            await Until(() => Volatile.Read(ref changes) > before);
+            Check((await history.ReadAsync(CancellationToken.None)).Items.Single().Id == "recreated", "Recreation was missed.");
+        }
         var bounded = new IdleDiagnostics();
         for (var i = 0; i < 8200; i++) { bounded.Record("test", Stopwatch.GetTimestamp()); }
         bounded.Write(Path.Combine(root.Path, "bounded.json"));

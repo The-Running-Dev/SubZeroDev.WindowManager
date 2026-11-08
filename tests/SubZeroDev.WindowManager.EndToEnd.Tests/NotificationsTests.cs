@@ -342,7 +342,11 @@ public sealed partial class NotificationsTests
                     var lastTime = started;
                     for (var second = 1; second <= 10; second++)
                     {
-                        await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+                        var remaining = TimeSpan.FromSeconds(second) - Stopwatch.GetElapsedTime(started);
+                        if (remaining > TimeSpan.Zero)
+                        {
+                            await Task.Delay(remaining, TestContext.Current.CancellationToken);
+                        }
                         worker.Refresh();
                         var now = Stopwatch.GetTimestamp();
                         var cpu = worker.TotalProcessorTime;

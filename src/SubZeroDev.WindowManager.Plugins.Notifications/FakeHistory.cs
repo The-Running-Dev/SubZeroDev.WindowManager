@@ -13,14 +13,12 @@ namespace SubZeroDev.WindowManager.Plugins.Notifications;
 /// </summary>
 public sealed class FakeHistory : INotificationHistory
 {
-    private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
-
     private readonly IdleDiagnostics? _diagnostics;
     private readonly string _file;
     private readonly string _actions;
     private readonly HashSet<string> _removed = new(StringComparer.Ordinal);
     private readonly Lock _gate = new();
-    private readonly Timer _timer;
+    private readonly FileSystemWatcher _watcher;
     private (long Ticks, long Length) _stamp;
 
     public FakeHistory(string hookDirectory, IdleDiagnostics? diagnostics = null)
@@ -29,7 +27,19 @@ public sealed class FakeHistory : INotificationHistory
         _file = Path.Combine(hookDirectory, "notifications.json");
         _actions = Path.Combine(hookDirectory, "desktop-actions.log");
         _stamp = Stamp();
-        _timer = new Timer(_ => Poll(), null, PollEvery, PollEvery);
+        // Observe the fake's atomic file replacements instead of waking the worker ten times per second.
+        // Match the real provider's event-driven observation without touching Windows notifications.
+        _watcher = new FileSystemWatcher(hookDirectory, "notifications.json")
+        {
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
+        };
+        _watcher.Changed += (_, _) => Observe();
+        _watcher.Created += (_, _) => Observe();
+        _watcher.Deleted += (_, _) => Observe();
+        _watcher.Renamed += (_, _) => Observe();
+        // An overflow invalidates the snapshot; read the authority again, without starting an idle poll loop.
+        _watcher.Error += (_, _) => Changed?.Invoke(this, EventArgs.Empty);
+        _watcher.EnableRaisingEvents = true;
     }
 
     public event EventHandler? Changed;
@@ -128,7 +138,7 @@ public sealed class FakeHistory : INotificationHistory
         return Task.CompletedTask;
     }
 
-    public void Dispose() => _timer.Dispose();
+    public void Dispose() => _watcher.Dispose();
 
     private static string? Text(JsonNode? node, string name) =>
         node?[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
@@ -140,7 +150,7 @@ public sealed class FakeHistory : INotificationHistory
 
     private JsonObject? Load()
     {
-        // The test may be mid-write; the next poll sees the finished file.
+        // The test may be mid-write; the read retries below cover the finished file.
         for (var attempt = 0; attempt < 3; attempt++)
         {
             try
@@ -162,28 +172,31 @@ public sealed class FakeHistory : INotificationHistory
         return info.Exists ? (info.LastWriteTimeUtc.Ticks, info.Length) : (0, 0);
     }
 
-    private void Poll()
+    private void Observe()
     {
         var started = _diagnostics is null ? 0 : Stopwatch.GetTimestamp();
         try
         {
-            PollCore();
+            ObserveCore();
         }
         finally
         {
-            _diagnostics?.Record("fake.poll", started);
+            _diagnostics?.Record("fake.observe", started);
         }
     }
 
-    private void PollCore()
+    private void ObserveCore()
     {
-        var stamp = Stamp();
-        if (stamp == _stamp)
+        lock (_gate)
         {
-            return;
-        }
+            var stamp = Stamp();
+            if (stamp == _stamp)
+            {
+                return;
+            }
 
-        _stamp = stamp;
+            _stamp = stamp;
+        }
         Changed?.Invoke(this, EventArgs.Empty);
     }
 

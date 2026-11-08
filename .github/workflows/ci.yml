@@ -33,7 +33,7 @@ jobs:
           global-json-file: global.json
       - name: Build portable notification processing probe
         run: dotnet build tools/NotificationIdleProbe -c Release
-      - name: Check idle polling and changed-history processing
+      - name: Check event-driven idle and changed-history processing
         run: dotnet run --project tools/NotificationIdleProbe -c Release --no-build -- --self-test
 
   build:
