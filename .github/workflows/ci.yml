@@ -63,9 +63,27 @@ jobs:
           New-Item -Path $key -Force | Out-Null
           New-ItemProperty -Path $key -Name DumpFolder -Value "$env:RUNNER_TEMP\dumps" -PropertyType ExpandString -Force | Out-Null
           New-ItemProperty -Path $key -Name DumpType -Value 2 -PropertyType DWord -Force | Out-Null
-      - name: Test
+      - name: Isolated repeated notification idle check
+        id: notification_idle
+        continue-on-error: true
+        shell: pwsh
         env:
-          SUBZERODEV_WM_NOTIFICATION_OUT: ${{ runner.temp }}/notification-idle
+          SUBZERODEV_WM_NOTIFICATION_OUT: ${{ runner.temp }}/notification-idle/isolated
+        run: |
+          New-Item -ItemType Directory -Path $env:SUBZERODEV_WM_NOTIFICATION_OUT -Force | Out-Null
+          & tests/SubZeroDev.WindowManager.EndToEnd.Tests/bin/Release/net10.0-windows10.0.26100.0/win-x64/SubZeroDev.WindowManager.EndToEnd.Tests.exe -method SubZeroDev.WindowManager.EndToEnd.Tests.NotificationsTests.S24_8_an_idle_worker_costs_next_to_no_processor_time -xml "$env:SUBZERODEV_WM_NOTIFICATION_OUT/results.xml"
+          exit $LASTEXITCODE
+      - name: Upload isolated notification idle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notification-idle-isolated-windows
+          path: ${{ runner.temp }}/notification-idle/isolated
+          if-no-files-found: ignore
+      - name: Test
+        if: ${{ !cancelled() && (steps.notification_idle.outcome == 'success' || steps.notification_idle.outcome == 'failure') }}
+        env:
+          SUBZERODEV_WM_NOTIFICATION_OUT: ${{ runner.temp }}/notification-idle/full-suite
         run: dotnet test SubZeroDev.WindowManager.slnx -c Release --no-build --logger "console;verbosity=normal"
       - name: Upload notification idle evidence
         if: always()
@@ -74,6 +92,10 @@ jobs:
           name: notification-idle-windows
           path: ${{ runner.temp }}/notification-idle
           if-no-files-found: ignore
+      - name: Enforce isolated notification idle result
+        if: ${{ always() && steps.notification_idle.outcome == 'failure' }}
+        shell: pwsh
+        run: throw 'Isolated S24.8 failed. Its failure and measurements are retained; a later full-suite pass cannot replace it.'
       - name: Crash events
         if: failure()
         shell: pwsh
