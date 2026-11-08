@@ -25,7 +25,7 @@ Each budget is the 90th percentile of ten measured runs plus 20%, rounded down. 
 
 Replacement startup (S23) is measured separately: the guardian starts with `--mode replacement` and no layout of its own, so the host shows the built-in `subzerodev.shell` layout with all twelve items. The test hook fakes Explorer, the shell roles and the indicator devices, so nothing on the machine changes. Its runs go to `replacement.json`.
 
-The notifications worker (S24.8) is guarded rather than budgeted: `NotificationsTests` runs it against a fake history for 10 s with nothing changing and fails when it uses 2% of a core or more. It reads Windows' history only when told of a change, so an idle worker should sit at zero. The pop-up path creates no window until the first notification, so it adds nothing to host start.
+The notifications worker (S24.8) is guarded rather than budgeted: `NotificationsTests` runs it against a fake history for 10 s with nothing changing and fails when it uses 2% of a core or more. The fake polls file metadata every 100 ms; the production provider observes Windows notification events and resyncs every 60 s. The test now checks three consecutive ten-second windows in each of three fresh workers; every window must pass. See the [S24.8 investigation](acceptance/NOTIFICATION-IDLE.md) for activity traces and the separate portable comparison. The pop-up path creates no window until the first notification, so it adds nothing to host start.
 
 The test hook that reports status writes `status.json` every 250 ms, so the idle CPU includes that work. A released build without the hook does less.
 

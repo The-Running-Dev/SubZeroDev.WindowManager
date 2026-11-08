@@ -24,6 +24,18 @@ jobs:
             exit 1
           fi
 
+  notification-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Build portable notification processing probe
+        run: dotnet build tools/NotificationIdleProbe -c Release
+      - name: Check idle polling and changed-history processing
+        run: dotnet run --project tools/NotificationIdleProbe -c Release --no-build -- --self-test
+
   build:
     runs-on: windows-latest
     steps:
@@ -52,7 +64,16 @@ jobs:
           New-ItemProperty -Path $key -Name DumpFolder -Value "$env:RUNNER_TEMP\dumps" -PropertyType ExpandString -Force | Out-Null
           New-ItemProperty -Path $key -Name DumpType -Value 2 -PropertyType DWord -Force | Out-Null
       - name: Test
+        env:
+          SUBZERODEV_WM_NOTIFICATION_OUT: ${{ runner.temp }}/notification-idle
         run: dotnet test SubZeroDev.WindowManager.slnx -c Release --no-build --logger "console;verbosity=normal"
+      - name: Upload notification idle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notification-idle-windows
+          path: ${{ runner.temp }}/notification-idle
+          if-no-files-found: ignore
       - name: Crash events
         if: failure()
         shell: pwsh

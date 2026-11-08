@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -14,6 +15,7 @@ public sealed class FakeHistory : INotificationHistory
 {
     private static readonly TimeSpan PollEvery = TimeSpan.FromMilliseconds(100);
 
+    private readonly IdleDiagnostics? _diagnostics;
     private readonly string _file;
     private readonly string _actions;
     private readonly HashSet<string> _removed = new(StringComparer.Ordinal);
@@ -21,8 +23,9 @@ public sealed class FakeHistory : INotificationHistory
     private readonly Timer _timer;
     private (long Ticks, long Length) _stamp;
 
-    public FakeHistory(string hookDirectory)
+    public FakeHistory(string hookDirectory, IdleDiagnostics? diagnostics = null)
     {
+        _diagnostics = diagnostics;
         _file = Path.Combine(hookDirectory, "notifications.json");
         _actions = Path.Combine(hookDirectory, "desktop-actions.log");
         _stamp = Stamp();
@@ -32,6 +35,19 @@ public sealed class FakeHistory : INotificationHistory
     public event EventHandler? Changed;
 
     public Task<HistorySnapshot> ReadAsync(CancellationToken ct)
+    {
+        var started = _diagnostics is null ? 0 : Stopwatch.GetTimestamp();
+        try
+        {
+            return Read();
+        }
+        finally
+        {
+            _diagnostics?.Record("fake.read", started);
+        }
+    }
+
+    private Task<HistorySnapshot> Read()
     {
         var document = Load();
         if (document?["readFails"] is JsonValue fails && fails.TryGetValue<bool>(out var failed) && failed)
@@ -147,6 +163,19 @@ public sealed class FakeHistory : INotificationHistory
     }
 
     private void Poll()
+    {
+        var started = _diagnostics is null ? 0 : Stopwatch.GetTimestamp();
+        try
+        {
+            PollCore();
+        }
+        finally
+        {
+            _diagnostics?.Record("fake.poll", started);
+        }
+    }
+
+    private void PollCore()
     {
         var stamp = Stamp();
         if (stamp == _stamp)

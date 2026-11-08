@@ -37,3 +37,7 @@ The [VM guide](VM-START-HERE.md) gives the setup order. The [manifest](acceptanc
 ## Repository and CI builds
 
 The release workflow runs for this acceptance work and keeps a `release-<version>` artifact on the pull request Actions run. Download and extract its `SubZeroDev.WindowManager-<version>-win-x64.zip` for a build from the PR commit. That artifact includes these guides and an `acceptance-artifacts.json` with the CI commit, archive size and SHA-256. The local `acceptance-build.json` describes only the earlier local ZIP, not a later CI archive.
+
+## S24.8 diagnostic follow-up
+
+The [idle CPU investigation](NOTIFICATION-IDLE.md) adds repeated strict ten-second windows and opt-in activity evidence. Historical failures remain recorded above. The cause and Windows desktop acceptance remain unresolved; portable simulated-provider measurements do not establish production-provider behavior.

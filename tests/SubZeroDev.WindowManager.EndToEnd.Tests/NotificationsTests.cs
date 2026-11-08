@@ -298,20 +298,92 @@ public sealed partial class NotificationsTests
     public async Task S24_8_an_idle_worker_costs_next_to_no_processor_time()
     {
         HostRun.RequireDesktop();
-        using var run = Start(Fake(NewItem("n1", "app.one", "One", "hello", minutesAgo: 1)));
-        var status = await run.WaitForAsync(s => History(s)?.AsArray().Count == 1, Startup);
-        await Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
-        using var worker = Process.GetProcessById((int)PluginOf(status, Notifications)["pid"]!);
-
-        var before = worker.TotalProcessorTime;
-        var wall = Stopwatch.StartNew();
-        await Task.Delay(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-        worker.Refresh();
-        var percent = (worker.TotalProcessorTime - before).TotalMilliseconds / wall.Elapsed.TotalMilliseconds * 100;
-
-        // The fake polls its file every 100 ms, which a real worker does not; the budget is docs/budgets.md's.
-        Assert.True(percent < 2.0, $"The idle notifications worker used {percent:F2}% of one core.");
-        Assert.Equal(0, await run.StopAsync());
+        var reports = new JsonArray();
+        var failures = new List<string>();
+        var output = Environment.GetEnvironmentVariable("SUBZERODEV_WM_NOTIFICATION_OUT")
+            ?? Path.Combine(Path.GetTempPath(), "SubZeroDev.WindowManager.NotificationIdle", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(output);
+        var reportPath = Path.Combine(output, "windows.json");
+        TestContext.Current.SendDiagnosticMessage($"S24.8 evidence: {reportPath}");
+        try
+        {
+            for (var attempt = 1; attempt <= 3; attempt++)
+            {
+                // Fresh workers distinguish startup variation from sustained idle in the same process.
+                using var run = HostRun.Create();
+                run.ExtraEnvironment["SUBZERODEV_WM_NOTIFICATION_DIAGNOSTICS"] = "1";
+                WriteFake(run, Fake(NewItem("n1", "app.one", "One", "hello", minutesAgo: 1)));
+                run.WriteDefaultLayout((Guid.NewGuid(), Notifications, "bell"));
+                var launch = Stopwatch.GetTimestamp();
+                run.Start(HostRun.HostExe, "--mode", "replacement");
+                var status = await run.WaitForAsync(s => History(s)?.AsArray().Count == 1, Startup);
+                using var worker = Process.GetProcessById((int)PluginOf(status, Notifications)["pid"]!);
+                worker.Refresh();
+                var readyCpu = worker.TotalProcessorTime;
+                var readyAt = Stopwatch.GetTimestamp();
+                await Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+                worker.Refresh();
+                var report = new JsonObject
+                {
+                    ["attempt"] = attempt, ["pid"] = worker.Id, ["provider"] = "fake",
+                    ["launchToReadyMs"] = Stopwatch.GetElapsedTime(launch, readyAt).TotalMilliseconds,
+                    ["cpuAtReadyMs"] = readyCpu.TotalMilliseconds,
+                    ["settleCpuMs"] = (worker.TotalProcessorTime - readyCpu).TotalMilliseconds,
+                    ["frequency"] = Stopwatch.Frequency, ["windows"] = new JsonArray(),
+                };
+                reports.Add(report);
+                for (var window = 1; window <= 3; window++)
+                {
+                    worker.Refresh();
+                    var before = worker.TotalProcessorTime;
+                    var started = Stopwatch.GetTimestamp();
+                    var slices = new JsonArray();
+                    var lastCpu = before;
+                    var lastTime = started;
+                    for (var second = 1; second <= 10; second++)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+                        worker.Refresh();
+                        var now = Stopwatch.GetTimestamp();
+                        var cpu = worker.TotalProcessorTime;
+                        slices.Add(new JsonObject
+                        {
+                            ["started"] = lastTime, ["ended"] = now,
+                            ["cpuMs"] = (cpu - lastCpu).TotalMilliseconds,
+                            ["elapsedMs"] = Stopwatch.GetElapsedTime(lastTime, now).TotalMilliseconds,
+                        });
+                        lastCpu = cpu;
+                        lastTime = now;
+                    }
+                    var cpuMs = (lastCpu - before).TotalMilliseconds;
+                    var elapsedMs = Stopwatch.GetElapsedTime(started, lastTime).TotalMilliseconds;
+                    var percent = cpuMs / elapsedMs * 100;
+                    report["windows"]!.AsArray().Add(new JsonObject
+                    {
+                        ["window"] = window, ["started"] = started, ["ended"] = lastTime,
+                        ["cpuMs"] = cpuMs, ["elapsedMs"] = elapsedMs, ["percent"] = percent,
+                        ["passed"] = percent < 2.0, ["slices"] = slices,
+                    });
+                    // Persist after every window, including failures. Never retry to replace a failing sample.
+                    File.WriteAllText(reportPath, reports.ToJsonString(new() { WriteIndented = true }));
+                    if (percent >= 2.0)
+                    {
+                        failures.Add($"attempt {attempt}, window {window}: {percent:F3}%");
+                    }
+                }
+                Assert.Equal(0, await run.StopAsync());
+                var trace = Path.Combine(run.HookDirectory, "notification-diagnostics.json");
+                Assert.True(File.Exists(trace), "The notification activity trace was not written.");
+                File.Copy(trace, Path.Combine(output, $"activity-{attempt}.json"));
+                Assert.Equal(0, (int)JsonNode.Parse(File.ReadAllText(trace))!["dropped"]!);
+            }
+        }
+        finally
+        {
+            File.WriteAllText(reportPath, reports.ToJsonString(new() { WriteIndented = true }));
+        }
+        Assert.True(failures.Count == 0,
+            $"The idle notifications worker exceeded the unchanged <2% of one core budget: {string.Join("; ", failures)}. Evidence: {reportPath}");
     }
 
     // ---- Helpers ----------------------------------------------------------------------------------------------
