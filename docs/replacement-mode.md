@@ -127,6 +127,13 @@ These come from Explorer or processes it hosts, so in replacement mode they work
 
 Each is exercised once with the app registered (S23.3). Until then each says *pending*.
 
+Use the [bounded sign-in drill](../tools/SignInDrill/README.md) for issue #28.
+It saves an independent rollback baseline, captures real desktop/tray owners,
+process identities, build and startup/recovery logs before/after/restoration,
+and keeps interactive sign-in and failure injection under operator control.
+The current [drill verification record](acceptance/SIGNIN-DRILL.md) qualifies
+only the harness; none of the real sign-in rows below has been exercised by it.
+
 | Way back | Result |
 | --- | --- |
 | `--shell off`, then sign out and in | *pending* |
@@ -148,7 +155,7 @@ Each is exercised once with the app registered (S23.3). Until then each says *pe
 
 ## Known gaps
 
-- **Is the per-user value honoured on your build?** Windows 11 Enterprise 26200 is expected to honour it. If it does not, the fallback is the per-user Custom User Interface policy value, and that switch will be a decision entry. This is checked by hand (S17.7): after `--shell on` and signing out and in, the guardian runs and `explorer.exe` does not; after `--shell off` and another sign-in, Explorer is back.
+- **Is the per-user value honoured on your build?** Whether Windows 11 Enterprise 26200 honours it remains unverified. Establish the result on the exact build/UBR with the [sign-in drill](../tools/SignInDrill/README.md#determine-the-registration-mechanism-from-evidence) before considering the per-user Custom User Interface policy value; any switch requires a separate decision entry. The drill never writes that policy. This is checked by hand (S17.7): after `--shell on` and signing out and in, the guardian runs and `explorer.exe` does not; after `--shell off` and another sign-in, Explorer is back.
 - Real audio, network and battery devices, and whether each `ms-settings:` page opens without Explorer, are checked by hand; the tests use a file of their own. The indicators show text labels until an asset pack gives their icons images. Wi-Fi networks are chosen in Settings, not in the popup.
 - The real Windows key and the five power commands are checked by hand; the tests inject marked keys the host swallows and record the commands. Win+Tab and the virtual-desktop keys now invoke the shell's own desktops; their real-session behavior belongs to the acceptance run.
 - Real tray apps and docked toolbars are checked by hand; the tests use a client of their own. Other app bars are not told (`ABN_POSCHANGED`) when the host's own panels change.
