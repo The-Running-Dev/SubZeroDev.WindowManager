@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
@@ -38,6 +39,8 @@ public sealed class NotificationsPlugin : Plugin
     private readonly List<Toast> _toasts = [];
 
     private INotificationHistory _history = null!;
+    private IdleDiagnostics? _diagnostics;
+    private string? _diagnosticsPath;
     private StateStore _store = null!;
     private IDisposable? _dndSubscription;
     private Timer? _retry;
@@ -69,7 +72,14 @@ public sealed class NotificationsPlugin : Plugin
     protected override Task OnStartAsync(CancellationToken ct)
     {
         var hook = Environment.GetEnvironmentVariable(HookVariable) is { Length: > 0 } directory ? directory : null;
-        _history = hook is null ? new RealHistory() : new FakeHistory(hook);
+        var started = Stopwatch.GetTimestamp();
+        if (hook is not null && Environment.GetEnvironmentVariable(IdleDiagnostics.Variable) == "1")
+        {
+            _diagnostics = new IdleDiagnostics();
+            _diagnosticsPath = Path.Combine(hook, "notification-diagnostics.json");
+        }
+
+        _history = hook is null ? new RealHistory() : new FakeHistory(hook, _diagnostics);
         _store = new StateStore(Context.DataDirectory);
         var (seen, dnd) = _store.Load();
         _lastSeen = seen ?? DateTimeOffset.MinValue;
@@ -110,6 +120,7 @@ public sealed class NotificationsPlugin : Plugin
             _ = Task.Run(RestoreDoNotDisturbAsync);
         }
 
+        _diagnostics?.Record("worker.start", started);
         return Task.CompletedTask;
     }
 
@@ -133,6 +144,10 @@ public sealed class NotificationsPlugin : Plugin
         }
 
         _history?.Dispose();
+        if (_diagnosticsPath is not null)
+        {
+            _diagnostics?.Write(_diagnosticsPath);
+        }
     }
 
     protected override ContributionInstance CreateInstance(InstanceRequest request) => new BellInstance(request, this);
@@ -282,6 +297,19 @@ public sealed class NotificationsPlugin : Plugin
     }
 
     private async Task RefreshLockedAsync(CancellationToken ct)
+    {
+        var started = _diagnostics is null ? 0 : Stopwatch.GetTimestamp();
+        try
+        {
+            await RefreshCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _diagnostics?.Record("worker.refresh", started);
+        }
+    }
+
+    private async Task RefreshCoreAsync(CancellationToken ct)
     {
         HistorySnapshot snapshot;
         try

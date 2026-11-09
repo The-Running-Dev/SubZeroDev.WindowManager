@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <TargetPlatformMinVersion></TargetPlatformMinVersion>
+    <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
+    <RuntimeIdentifier></RuntimeIdentifier>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="../../../src/SubZeroDev.WindowManager.Protocol/*.cs" LinkBase="Protocol" />
+    <Compile Include="../../../src/SubZeroDev.WindowManager.Sdk/*.cs" LinkBase="Sdk" />
+  </ItemGroup>
+</Project>

@@ -125,8 +125,12 @@ public sealed class StartupRunner(StartupSources sources, Func<string, string, b
             }
         }
 
-        // A volatile key is gone at sign-out, so the next session runs the programs again.
-        using var created = Registry.CurrentUser.CreateSubKey(path, writable: true, RegistryOptions.Volatile);
+        // RegCreateKeyEx applies Volatile to every missing component, not just the leaf. Keep the
+        // application's ancestors stable so later registration and start-up sources can create stable keys.
+        var separator = path.LastIndexOf('\\');
+        using var parent = Registry.CurrentUser.CreateSubKey(path[..separator], writable: true);
+        // Only the session marker is volatile; it disappears when the user's hive is unloaded.
+        using var created = parent.CreateSubKey(path[(separator + 1)..], writable: true, RegistryOptions.Volatile);
         return true;
     }
 

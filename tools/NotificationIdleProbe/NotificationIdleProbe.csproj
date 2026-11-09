@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <TargetPlatformMinVersion></TargetPlatformMinVersion>
+    <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
+    <RuntimeIdentifier></RuntimeIdentifier>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <StartupObject>NotificationIdleProbe</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Compile the real processing code; only the unavailable WinRT provider is replaced.
+         This is a simulation, not the deployed Windows worker or native acceptance. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Remove="Support/**/*.cs" />
+    <ProjectReference Include="Support/Support.csproj" />
+    <Compile Include="../../src/SubZeroDev.WindowManager.Plugins.Notifications/*.cs"
+             Exclude="../../src/SubZeroDev.WindowManager.Plugins.Notifications/RealHistory.cs" LinkBase="Notifications" />
+  </ItemGroup>
+</Project>
