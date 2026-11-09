@@ -146,8 +146,15 @@ function Get-DrillBuild {
     }
 }
 function Get-DrillHash([string] $Path) {
-    if ([IO.File]::Exists($Path)) { return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash }
-    return $null
+    # .NET directly: Get-FileHash is not always resolvable in Windows PowerShell 5.1 (polluted PSModulePath).
+    if (-not [IO.File]::Exists($Path)) { return $null }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite,Delete')
+        try { return ([BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '') }
+        finally { $stream.Dispose() }
+    }
+    finally { $sha.Dispose() }
 }
 function Get-DrillProvenance([string] $Install) {
     @('SubZeroDev.WindowManager.exe','host\SubZeroDev.WindowManager.Host.exe','host\SubZeroDev.WindowManager.Host.dll','SubZeroDev.WindowManager.Host.exe','SubZeroDev.WindowManager.Host.dll','vm-install.json','acceptance-artifacts.json') | ForEach-Object {
@@ -184,8 +191,11 @@ function Save-DrillCapture($Baseline, [string] $Root, [string] $Label) {
         $errors += @($enumerationErrors | ForEach-Object { $_.ToString() })
     }
     $enumerationErrors = @()
+    # No crash directory simply means no crash records; it is not a collection error.
+    if ([IO.Directory]::Exists((Join-Path $Baseline.dataRoot 'logs\crash'))) {
     $candidates += @(Get-ChildItem -LiteralPath (Join-Path $Baseline.dataRoot 'logs\crash') -Filter '*.json' -File -ErrorAction SilentlyContinue -ErrorVariable enumerationErrors | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 8)
     $errors += @($enumerationErrors | ForEach-Object { $_.ToString() })
+    }
     $journal = Join-Path $Baseline.dataRoot ('recovery\session-' + [Diagnostics.Process]::GetCurrentProcess().SessionId + '.json')
     if ([IO.File]::Exists($journal)) { $candidates += Get-Item -LiteralPath $journal }
     $copies = @(); $index = 0
