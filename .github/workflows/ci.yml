@@ -146,3 +146,20 @@ jobs:
           name: budgets
           path: ${{ runner.temp }}/budgets
           if-no-files-found: ignore
+
+  signin-drill:
+    name: Sign-in harness (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Non-destructive harness checks (PowerShell 7)
+        shell: pwsh
+        run: ./tools/tests/Test-SignInDrill.ps1
+      - name: Non-destructive harness checks (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./tools/tests/Test-SignInDrill.ps1
