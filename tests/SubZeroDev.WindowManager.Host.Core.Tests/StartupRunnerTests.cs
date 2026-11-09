@@ -165,6 +165,31 @@ public sealed class StartupRunnerTests : IDisposable
         Assert.Single(_started);
     }
 
+    [Fact]
+    public void S18_4_h_a_first_run_keeps_registry_ancestors_stable_and_only_the_marker_volatile()
+    {
+        // No Run values or fixture keys exist yet: the marker must create its entire missing path.
+        Assert.False(Runner().Run().AlreadyRan);
+        var markerPath = $@"{_root}\HKCU\{StartupRunner.MarkerKey}";
+        using var parent = Registry.CurrentUser.OpenSubKey(markerPath[..markerPath.LastIndexOf('\\')], writable: true)!;
+        Assert.NotNull(parent);
+        using (var sibling = parent.CreateSubKey("persistent-sibling", writable: true))
+        {
+            sibling.SetValue("value", 1);
+            Assert.Equal(1, sibling.GetValue("value"));
+        }
+
+        // Stable children are forbidden below a volatile key (ERROR_CHILD_MUST_BE_VOLATILE).
+        using var marker = Registry.CurrentUser.OpenSubKey(markerPath, writable: true)!;
+        Assert.NotNull(marker);
+        var error = Assert.Throws<IOException>(() =>
+        {
+            using var child = marker.CreateSubKey("stable-child", writable: true);
+        });
+        Assert.Equal(1021, error.HResult & 0xffff);
+        Assert.True(Runner().Run().AlreadyRan);
+    }
+
     [Theory]
     [InlineData("\"c:\\program files\\app.exe\" -a -b", "c:\\program files\\app.exe", "-a -b")]
     [InlineData("c:\\tools\\app.exe /min", "c:\\tools\\app.exe", "/min")]
